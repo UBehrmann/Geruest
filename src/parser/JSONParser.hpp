@@ -1,0 +1,232 @@
+/**
+ * @file JSONParser.hpp
+ * @created 24.05.2024
+ *
+ * @author: Urs Behrmann
+ *
+ * @brief A simple JSONParser parser that can parse JSONParser strings and return the data as a map of strings and any type.
+ */
+
+#ifndef JSONParser_HPP
+#define JSONParser_HPP
+
+#include <string>
+#include <iostream>
+#include <map>
+#include <any>
+#include <cfloat>
+#include <climits>
+#include <utility>
+#include <algorithm>
+#include <vector>
+#include <fstream>
+#include <sstream>
+
+
+class JSONParser {
+
+private:
+    // Map to store the JSONParser data
+    std::map<std::string, std::any> data;
+    std::vector<JSONParser> arrayData;
+
+    std::vector<std::string> keys;
+
+    std::string basicString;
+    size_t jp = 0;
+
+    /**
+     * Read the key from the JSONParser string
+     * @return The key
+     */
+    std::string readKey();
+
+    /**
+     * Read the string data from the JSONParser string
+     * @return The string data
+     */
+    std::string readString();
+
+    /**
+     * Read the number data from the JSONParser string
+     * @return The number data
+     */
+    std::any readNumber();
+
+    std::map<std::string, std::any> readObject();
+
+    std::vector<std::any> readArray();
+
+    /**
+     * Read the data from the JSONParser string
+     * @return The data
+     */
+    std::any readData();
+
+    /**
+     * Check if a character is a whitespace character
+     * @param c Character to check
+     * @return True if the character is a whitespace character, false otherwise
+     */
+    static bool isWhiteSpace(char c);
+
+    void parseArray();
+
+    void parseJSON();
+
+    std::string anyToString(const std::any &val) const;
+
+public:
+
+    JSONParser() = default;
+
+    explicit JSONParser(const std::string &input);
+
+    explicit JSONParser(std::map<std::string, std::any> data);
+
+    ~JSONParser() = default;
+
+    // Getter for the data
+
+    std::string getString(const std::string &key);
+
+    int getInt(const std::string &key);
+
+    short getShort(const std::string &key);
+
+    bool getBool(const std::string &key);
+
+    float getFloat(const std::string &key);
+
+    double getDouble(const std::string &key);
+
+    long getLong(const std::string &key);
+
+    long long getLongLong(const std::string &key);
+
+    long double getLongDouble(const std::string &key);
+
+    JSONParser getObject(const std::string &key);
+
+    std::vector<std::string> getStringArray(const std::string &key);
+
+    std::vector<short> getShortArray(const std::string &key);
+
+    std::vector<int> getIntArray(const std::string &key);
+
+    std::vector<long> getLongArray(const std::string &key);
+
+    std::vector<long long> getLongLongArray(const std::string &key);
+
+    std::vector<bool> getBoolArray(const std::string &key);
+
+    std::vector<float> getFloatArray(const std::string &key);
+
+    std::vector<double> getDoubleArray(const std::string &key);
+
+    std::vector<long double> getLongDoubleArray(const std::string &key);
+
+    std::vector<JSONParser> getArrayOfJSON(const std::string &key);
+
+    std::vector<JSONParser> getJSONArray();
+
+    // Setter for the data
+
+    void setString(const std::string &key, const std::string &value);
+
+    void setInt(const std::string &key, int value);
+
+    void setShort(const std::string &key, short value);
+
+    void setBool(const std::string &key, bool value);
+
+    void setFloat(const std::string &key, float value);
+
+    void setDouble(const std::string &key, double value);
+
+    void setLong(const std::string &key, long value);
+
+    void setLongLong(const std::string &key, long long value);
+
+    void setLongDouble(const std::string &key, long double value);
+
+    void setJSON(const std::string &key, const JSONParser &value);
+
+    void setStringArray(const std::string &key, const std::vector<std::string> &value);
+
+    void setShortArray(const std::string &key, const std::vector<short> &value);
+
+    void setIntArray(const std::string &key, const std::vector<int> &value);
+
+    void setLongArray(const std::string &key, const std::vector<long> &value);
+
+    void setLongLongArray(const std::string &key, const std::vector<long long> &value);
+
+    void setBoolArray(const std::string &key, const std::vector<bool> &value);
+
+    void setFloatArray(const std::string &key, const std::vector<float> &value);
+
+    void setDoubleArray(const std::string &key, const std::vector<double> &value);
+
+    void setLongDoubleArray(const std::string &key, const std::vector<long double> &value);
+
+    void setArrayOfJSON(const std::string &key, const std::vector<JSONParser> &value);
+
+    void setJSONArray(const std::vector<JSONParser> &value);
+
+    // Add a key to the JSONParser
+
+    void addArrayOfJSON(const std::string &key, const std::vector<JSONParser> &value);
+
+    void addJSONToArray(const JSONParser &value);
+
+    // Remove a key from the JSONParser
+    void removeKey(const std::string &key);
+
+    [[nodiscard]] std::string toString() const;
+
+    [[nodiscard]] std::string arrayToString() const;
+
+    // Get the keys of the JSONParser
+    std::vector<std::string> getKeys();
+};
+
+inline JSONParser* getJSONFromFile(const std::string &filePath) {
+    std::ifstream file(filePath);
+    if (!file.is_open()) {
+        throw std::runtime_error("Could not open file");
+    }
+
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    std::string content = buffer.str();
+
+    return new JSONParser(content);
+}
+
+inline bool saveJSONToFile(const JSONParser &json, const std::string &filePath) {
+    std::ofstream file(filePath);
+    if (!file.is_open()) {
+        return false;
+    }
+
+    file << json.toString();
+    file.close();
+
+    return true;
+}
+
+// Save Array JSON to file
+inline bool saveArrayJSONToFile(const JSONParser &json, const std::string &filePath) {
+    std::ofstream file(filePath);
+    if (!file.is_open()) {
+        return false;
+    }
+
+    file << json.arrayToString();
+    file.close();
+
+    return true;
+}
+
+#endif //JSONParser_HPP
