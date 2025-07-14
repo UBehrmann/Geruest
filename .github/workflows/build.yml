@@ -1,0 +1,35 @@
+name: Build static libraries
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up CMake
+        uses: lukka/get-cmake@v3
+
+      - name: Configure and Build
+        run: |
+          mkdir build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+          cmake --build . --config Release
+
+      - name: Upload library to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/lib/libGeruest.a
+            build/lib/Geruest.lib
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
