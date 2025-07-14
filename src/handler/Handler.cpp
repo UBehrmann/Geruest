@@ -15,11 +15,19 @@
 
 #include <climits>
 
+#ifdef _WIN32
+Handler::Handler(SOCKET socket, std::string IP, ServerData* serverData)
+#else
 Handler::Handler(int socket, std::string IP, ServerData* serverData)
+#endif
     : clientSocket(socket), IP(std::move(IP)), serverData(serverData) {}
 
 Handler::~Handler() {
+#ifdef _WIN32
+    closesocket(clientSocket);
+#else
     close(clientSocket);
+#endif
     delete[] buffer;
 
     //    logger.log("Client socket closed.");
@@ -32,13 +40,22 @@ bool Handler::readSocket(char* bufferToUse, size_t size) {
         return false;
     }
 
+#ifdef _WIN32
+    bufferLength = recv(clientSocket, bufferToUse, static_cast<int>(size), 0);
+#else
     bufferLength = read(clientSocket, bufferToUse, static_cast<int>(size));
+#endif
 
     if (bufferLength == 0) {
         // sendToLogger("Client disconnected.");
     } else if (bufferLength < 0) {
         // Check if the error is due to timeout
+#ifdef _WIN32
+        int error = WSAGetLastError();
+        if (error == WSAEWOULDBLOCK || error == WSAETIMEDOUT) {
+#else
         if (errno == EWOULDBLOCK || errno == EAGAIN) {
+#endif
             sendToLogger("Timeout for receiving data.");
             idling++;
             if (idling > 2) {
@@ -62,7 +79,11 @@ bool Handler::sendSocket(const char* bufferToSend, size_t size) const {
     while (startPos < dataSize) {
         size_t chunkSize = std::min(static_cast<size_t>(BUFFER_SIZE), dataSize - startPos);
         std::memcpy(bufferToSocket, bufferToSend + startPos, chunkSize);
+#ifdef _WIN32
+        send(clientSocket, bufferToSocket, static_cast<int>(chunkSize), 0);
+#else
         write(clientSocket, bufferToSocket, static_cast<int>(chunkSize));
+#endif
         startPos += chunkSize;
     }
 

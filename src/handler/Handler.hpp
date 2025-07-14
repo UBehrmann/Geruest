@@ -10,9 +10,15 @@
 #ifndef GERUEST_HANDLER_HPP
 #define GERUEST_HANDLER_HPP
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#pragma comment(lib, "ws2_32.lib")
+#else
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>  // For close
+#endif
 
 #include <cstring>  // For memset
 #include <functional>
@@ -31,7 +37,11 @@ class Handler {
 private:
 	static unsigned clientCount;
 
+#ifdef _WIN32
+	SOCKET clientSocket;
+#else
 	int clientSocket;
+#endif
 
 	unsigned idling = 0;
 
@@ -79,9 +89,11 @@ private:
 	static std::string getContentType(const std::string &extension);
 
 public:
-	Handler(int
-			  socket, std::string
-			  IP, ServerData *serverData);
+#ifdef _WIN32
+	Handler(SOCKET socket, std::string IP, ServerData *serverData);
+#else
+	Handler(int socket, std::string IP, ServerData *serverData);
+#endif
 
 	~Handler();
 

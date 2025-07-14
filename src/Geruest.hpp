@@ -10,9 +10,15 @@
 #ifndef GERUEST_GERUEST_HPP
 #define GERUEST_GERUEST_HPP
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#pragma comment(lib, "ws2_32.lib")
+#else
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>  // For close
+#endif
 
 #include <cstring>  // For memset
 #include <functional>
@@ -56,7 +62,11 @@ class Geruest {
     void stop();
 
    private:
+#ifdef _WIN32
+    SOCKET server_fd = INVALID_SOCKET;  // Socket descriptor for the server
+#else
     int server_fd = -1;  // Socket descriptor for the server
+#endif
 
     struct sockaddr_in address = {0};
 
@@ -74,7 +84,11 @@ class Geruest {
 
     void sendToLoggerError(const std::string& message) const;
 
+#ifdef _WIN32
+    void giveToHandler(SOCKET new_socket, std::string& IP);
+#else
     void giveToHandler(int new_socket, std::string& IP);
+#endif
 };
 
 #endif  // GERUEST_GERUEST_HPP

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(GeruestLibrary VERSION 0.0.1 LANGUAGES CXX)
+project(GeruestExample VERSION 0.0.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -10,21 +10,18 @@ if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++ -static")
 endif()
 
-# Output static libs to /lib
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
-
 # Find required packages
 find_package(Threads REQUIRED)
 
-# Static library
+# Build the Geruest library first
 add_library(Geruest STATIC
-    src/Geruest.cpp
-    src/handler/Handler.cpp
-    src/parser/JSONParser.cpp
+    ../src/Geruest.cpp
+    ../src/handler/Handler.cpp
+    ../src/parser/JSONParser.cpp
 )
 
 target_include_directories(Geruest PUBLIC
-    ${PROJECT_SOURCE_DIR}/src
+    ../src
 )
 
 target_link_libraries(Geruest
@@ -36,21 +33,20 @@ if(WIN32)
     target_link_libraries(Geruest ws2_32)
 endif()
 
+# Example executable
+add_executable(exemple
+    exemple.cpp
+)
+
+target_include_directories(exemple PRIVATE
+    ../src
+)
+
+target_link_libraries(exemple Geruest)
+
 # Optional: Strip on Linux release
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
-        target_link_options(Geruest PRIVATE "-s")
+        target_link_options(exemple PRIVATE "-s")
     endif()
 endif()
-
-# Installation rules
-install(TARGETS Geruest
-    ARCHIVE DESTINATION lib
-    LIBRARY DESTINATION lib
-    RUNTIME DESTINATION bin
-)
-
-install(DIRECTORY src/
-    DESTINATION include
-    FILES_MATCHING PATTERN "*.hpp"
-)
