@@ -25,7 +25,7 @@ jobs:
           cmake --build . --config Release
 
       - name: Upload library to release
-        uses: softprops/action-gh-release@latest
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             build/lib/libGeruest.a
