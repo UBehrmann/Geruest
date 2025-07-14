@@ -24,13 +24,22 @@ Geruest (German for "scaffold") is a lightweight C++ web framework designed to s
 
 ## Roadmap
 
-- [ ]
+- [X] basic configuration
+- [X] Static file serving
+- [X] Multilanguage support 
+- [X] Simple routing
+- [ ] Test the first iteration with existing code base
+- [ ] Add CLI
+- [ ] Add Rate limiting
+- [ ] Add IP blocking
 
 ## Requirements
 
 - C++17 or later
 - CMake 3.10+
 - POSIX-compatible system (Linux, macOS)
+- SQLite3
+- Threads
 
 ## Build Instructions
 
