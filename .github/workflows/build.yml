@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up CMake
-        uses: actions/setup-cmake@v4
+        uses: lukka/get-cmake@latest
 
       - name: Configure and Build
         run: |
@@ -25,7 +25,7 @@ jobs:
           cmake --build . --config Release
 
       - name: Upload library to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@latest
         with:
           files: |
             build/lib/libGeruest.a
