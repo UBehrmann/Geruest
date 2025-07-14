@@ -14,6 +14,7 @@
 #include "builders/CSSBuilder.hpp"
 
 #include <climits>
+#include <algorithm>
 
 #ifdef _WIN32
 Handler::Handler(SOCKET socket, std::string IP, ServerData* serverData)

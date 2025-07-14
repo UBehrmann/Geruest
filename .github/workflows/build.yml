@@ -9,12 +9,9 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-
+  build-linux:
+    runs-on: ubuntu-latest
+    
     steps:
       - uses: actions/checkout@v4
 
@@ -28,17 +25,34 @@ jobs:
           cmake --build . --config Release
 
       - name: Upload Linux static lib
-        if: matrix.os == 'ubuntu-latest'
         uses: softprops/action-gh-release@v2
         with:
           files: build/lib/libGeruest.a
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  build-windows-mingw:
+    runs-on: windows-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup MinGW
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-make
+
+      - name: Configure and Build
+        shell: msys2 {0}
+        run: |
+          mkdir build && cd build
+          cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+          cmake --build . --config Release
+
       - name: Upload Windows static lib
-        if: matrix.os == 'windows-latest'
         uses: softprops/action-gh-release@v2
         with:
-          files: build/Release/Geruest.lib
+          files: build/lib/libGeruest.a
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
