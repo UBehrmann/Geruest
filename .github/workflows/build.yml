@@ -24,10 +24,14 @@ jobs:
           cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
           cmake --build . --config Release
 
+      - name: Rename and Upload Linux static lib
+        run: |
+          cp build/lib/libGeruest.a build/lib/libGeruest-linux.a
+        
       - name: Upload Linux static lib
         uses: softprops/action-gh-release@v2
         with:
-          files: build/lib/libGeruest.a
+          files: build/lib/libGeruest-linux.a
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -50,9 +54,14 @@ jobs:
           cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
           cmake --build . --config Release
 
+      - name: Rename and Upload Windows static lib
+        shell: msys2 {0}
+        run: |
+          cp build/lib/libGeruest.a build/lib/libGeruest-windows.a
+        
       - name: Upload Windows static lib
         uses: softprops/action-gh-release@v2
         with:
-          files: build/lib/libGeruest.a
+          files: build/lib/libGeruest-windows.a
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
