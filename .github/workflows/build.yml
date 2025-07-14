@@ -35,6 +35,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Show build output
+        run: |
+          echo "Build folder content:"
+          ls -R build
+
       - name: Upload library to release
         uses: softprops/action-gh-release@v2
         with:
