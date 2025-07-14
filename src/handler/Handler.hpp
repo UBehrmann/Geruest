@@ -22,7 +22,6 @@
 
 #include "data/HTTPRequest.hpp"
 #include "data/HTTPResponse.hpp"
-#include "utils/Logger.hpp"
 #include "data/ServerData.hpp"
 
 // Max packet size
@@ -35,8 +34,6 @@ private:
 	int clientSocket;
 
 	unsigned idling = 0;
-
-	Logger &logger = Logger::getInstance();
 
 	std::istringstream requestStream;
 

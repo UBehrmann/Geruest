@@ -42,7 +42,7 @@ bool Handler::readSocket(char* bufferToUse, size_t size) {
             sendToLogger("Timeout for receiving data.");
             idling++;
             if (idling > 2) {
-                logger.log("Client is idling too long. Closing connection.");
+					 std::cout << "Client is idling too long. Closing connection." << std::endl;
             }
         }
         sendToLogger("Error reading from socket.");
@@ -69,11 +69,21 @@ bool Handler::sendSocket(const char* bufferToSend, size_t size) const {
     return true;
 }
 
-void Handler::sendToLogger(const std::string& message) const { logger.log(message, IP); }
-void Handler::sendToLoggerPages(const std::string& message) const { logger.logPages(message, IP); }
-void Handler::sendToLoggerAPI(const std::string& message) const { logger.logAPI(message, IP); }
-void Handler::sendToLoggerUser(const std::string& message) const { logger.logUser(message, IP); }
-void Handler::sendToLoggerError(const std::string& message) const { logger.logError(message, IP); }
+void Handler::sendToLogger(const std::string& message) const {
+	 std::cout << "Log: " << message << " from " << IP << std::endl;
+}
+void Handler::sendToLoggerPages(const std::string& message) const {
+	std::cout << "Page Log: " << message << " from " << IP << std::endl;
+}
+void Handler::sendToLoggerAPI(const std::string& message) const {
+	std::cout << "API Log: " << message << " from " << IP << std::endl;
+}
+void Handler::sendToLoggerUser(const std::string& message) const {
+	std::cout << "User Log: " << message << " from " << IP << std::endl;
+}
+void Handler::sendToLoggerError(const std::string& message) const {
+	std::cerr << "Error Log: " << message << " from " << IP << std::endl;
+}
 
 void Handler::run() {
     // Read the socket

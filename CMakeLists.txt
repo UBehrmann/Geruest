@@ -9,13 +9,11 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 # Find required packages
 find_package(Threads REQUIRED)
-find_package(SQLite3 REQUIRED)
 
 # Static library
 add_library(Geruest STATIC
     src/Geruest.cpp
     src/handler/Handler.cpp
-    src/db/SQLiteInterfaceSingleton.cpp
     src/parser/JSONParser.cpp
 )
 
@@ -25,7 +23,6 @@ target_include_directories(Geruest PUBLIC
 
 target_link_libraries(Geruest
     Threads::Threads
-    SQLite::SQLite3
 )
 
 # Optional: Strip on Linux release

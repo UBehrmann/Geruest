@@ -62,8 +62,6 @@ class Geruest {
 
     bool running = true;
 
-    Logger& logger = Logger::getInstance();
-
     int port = 8080;
 
     std::string hostname_ = "localhost";

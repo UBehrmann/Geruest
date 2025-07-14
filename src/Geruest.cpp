@@ -16,7 +16,6 @@
 #include <thread>
 
 #include "data/HTTPResponse.hpp"
-#include "db/initDB.hpp"
 
 Geruest::Geruest() {
 
@@ -37,7 +36,6 @@ void Geruest::addRoute(const std::string &path, RouteHandler routeHandler) {
 void Geruest::addRoot(const std::string &root) { serverData.root = root; }
 
 void Geruest::init() {
-    initDB();
 
     this->server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (this->server_fd == 0) {
@@ -150,6 +148,10 @@ void Geruest::stop() {
 
 bool Geruest::isRunning() { return running; }
 
-void Geruest::sendToLogger(const std::string &message) const { logger.log(message, "Server"); }
+void Geruest::sendToLogger(const std::string &message) const {
+	std::cout << message << std::endl;
+}
 
-void Geruest::sendToLoggerError(const std::string &message) const { logger.logError(message); }
+void Geruest::sendToLoggerError(const std::string &message) const {
+	std::cerr << "Error: " << message << std::endl;
+}
