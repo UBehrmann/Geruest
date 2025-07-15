@@ -80,7 +80,7 @@ jobs:
 
       - name: Rename and Upload Windows static lib (.lib)
         run: |
-          copy build\Release\Geruest.lib build\Geruest-msvc.lib
+          copy build\lib\Release\Geruest.lib build\Geruest-msvc.lib
 
       - name: Upload Windows static lib (.lib)
         uses: softprops/action-gh-release@v2
