@@ -54,14 +54,37 @@ jobs:
           cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
           cmake --build . --config Release
 
-      - name: Rename and Upload Windows static lib
+      - name: Rename and Upload Windows static lib (.a)
         shell: msys2 {0}
         run: |
           cp build/lib/libGeruest.a build/lib/libGeruest-windows.a
         
-      - name: Upload Windows static lib
+      - name: Upload Windows static lib (.a)
         uses: softprops/action-gh-release@v2
         with:
           files: build/lib/libGeruest-windows.a
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-windows-msvc:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure and Build (.lib)
+        run: |
+          mkdir build && cd build
+          cmake .. -DCMAKE_GENERATOR_PLATFORM=x64 -A x64 -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+          cmake --build . --config Release
+
+      - name: Rename and Upload Windows static lib (.lib)
+        run: |
+          copy build\Release\Geruest.lib build\Geruest-msvc.lib
+
+      - name: Upload Windows static lib (.lib)
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/Geruest-msvc.lib
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
