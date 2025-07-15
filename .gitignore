@@ -45,5 +45,4 @@ cmake-build-debug
 
 .vscode
 
-build
-build-lib
+build*/

@@ -1,14 +1,66 @@
 # Geruest Library Build Instructions (Windows)
 
-This project provides multiple CMake configurations for different build scenarios on Windows.
+This project provides multiple CMake configurations for different build scenarios on Windows with support for both MinGW and MSVC compilers.
 
 ## Prerequisites
 
+### For MinGW builds:
 - MinGW-w64 (GCC 8.0 or later recommended)
 - CMake 3.10 or later
 - Git (optional, for cloning)
 
-## 1. Building the Library
+### For MSVC builds:
+- Visual Studio 2017 or later (or Visual Studio Build Tools) with C++ support
+- CMake 3.10 or later
+- Git (optional, for cloning)
+
+## Quick Start - MSVC Build (Recommended)
+
+If you have Visual Studio installed and want to build with MSVC, use the automated scripts:
+
+```powershell
+# First-time setup (installs required tools if missing)
+.\setup_scripts\setup_msvc.ps1
+
+# Build the project
+.\setup_scripts\build_msvc.ps1
+```
+
+Or using Command Prompt:
+```cmd
+setup_scripts\build_msvc.bat
+```
+
+This will build:
+- **Library**: `build-msvc-lib/Geruest-msvc.lib`
+- **Example**: `exemple/build-msvc/Release/exemple.exe`
+
+## Manual MSVC Build
+
+### 1. Building the Library with MSVC
+
+```powershell
+Remove-Item -Recurse -Force build-msvc-lib -ErrorAction SilentlyContinue
+mkdir build-msvc-lib
+cd build-msvc-lib
+cmake .. -DCMAKE_GENERATOR_PLATFORM=x64 -A x64 -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+cmake --build . --config Release
+```
+
+### 2. Building the Example with MSVC
+
+```powershell
+cd exemple
+Remove-Item -Recurse -Force build-msvc -ErrorAction SilentlyContinue
+mkdir build-msvc
+cd build-msvc
+cmake .. -DCMAKE_GENERATOR_PLATFORM=x64 -A x64 -DCMAKE_BUILD_TYPE=Release
+cmake --build . --config Release
+```
+
+## MinGW Build (Alternative)
+
+### 1. Building the Library with MinGW
 
 ```powershell
 Remove-Item -Recurse -Force build-lib -ErrorAction SilentlyContinue
@@ -20,7 +72,7 @@ cmake --build .
 
 This builds only the Geruest static library (`lib/libGeruest.a`) with installation rules.
 
-## 2. Building the Example (Standalone)
+### 2. Building the Example with MinGW (Standalone)
 
 ```powershell
 cd exemple
@@ -58,8 +110,10 @@ cmake --build .
 
 ## Output Files
 
-- **Library**: `build-lib/lib/libGeruest.a`
-- **Example**: `exemple/build/exemple.exe`
+- **MSVC Library**: `build-msvc-lib/Geruest-msvc.lib`
+- **MSVC Example**: `exemple/build-msvc/Release/exemple.exe`
+- **MinGW Library**: `build-lib/lib/libGeruest.a`
+- **MinGW Example**: `exemple/build/exemple.exe`
 
 ## Static Linking
 
