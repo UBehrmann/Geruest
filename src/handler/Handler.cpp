@@ -20,9 +20,10 @@
 #ifdef _WIN32
 Handler::Handler(SOCKET socket, std::string IP, ServerData serverData)
 #else
-Handler::Handler(int socket, std::string IP, ServerData *serverData)
+Handler::Handler(int socket, std::string IP, ServerData serverData)
 #endif
     : clientSocket(socket), IP(std::move(IP)), serverData(serverData) {
+    buffer = new char[BUFFER_SIZE];
 }
 
 Handler::~Handler() {
@@ -113,8 +114,14 @@ void Handler::run() {
     // Read the socket
     // Message count is used to prevent infinite loops
     while (++messageCount < 100 && readSocket()) {
+        // Check if the buffer exists
+        if (buffer == nullptr) {
+            buffer = new char[BUFFER_SIZE];
+        }
+
         std::string rawRequest(buffer, bufferLength);
         requestStream = std::istringstream(rawRequest);
+
         HTTPRequest hTTPRequest(rawRequest, IP, serverData.getRoot());
 
         // Check if body was read with the request, otherwise it was sent in the next read
@@ -162,7 +169,7 @@ void Handler::handleRequest(HTTPRequest *request) {
 
         sendFile(content_type, contentPath, request);
 
-		return;
+        return;
     }
 
     sendToLoggerPages("Not found: " + request->getPathString());

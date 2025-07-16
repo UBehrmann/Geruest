@@ -54,7 +54,7 @@ private:
 
 	const std::string IP;
 
-	char *buffer = new char[BUFFER_SIZE];
+	char *buffer;
 	unsigned int bufferLength = 0;
 
 	bool readSocket() { return readSocket(buffer, BUFFER_SIZE); }
