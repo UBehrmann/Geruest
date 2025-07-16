@@ -18,11 +18,12 @@
 #include "builders/JSBuilder.hpp"
 
 #ifdef _WIN32
-Handler::Handler(SOCKET socket, std::string IP, ServerData *serverData)
+Handler::Handler(SOCKET socket, std::string IP, ServerData serverData)
 #else
-Handler::Handler(int socket, std::string IP, ServerData *serverData)
+Handler::Handler(int socket, std::string IP, ServerData serverData)
 #endif
     : clientSocket(socket), IP(std::move(IP)), serverData(serverData) {
+    buffer = new char[BUFFER_SIZE];
 }
 
 Handler::~Handler() {
@@ -113,9 +114,15 @@ void Handler::run() {
     // Read the socket
     // Message count is used to prevent infinite loops
     while (++messageCount < 100 && readSocket()) {
+        // Check if the buffer exists
+        if (buffer == nullptr) {
+            buffer = new char[BUFFER_SIZE];
+        }
+        
         std::string rawRequest(buffer, bufferLength);
         requestStream = std::istringstream(rawRequest);
-        HTTPRequest hTTPRequest(rawRequest, IP, serverData->getRoot());
+
+        HTTPRequest hTTPRequest(rawRequest, IP, serverData.getRoot());
 
         // Check if body was read with the request, otherwise it was sent in the next read
         if (hTTPRequest.hasHeader("content-length") && hTTPRequest.getBody().empty()) {
@@ -125,7 +132,7 @@ void Handler::run() {
             std::string newData(buffer, bufferLength);
             requestStream.str(requestStream.str() + newData);
 
-            hTTPRequest = HTTPRequest(requestStream.str(), IP, serverData->getRoot());
+            hTTPRequest = HTTPRequest(requestStream.str(), IP, serverData.getRoot());
         }
 
         handleRequest(&hTTPRequest);
@@ -143,9 +150,9 @@ void Handler::handleRequest(HTTPRequest *request) {
         return;
     }
 
-    if (serverData->getRoutes()[request->getPathString()] != nullptr) {
+    if (serverData.getRoutes()[request->getPathString()] != nullptr) {
         // Call the route handler
-        HTTPResponse response = serverData->getRoutes()[request->getPathString()](*request);
+        HTTPResponse response = serverData.getRoutes()[request->getPathString()](*request);
 
         // Send the response
         sendSocket(response.toString().c_str(), response.toString().size());
@@ -160,11 +167,9 @@ void Handler::handleRequest(HTTPRequest *request) {
         std::string content_type = getContentType(extension);
         std::string contentPath = buildPath(path, extension, request);
 
-        std::cout << "Content path: " << contentPath << std::endl;
-		std::cout << "Content type: " << content_type << std::endl;
-		std::cout << "Extension: " << extension << std::endl;
-
         sendFile(content_type, contentPath, request);
+
+        return;
     }
 
     sendToLoggerPages("Not found: " + request->getPathString());
@@ -221,12 +226,12 @@ void Handler::sendFile(const std::string &contentType, const std::string &conten
                 return;
             }
 
-            contentBuilder = new HtmlBuilder(contentPath, serverData->getRoot());
+            contentBuilder = new HtmlBuilder(contentPath, serverData.getRoot());
 
         } else if (contentType == "text/javascript") {
-            contentBuilder = new JSBuilder(contentPath, serverData->getRoot());
+            contentBuilder = new JSBuilder(contentPath, serverData.getRoot());
         } else if (contentType == "text/css") {
-            contentBuilder = new CSSBuilder(contentPath, serverData->getRoot());
+            contentBuilder = new CSSBuilder(contentPath, serverData.getRoot());
         }
 
         // Check if builder was created
@@ -321,17 +326,17 @@ std::string Handler::buildPath(std::string &pathReceived, const std::string &Ext
 
     // TODO : Find better way to check for language, can't always add an 'or' statement for each new language
     if (!startsWithLangPrefix(pathReceived)) {
-        if (pathReceived.size() <= 1) {
+        if (pathReceived.size() == 1) {
             // if the size of the pathReceived is only 1 character long
             // then we can assume that the path is a language indicator for the index page
 
             if (language.find("de") != std::string::npos) {
-                return serverData->getRoot() + "/html/de/index.html";
+                return serverData.getRoot() + "/html/de/index.html";
             } else if (language.find("fr") != std::string::npos) {
-                return serverData->getRoot() + "/html/fr/index.html";
+                return serverData.getRoot() + "/html/fr/index.html";
             }
 
-            return serverData->getRoot() + "/html/en/index.html";
+            return serverData.getRoot() + "/html/en/index.html";
         }
 
         if (language.find("de") != std::string::npos) {
@@ -355,7 +360,7 @@ std::string Handler::buildPath(std::string &pathReceived, const std::string &Ext
         pathReceived += ".html";
     }
 
-    return contentRoot.count(Extension) ? serverData->getRoot() + contentRoot[Extension] + pathReceived : "";
+    return contentRoot.count(Extension) ? serverData.getRoot() + contentRoot[Extension] + pathReceived : "";
 }
 
 /**

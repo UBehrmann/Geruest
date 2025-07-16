@@ -45,6 +45,10 @@ cmake-build-debug
 
 .vscode
 
+# All the build directories
 build/
 build-msvc/
+build-lib/
+build-release/
+build-debug/
 

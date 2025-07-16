@@ -38,10 +38,28 @@ Geruest (German for "scaffold") is a lightweight C++ web framework designed to s
 - C++17 or later
 - CMake 3.10+
 - Threads
+- A compatible C++ compiler (e.g., GCC, Clang, MSVC)
 
-## Build Instructions
+## 🚀 Quick Start
 
-Goto the [BUILD_INSTRUCTIONS.md](./BUILD_INSTRUCTIONS.md) file for detailed instructions on how to build the library and example application.
+**One-command installation:**
+
+### Windows (PowerShell)
+```powershell
+git clone https://github.com/UBehrmann/Geruest.git; cd Geruest; mkdir build; cd build; cmake .. -A x64 -DCMAKE_BUILD_TYPE=Release; cmake --build . --config Release; cmake --install . --config Release
+```
+
+### Linux/macOS (Bash)
+```bash
+git clone https://github.com/UBehrmann/Geruest.git && cd Geruest && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build . && sudo cmake --install .
+```
+
+## 📚 Documentation
+
+- **[Quick Start Guide](./doc/QUICK_START.md)** - Get up and running in minutes
+- **[Build & Install Scripts](./doc/BUILD_SCRIPTS.md)** - Copy-paste build commands
+- **[Detailed Build Instructions](./doc/BUILD_INSTRUCTIONS.md)** - Complete build information
+- **[Installation Guide](./doc/INSTALLATION_INSTRUCTIONS.md)** - Advanced installation options
 
 ## Folder Structure
 
@@ -49,7 +67,7 @@ Goto the [BUILD_INSTRUCTIONS.md](./BUILD_INSTRUCTIONS.md) file for detailed inst
 /assets
 ├── JSONs
 ├── css/
-├── docs7
+├── docs/
 ├── images/
 ├── js/
 └──  translations/
@@ -76,7 +94,7 @@ Goto the [BUILD_INSTRUCTIONS.md](./BUILD_INSTRUCTIONS.md) file for detailed inst
 ### Example
 
 ```cpp
-#include "geruest.h"
+#include "Geruest.hpp"
 
 int main() {
     Geruest server;
@@ -84,9 +102,10 @@ int main() {
     // Configure server settings
     server.setPort(8080);
     server.setHostname("localhost");
+    server.addRoot("/path/to/your/website"); // Set the root directory for static files
 
     // Define a simple route
-    server.addRoute("/", [](const Request& req, Response& res) {
+    server.addRoute("/hello", [](const Request& req, Response& res) {
         res.setContentType("text/html");
         res.send("<h1>Welcome to Geruest!</h1>");
     });
@@ -100,7 +119,18 @@ int main() {
 
 ## Installation
 
-Download the Geruest library from the official repository and include it in your C++ project. Ensure you have a compatible C++ compiler and standard library.
+Clone the Geruest repository and include it in your C++ project:
+
+```bash
+git clone https://github.com/UBehrmann/Geruest.git
+```
+
+Ensure you have a compatible C++ compiler and standard library.
+
+We build the library for both Linux and Windows:
+- `.a` file for Linux
+- `.a` file for Windows using MinGW  
+- `.lib` file for Windows using MSVC 
 
 ### CMakeLists example
 
@@ -113,28 +143,28 @@ add_executable(MyWebsiteApp main.cpp)
 # Link to your library
 target_link_libraries(MyWebsiteApp
     PRIVATE
-    CppWebFramework
+    Geruest
 )
 
 # Include the library headers
 target_include_directories(MyWebsiteApp
     PRIVATE
-    /path/to/CppWebFramework/include
+    /path/to/Geruest/src
 )
 
 # Add the library binary directory (where the .lib/.a is)
-link_directories(/path/to/CppWebFramework/build)
+link_directories(/path/to/Geruest/build)
 ```
 
 ## CLI Commands
 
-### Connect to the server
+To connect to the server's CLI:
 
 ```bash
 nc ip_address port
 ```
 
-### CLI Commands
+Available commands:
 
 | Command   | Description                            |
 | --------- | -------------------------------------- |

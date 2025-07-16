@@ -50,11 +50,11 @@ private:
 
 	unsigned int messageCount = 0;
 
-	ServerData *serverData;
+	ServerData serverData;
 
 	const std::string IP;
 
-	char *buffer = new char[BUFFER_SIZE];
+	char *buffer;
 	unsigned int bufferLength = 0;
 
 	bool readSocket() { return readSocket(buffer, BUFFER_SIZE); }
@@ -91,9 +91,9 @@ private:
 
 public:
 #ifdef _WIN32
-	Handler(SOCKET socket, std::string IP, ServerData *serverData);
+	Handler(SOCKET socket, std::string IP, ServerData serverData);
 #else
-	Handler(int socket, std::string IP, ServerData *serverData);
+	Handler(int socket, std::string IP, ServerData serverData);
 #endif
 
 	~Handler();

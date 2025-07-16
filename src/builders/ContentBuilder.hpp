@@ -18,21 +18,13 @@
 class ContentBuilder {
 public:
 
-    ContentBuilder(std::string pathReceived, std::string serverRoot) : root(std::move(serverRoot)), path(std::move(pathReceived)) {
-        builtFile = loadFile(path);
-    }
+    ContentBuilder(std::string pathReceived, std::string serverRoot);
 
-    [[nodiscard]] std::string sizeString() const {
-        return std::to_string(builtFile.size());
-    }
+    [[nodiscard]] std::string sizeString() const;
 
-    [[nodiscard]] size_t size() const {
-        return builtFile.size();
-    }
+    [[nodiscard]] size_t size() const;
 
-    [[nodiscard]] std::string file() const {
-        return builtFile;
-    }
+    [[nodiscard]] std::string file() const;
 
 protected:
 
@@ -46,19 +38,7 @@ protected:
 	 * @param pathReceived
 	 * @return The content of the file
 	 */
-    [[nodiscard]] static std::string loadFile(const std::string& pathReceived) {
-
-        std::ifstream fileStream(pathReceived);
-
-        if (!fileStream) return "";
-
-        std::stringstream buffer;
-        buffer << fileStream.rdbuf();
-
-        fileStream.close();
-
-        return buffer.str();
-    }
+    [[nodiscard]] static std::string loadFile(const std::string& pathReceived);
 };
 
 #endif //CONTENTBUILDER_HPP
