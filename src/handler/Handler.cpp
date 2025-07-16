@@ -118,7 +118,7 @@ void Handler::run() {
         if (buffer == nullptr) {
             buffer = new char[BUFFER_SIZE];
         }
-
+        
         std::string rawRequest(buffer, bufferLength);
         requestStream = std::istringstream(rawRequest);
 
