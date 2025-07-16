@@ -11,7 +11,18 @@ For detailed build instructions specific to your platform, please see:
 
 ## Quick Start
 
-### Windows (PowerShell)
+### Windows (PowerShell) - MSVC Recommended
+```powershell
+# MSVC Build (Recommended for Windows)
+cd exemple
+Remove-Item -Recurse -Force build-msvc -ErrorAction SilentlyContinue
+mkdir build-msvc
+cd build-msvc
+cmake .. -A x64 -DCMAKE_BUILD_TYPE=Release
+cmake --build . --config Release
+```
+
+### Windows (PowerShell) - MinGW Alternative
 ```powershell
 # Build library
 Remove-Item -Recurse -Force build-lib -ErrorAction SilentlyContinue
@@ -28,6 +39,8 @@ cd build
 cmake -G "MinGW Makefiles" ..
 cmake --build .
 ```
+
+**Note**: If you encounter MinGW linking errors (missing crt2.o, libmingw32, etc.), use the MSVC build instead.
 
 ### Linux (Bash)
 ```bash

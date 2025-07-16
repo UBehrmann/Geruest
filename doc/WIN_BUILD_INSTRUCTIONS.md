@@ -132,12 +132,50 @@ This will install:
 - Headers to `C:\path\to\install\include\`
 - Library to `C:\path\to\install\lib\`
 
+## Manual MinGW-w64 Installation/Update
+
+If you need to install or update MinGW-w64 manually (without package managers):
+
+### Step 1: Download Latest MinGW-w64
+1. Visit https://winlibs.com/ (recommended) or https://www.mingw-w64.org/downloads/
+2. Download the latest release (e.g., `winlibs-x86_64-posix-seh-gcc-13.2.0-mingw-w64-11.0.1-r5.7z`)
+3. Choose the UCRT runtime version for better Windows compatibility
+
+### Step 2: Install/Update
+1. Extract the downloaded archive to `C:\mingw64` (or your preferred location)
+2. If updating an existing installation, backup your old MinGW folder first
+3. Update your PATH environment variable to point to the new `C:\mingw64\bin`
+
+### Step 3: Update PATH
+```powershell
+# Temporary (current session only)
+$env:PATH = "C:\mingw64\bin;" + $env:PATH
+
+# Permanent (requires administrator)
+[Environment]::SetEnvironmentVariable("PATH", "C:\mingw64\bin;" + [Environment]::GetEnvironmentVariable("PATH", "Machine"), "Machine")
+```
+
+### Step 4: Verify Installation
+```powershell
+gcc --version
+g++ --version
+```
+
 ## Troubleshooting
 
 ### MinGW Not Found
 If cmake cannot find MinGW, make sure it's in your PATH:
 ```powershell
-$env:PATH = "C:\mingw-w64\bin;" + $env:PATH
+$env:PATH = "C:\mingw64\bin;" + $env:PATH
+```
+
+### Old MinGW Version
+If you have an old MinGW installation (like GCC 6.3.0), you should update to at least GCC 8.0 or later:
+```powershell
+# Check current version
+gcc --version
+
+# If version is older than 8.0, follow the manual installation steps above
 ```
 
 ### DLL Issues
