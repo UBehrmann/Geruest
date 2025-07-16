@@ -13,7 +13,7 @@
 #include <filesystem>
 #include "Geruest.hpp"
 
-#define PORT 8080
+#define PORT 80
 #define HOSTNAME "localhost"
 
 Geruest* server;
