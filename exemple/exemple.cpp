@@ -10,6 +10,7 @@
  #include <iostream>
 #include <string>
 #include <csignal>
+#include <filesystem>
 #include "Geruest.hpp"
 
 #define PORT 8080
@@ -24,7 +25,7 @@ void signalHandler(int signum) {
 
 void addRoutes(Geruest* serverToAddRoutes);
 
-int main() {
+int main(int argc, char* argv[]) {
 
     server = new Geruest();
 
@@ -34,6 +35,12 @@ int main() {
 
     server->setPort(PORT);
     server->setHostname(HOSTNAME);
+    
+    // Get the absolute path to the website folder next to the executable
+    std::filesystem::path executablePath = std::filesystem::canonical(std::filesystem::path(argv[0]).parent_path());
+    std::filesystem::path websitePath = executablePath / "website";
+    
+    server->addRoot(websitePath.string());
 
     addRoutes(server);
 

@@ -50,3 +50,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_link_options(exemple PRIVATE "-s")
     endif()
 endif()
+
+# Copy website folder to build directory
+add_custom_command(TARGET exemple POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_CURRENT_SOURCE_DIR}/website
+    $<TARGET_FILE_DIR:exemple>/website
+    COMMENT "Copying website folder to build directory"
+)
