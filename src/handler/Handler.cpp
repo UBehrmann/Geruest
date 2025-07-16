@@ -160,11 +160,11 @@ void Handler::handleRequest(HTTPRequest *request) {
         std::string content_type = getContentType(extension);
         std::string contentPath = buildPath(path, extension, request);
 
-        std::cout << "Content path: " << contentPath << std::endl;
-		std::cout << "Content type: " << content_type << std::endl;
-		std::cout << "Extension: " << extension << std::endl;
-
         sendFile(content_type, contentPath, request);
+
+		std::cout << "Sent file: " << contentPath << std::endl;
+
+		return;
     }
 
     sendToLoggerPages("Not found: " + request->getPathString());
@@ -355,7 +355,7 @@ std::string Handler::buildPath(std::string &pathReceived, const std::string &Ext
         pathReceived += ".html";
     }
 
-    return contentRoot.count(Extension) ? serverData->getRoot() + contentRoot[Extension] + pathReceived : "";
+    return contentRoot.count(Extension) ? serverData->getRoot() + contentRoot[Extension] + "/" + pathReceived : "";
 }
 
 /**

@@ -47,4 +47,5 @@ cmake-build-debug
 
 build/
 build-msvc/
+build-lib/
 

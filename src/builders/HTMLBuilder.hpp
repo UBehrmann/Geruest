@@ -43,8 +43,6 @@ class HtmlBuilder : public ContentBuilder {
         unsigned langStart = rootSize + 6;
         unsigned langSize = 2;
 
-        std::cout << "Building HTML file: " << path << std::endl;
-
         // Get language from path
         std::string language = path.substr(langStart, langSize);
 
@@ -54,14 +52,10 @@ class HtmlBuilder : public ContentBuilder {
         // Load template file, remove language redirection
         templatePath.erase(langStart, langSize + 1);  // remove the language part
 
-		std::cout << "Template path: " << templatePath << std::endl;
-
         builtFile = loadFile(templatePath);
 
         // Check if template file was loaded
         if (builtFile.empty()) return;
-
-        std::cout << "Building HTML file 2." << std::endl;
 
         // Remplace keywords with content
         // TODO : find a better names for this function!
@@ -72,8 +66,6 @@ class HtmlBuilder : public ContentBuilder {
 
         // Change references to the correct path
         replaceReferences(language);
-
-        std::cout << "Building HTML file end." << std::endl;
 
         // Save the file
         if (!FileManagement::saveFile(path, builtFile)) {
@@ -124,8 +116,8 @@ class HtmlBuilder : public ContentBuilder {
             std::string pathToInsert = root + keyword.substr(1);  // remove the '[' character
 
             // path_to_json:element
-            std::string pathToJSON = pathToInsert.substr(0, pathToInsert.find(':'));
-            std::string element = pathToInsert.substr(pathToInsert.find(':') + 1);
+            std::string pathToJSON = pathToInsert.substr(0, pathToInsert.rfind(':'));
+            std::string element = pathToInsert.substr(pathToInsert.rfind(':') + 1);
 
             std::string toInsert;
 
