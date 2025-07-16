@@ -32,6 +32,7 @@ jobs:
           cp build/lib/libGeruest.a build/lib/libGeruest-linux.a
         
       - name: Upload Linux static lib
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: build/lib/libGeruest-linux.a
@@ -63,9 +64,10 @@ jobs:
           cp build/lib/libGeruest.a build/lib/libGeruest-windows.a
         
       - name: Upload Windows static lib (.a)
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: build/lib/libGeruest-windows.a
+          files: build/lib/libGeruest-linux.a
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -86,8 +88,9 @@ jobs:
           copy build\lib\Release\Geruest.lib build\Geruest-msvc.lib
 
       - name: Upload Windows static lib (.lib)
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: build/Geruest-msvc.lib
+          files: build/lib/libGeruest-linux.a
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
