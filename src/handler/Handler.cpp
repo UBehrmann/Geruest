@@ -112,7 +112,7 @@ void Handler::sendToLoggerError(const std::string &message) const {
 void Handler::run() {
     // Read the socket
     // Message count is used to prevent infinite loops
-    while (++messageCount < 100 && readSocket()) {
+    while (++messageCount < MAX_MESSAGES_PER_CONNECTION && readSocket()) {
         std::string rawRequest(buffer, bufferLength);
         requestStream = std::istringstream(rawRequest);
         HTTPRequest hTTPRequest(rawRequest, IP, serverData.getRoot());
