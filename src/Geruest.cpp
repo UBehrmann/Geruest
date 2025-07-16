@@ -186,7 +186,7 @@ void Geruest::giveToHandler(SOCKET new_socket, std::string &IP) {
 #else
 void Geruest::giveToHandler(int new_socket, std::string &IP) {
 #endif
-    if (auto clientHandler = std::make_unique<Handler>(new_socket, IP, &serverData)) {
+    if (auto clientHandler = std::make_unique<Handler>(new_socket, IP, serverData)) {
         // sendToLogger("New connection");
 
         std::thread clientThread([handler = std::move(clientHandler)]() mutable {

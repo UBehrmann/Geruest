@@ -122,10 +122,6 @@ class HTTPRequest {
             queryString = pathWithQuery.substr(questionMarkPos + 1);
         }
 
-        if (!pathOnly.empty() && pathOnly[0] == '/') {
-            pathOnly.erase(0, 1);
-        }
-
         _path = pathOnly;
         _pathParts = splitString(_path, '/');
 
