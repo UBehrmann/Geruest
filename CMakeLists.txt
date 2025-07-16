@@ -19,6 +19,13 @@ find_package(Threads REQUIRED)
 # Static library
 add_library(Geruest STATIC
     src/Geruest.cpp
+    src/builders/ContentBuilder.cpp
+    src/builders/CSSBuilder.cpp
+    src/builders/HTMLBuilder.cpp
+    src/builders/JSBuilder.cpp
+    src/data/HTTPRequest.cpp
+    src/data/HTTPResponse.cpp
+    src/FileManagement/FileManagement.cpp
     src/handler/Handler.cpp
     src/parser/JSONParser.cpp
 )
