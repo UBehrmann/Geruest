@@ -40,13 +40,26 @@ Geruest (German for "scaffold") is a lightweight C++ web framework designed to s
 - Threads
 - A compatible C++ compiler (e.g., GCC, Clang, MSVC)
 
-## Build Instructions
+## 🚀 Quick Start
 
-Go to the [BUILD_INSTRUCTIONS.md](./doc/BUILD_INSTRUCTIONS.md) file for detailed instructions on how to build the library and example application.
+**One-command installation:**
 
-## Installation Instructions
+### Windows (PowerShell)
+```powershell
+git clone https://github.com/UBehrmann/Geruest.git; cd Geruest; mkdir build; cd build; cmake .. -A x64 -DCMAKE_BUILD_TYPE=Release; cmake --build . --config Release; cmake --install . --config Release
+```
 
-For detailed installation instructions, including system-wide installation, local installation, and usage in other projects, see [INSTALLATION_INSTRUCTIONS.md](./doc/INSTALLATION_INSTRUCTIONS.md).
+### Linux/macOS (Bash)
+```bash
+git clone https://github.com/UBehrmann/Geruest.git && cd Geruest && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build . && sudo cmake --install .
+```
+
+## 📚 Documentation
+
+- **[Quick Start Guide](./doc/QUICK_START.md)** - Get up and running in minutes
+- **[Build & Install Scripts](./doc/BUILD_SCRIPTS.md)** - Copy-paste build commands
+- **[Detailed Build Instructions](./doc/BUILD_INSTRUCTIONS.md)** - Complete build information
+- **[Installation Guide](./doc/INSTALLATION_INSTRUCTIONS.md)** - Advanced installation options
 
 ## Folder Structure
 

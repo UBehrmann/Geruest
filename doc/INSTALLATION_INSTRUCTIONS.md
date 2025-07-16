@@ -2,6 +2,26 @@
 
 This guide provides step-by-step instructions for installing the Geruest library on your system or for use in other projects.
 
+## 🚀 Quick Installation
+
+**Want to install immediately? Use these one-line commands:**
+
+### Windows (PowerShell)
+```powershell
+git clone https://github.com/UBehrmann/Geruest.git; cd Geruest; mkdir build; cd build; cmake .. -A x64 -DCMAKE_BUILD_TYPE=Release; cmake --build . --config Release; cmake --install . --config Release
+```
+
+### Linux/macOS (Bash)
+```bash
+git clone https://github.com/UBehrmann/Geruest.git && cd Geruest && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build . && sudo cmake --install .
+```
+
+**For more installation options, see [BUILD_SCRIPTS.md](BUILD_SCRIPTS.md) or [QUICK_START.md](QUICK_START.md)**.
+
+---
+
+## Detailed Installation Guide
+
 ## Table of Contents
 
 1. [Prerequisites](#prerequisites)
