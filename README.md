@@ -44,6 +44,10 @@ Geruest (German for "scaffold") is a lightweight C++ web framework designed to s
 
 Go to the [BUILD_INSTRUCTIONS.md](./doc/BUILD_INSTRUCTIONS.md) file for detailed instructions on how to build the library and example application.
 
+## Installation Instructions
+
+For detailed installation instructions, including system-wide installation, local installation, and usage in other projects, see [INSTALLATION_INSTRUCTIONS.md](./doc/INSTALLATION_INSTRUCTIONS.md).
+
 ## Folder Structure
 
 ```

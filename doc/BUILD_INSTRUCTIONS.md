@@ -1,5 +1,7 @@
 # Geruest Library Build Instructions
 
+This document provides instructions for building the Geruest library for development purposes. If you want to install the library for use in other projects, see [INSTALLATION_INSTRUCTIONS.md](INSTALLATION_INSTRUCTIONS.md).
+
 This project provides multiple CMake configurations for different build scenarios.
 
 ## Platform-Specific Instructions
@@ -29,7 +31,8 @@ Remove-Item -Recurse -Force build-lib -ErrorAction SilentlyContinue
 mkdir build-lib
 cd build-lib
 cmake -G "MinGW Makefiles" ..
-cmake --build .
+cmake --build . --config Release
+cmake --install . --config Release
 
 # Build example
 cd ../exemple
