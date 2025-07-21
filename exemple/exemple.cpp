@@ -60,14 +60,14 @@ int main(int argc, char* argv[]) {
 
 void addRoutes(Geruest* serverToAddRoutes) {
     // Example of how to add a route:
-    serverToAddRoutes->addRoute("test", [](const HTTPRequest& req) {
+    serverToAddRoutes->addRoute("/test", [](const HTTPRequest& req) {
         HTTPResponse response("200 OK");
         response.setHeader("Content-Type", "text/html");
         response.setBody("<h1>Hello, World!</h1><p>Welcome to Geruest server!</p>");
         return response;
     });
 
-    serverToAddRoutes->addRoute("api/hello", [](const HTTPRequest& req) {
+    serverToAddRoutes->addRoute("/api/hello", [](const HTTPRequest& req) {
         HTTPResponse response("200 OK");
         response.setHeader("Content-Type", "application/json");
         response.setBody(R"({"message": "Hello from API!"})");
