@@ -15,6 +15,8 @@
 #include <string>
 #include <utility>
 
+namespace geruest {
+
 class ContentBuilder {
 public:
 
@@ -40,5 +42,7 @@ protected:
 	 */
     [[nodiscard]] static std::string loadFile(const std::string& pathReceived);
 };
+
+}  // namespace geruest
 
 #endif //CONTENTBUILDER_HPP

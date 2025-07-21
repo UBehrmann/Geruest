@@ -10,6 +10,8 @@
 
 #include "HTMLBuilder.hpp"
 
+namespace geruest {
+
 HtmlBuilder::HtmlBuilder(const std::string &path, const std::string &serverRoot) 
     : ContentBuilder(path, serverRoot) {
     buildHtml();
@@ -145,3 +147,5 @@ void HtmlBuilder::replaceReferences(const std::string &language) {
         }
     }
 }
+
+}  // namespace geruest

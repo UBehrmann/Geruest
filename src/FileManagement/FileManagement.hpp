@@ -16,6 +16,8 @@
 #include <string>
 #include <sys/stat.h>
 
+namespace geruest {
+
 class FileManagement {
 public:
 	/**
@@ -70,5 +72,7 @@ public:
 	 */
 	static bool isOlderThan(const std::string &filePath, int hours);
 };
+
+}  // namespace geruest
 
 #endif //GERUEST_FILEMANAGEMENT_HPP

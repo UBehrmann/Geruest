@@ -37,6 +37,8 @@
 // Max packet size
 #define BUFFER_SIZE 8192
 
+namespace geruest {
+
 class Geruest {
    public:
     Geruest();
@@ -90,5 +92,7 @@ class Geruest {
     void giveToHandler(int new_socket, std::string& IP);
 #endif
 };
+
+}  // namespace geruest
 
 #endif  // GERUEST_GERUEST_HPP

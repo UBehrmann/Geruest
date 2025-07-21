@@ -9,6 +9,8 @@
 
 #include "ContentBuilder.hpp"
 
+namespace geruest {
+
 ContentBuilder::ContentBuilder(std::string pathReceived, std::string serverRoot) 
     : root(std::move(serverRoot)), path(std::move(pathReceived)) {
     builtFile = loadFile(path);
@@ -38,3 +40,5 @@ std::string ContentBuilder::loadFile(const std::string& pathReceived) {
 
     return buffer.str();
 }
+
+}  // namespace geruest

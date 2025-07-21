@@ -12,10 +12,13 @@
 #include <algorithm>
 #include <climits>
 
-#include "builders/CSSBuilder.hpp"
 #include "builders/ContentBuilder.hpp"
+#include "builders/CSSBuilder.hpp"
 #include "builders/HTMLBuilder.hpp"
 #include "builders/JSBuilder.hpp"
+#include "FileManagement/FileManagement.hpp"
+
+namespace geruest {
 
 #ifdef _WIN32
 Handler::Handler(SOCKET socket, std::string IP, ServerData serverData)
@@ -378,3 +381,5 @@ std::string Handler::getContentType(const std::string &extension) {
 
     return contentTypes.count(extension) ? contentTypes[extension] : "application/octet-stream";
 }
+
+}  // namespace geruest

@@ -22,6 +22,7 @@
 #include <fstream>
 #include <sstream>
 
+namespace geruest {
 
 class JSONParser {
 
@@ -228,5 +229,7 @@ inline bool saveArrayJSONToFile(const JSONParser &json, const std::string &fileP
 
     return true;
 }
+
+}  // namespace geruest
 
 #endif //JSONParser_HPP

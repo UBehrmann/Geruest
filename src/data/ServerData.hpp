@@ -18,6 +18,8 @@
 #include "HTTPRequest.hpp"
 #include "HTTPResponse.hpp"
 
+namespace geruest {
+
 using RouteHandler = std::function<HTTPResponse(const HTTPRequest&)>;
 
 // struct with the server data
@@ -34,5 +36,7 @@ struct ServerData {
 
     std::string getRoot() const { return root; }
 };
+
+}  // namespace geruest
 
 #endif  // GERUEST_SERVERDATA_HPP

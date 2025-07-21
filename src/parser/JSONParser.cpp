@@ -9,6 +9,8 @@
 
 #include "JSONParser.hpp"
 
+namespace geruest {
+
 #include <string>
 #include <iostream>
 #include <map>
@@ -1330,3 +1332,5 @@ std::string JSONParser::arrayToString() const {
 std::vector<JSONParser> JSONParser::getJSONArray() {
     return arrayData;
 }
+
+}  // namespace geruest
