@@ -9,6 +9,8 @@
 
 #include "HTTPRequest.hpp"
 
+namespace geruest {
+
 std::string urlDecode(const std::string& str) {
     std::string result;
     result.reserve(str.size());
@@ -249,3 +251,5 @@ std::string HTTPRequest::toLower(const std::string& str) {
     }
     return result;
 }
+
+}  // namespace geruest

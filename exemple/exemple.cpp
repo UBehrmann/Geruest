@@ -16,6 +16,8 @@
 #define PORT 80
 #define HOSTNAME "localhost"
 
+using namespace geruest;
+
 Geruest* server;
 
 void signalHandler(int signum) {

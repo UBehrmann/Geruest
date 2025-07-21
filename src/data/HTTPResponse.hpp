@@ -14,6 +14,8 @@
 #include <unordered_map>
 #include <sstream>
 
+namespace geruest {
+
 /**
  * @class HTTPResponse
  * @brief A class for building dynamic HTTP responses with customizable headers.
@@ -74,5 +76,7 @@ public:
 [[maybe_unused]] std::string buildFailHeader();
 
 [[maybe_unused]] std::string buildInternalServerErrorHeader();
+
+}  // namespace geruest
 
 #endif // GERUEST_HTTPRESPONSE_HPP
