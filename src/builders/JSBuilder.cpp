@@ -38,6 +38,9 @@ std::string JSBuilder::getFileNameWithoutExtension(const std::string& path) {
 }
 
 void JSBuilder::builJS() {
+	if(json == nullptr) {
+		  return;
+	 }
     JSONParser jsonForFile = json->getObject(pageName);
 
     // If there are no files to include, return

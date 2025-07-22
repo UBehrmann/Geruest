@@ -195,7 +195,7 @@ public:
 inline JSONParser* getJSONFromFile(const std::string &filePath) {
     std::ifstream file(filePath);
     if (!file.is_open()) {
-        throw std::runtime_error("Could not open file");
+        return nullptr;
     }
 
     std::stringstream buffer;
