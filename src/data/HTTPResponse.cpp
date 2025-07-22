@@ -9,6 +9,8 @@
 
 #include "HTTPResponse.hpp"
 
+namespace geruest {
+
 HTTPResponse::HTTPResponse(const std::string& statusCode) : status(statusCode) {
     // Default headers
     headers["Content-Type"] = "text/html";
@@ -94,3 +96,5 @@ std::string buildInternalServerErrorHeader() {
     response.setBody("500 Internal Server Error");
     return response.toString();
 }
+
+}  // namespace geruest

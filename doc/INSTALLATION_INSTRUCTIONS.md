@@ -6,8 +6,8 @@
 
 ```powershell
 Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
-mkdir build-release
-cd build-release
+mkdir build
+cd build
 cmake .. -A x64 -DCMAKE_BUILD_TYPE=Release
 cmake --build . --config Release
 cmake --install . --config Release

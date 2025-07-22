@@ -9,6 +9,8 @@
 
 #include "CSSBuilder.hpp"
 
+namespace geruest {
+
 CSSBuilder::CSSBuilder(const std::string& path, const std::string& serverRoot) 
     : ContentBuilder(path, serverRoot) {
     json = getJSONFromFile(serverRoot + "/files_maps/css_file_map.json");
@@ -46,3 +48,5 @@ void CSSBuilder::builCSS() {
         builtFile += loadFile(root + "/assets/css" + jsonForFile.getString(key)) + "\n\n";
     }
 }
+
+}  // namespace geruest

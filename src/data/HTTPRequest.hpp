@@ -18,6 +18,8 @@
 #include <utility>
 #include <vector>
 
+namespace geruest {
+
 std::string urlDecode(const std::string& str);
 
 class HTTPRequest {
@@ -82,5 +84,7 @@ class HTTPRequest {
 
     static std::string toLower(const std::string& str);
 };
+
+}  // namespace geruest
 
 #endif  // GERUEST_HTTPREQUEST_HPP

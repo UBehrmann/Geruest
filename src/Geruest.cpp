@@ -22,6 +22,8 @@
 
 #include "data/HTTPResponse.hpp"
 
+namespace geruest {
+
 Geruest::Geruest() {
 #ifdef _WIN32
     WSADATA wsaData;
@@ -221,3 +223,5 @@ void Geruest::sendToLogger(const std::string &message) const {
 void Geruest::sendToLoggerError(const std::string &message) const {
 	std::cerr << "Error: " << message << std::endl;
 }
+
+}  // namespace geruest

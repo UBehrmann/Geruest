@@ -22,6 +22,7 @@
 #include <fstream>
 #include <sstream>
 
+namespace geruest {
 
 class JSONParser {
 
@@ -194,7 +195,7 @@ public:
 inline JSONParser* getJSONFromFile(const std::string &filePath) {
     std::ifstream file(filePath);
     if (!file.is_open()) {
-        throw std::runtime_error("Could not open file");
+        return nullptr;
     }
 
     std::stringstream buffer;
@@ -228,5 +229,7 @@ inline bool saveArrayJSONToFile(const JSONParser &json, const std::string &fileP
 
     return true;
 }
+
+}  // namespace geruest
 
 #endif //JSONParser_HPP

@@ -34,6 +34,8 @@
 // Max packet size
 #define BUFFER_SIZE 8192
 
+namespace geruest {
+
 class Handler {
 private:
 	static unsigned clientCount;
@@ -55,7 +57,7 @@ private:
 	const std::string IP;
 
 	char *buffer;
-	unsigned int bufferLength = 0;
+	int bufferLength = 0;
 
 	bool readSocket() { return readSocket(buffer, BUFFER_SIZE); }
 
@@ -102,5 +104,7 @@ public:
 
 	void sendToLoggerError(const std::string &message) const;
 };
+
+}  // namespace geruest
 
 #endif  // GERUEST_HANDLER_HPP

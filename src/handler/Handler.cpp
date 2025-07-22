@@ -12,10 +12,12 @@
 #include <algorithm>
 #include <climits>
 
-#include "builders/CSSBuilder.hpp"
 #include "builders/ContentBuilder.hpp"
+#include "builders/CSSBuilder.hpp"
 #include "builders/HTMLBuilder.hpp"
 #include "builders/JSBuilder.hpp"
+
+namespace geruest {
 
 #ifdef _WIN32
 Handler::Handler(SOCKET socket, std::string IP, ServerData serverData)
@@ -119,7 +121,13 @@ void Handler::run() {
             buffer = new char[BUFFER_SIZE];
         }
         
-        std::string rawRequest(buffer, bufferLength);
+        // Ensure bufferLength is valid before creating string
+        if (bufferLength <= 0) {
+            sendToLoggerError("Invalid buffer length in run loop.");
+            break;
+        }
+        
+        std::string rawRequest(buffer, static_cast<size_t>(bufferLength));
         requestStream = std::istringstream(rawRequest);
 
         HTTPRequest hTTPRequest(rawRequest, IP, serverData.getRoot());
@@ -128,8 +136,14 @@ void Handler::run() {
         if (hTTPRequest.hasHeader("content-length") && hTTPRequest.getBody().empty()) {
             readSocket();
 
+            // Ensure bufferLength is valid before creating string
+            if (bufferLength <= 0) {
+                sendToLoggerError("Invalid buffer length when reading body.");
+                break;
+            }
+
             // Append the new data to the existing buffer
-            std::string newData(buffer, bufferLength);
+            std::string newData(buffer, static_cast<size_t>(bufferLength));
             requestStream.str(requestStream.str() + newData);
 
             hTTPRequest = HTTPRequest(requestStream.str(), IP, serverData.getRoot());
@@ -378,3 +392,5 @@ std::string Handler::getContentType(const std::string &extension) {
 
     return contentTypes.count(extension) ? contentTypes[extension] : "application/octet-stream";
 }
+
+}  // namespace geruest

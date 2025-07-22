@@ -1,0 +1,339 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Clean Build Directory",
+            "type": "shell",
+            "command": "Remove-Item",
+            "args": [
+                "-Recurse",
+                "-Force",
+                "build",
+                "-ErrorAction",
+                "SilentlyContinue"
+            ],
+            "group": "build",
+            "detail": "Clean the build directory"
+        },
+        {
+            "label": "Configure CMake (MSVC)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "..",
+                "-A",
+                "x64",
+                "-DCMAKE_BUILD_TYPE=Release"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/build"
+            },
+            "group": "build",
+            "dependsOn": [
+                "Create Build Directory"
+            ],
+            "detail": "Configure CMake with MSVC compiler"
+        },
+        {
+            "label": "Configure CMake (MinGW)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "..",
+                "-G",
+                "MinGW Makefiles",
+                "-DCMAKE_BUILD_TYPE=Release"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/build"
+            },
+            "group": "build",
+            "dependsOn": [
+                "Create Build Directory"
+            ],
+            "detail": "Configure CMake with MinGW compiler"
+        },
+        {
+            "label": "Create Build Directory",
+            "type": "shell",
+            "command": "mkdir",
+            "args": [
+                "build"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "detail": "Create build directory if it doesn't exist"
+        },
+        {
+            "label": "Build Library (MSVC)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                ".",
+                "--config",
+                "Release"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/build"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "dependsOn": [
+                "Configure CMake (MSVC)"
+            ],
+            "problemMatcher": [
+                "$msCompile"
+            ],
+            "detail": "Build the Geruest library using MSVC"
+        },
+        {
+            "label": "Build Library (MinGW)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                ".",
+                "--config",
+                "Release"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/build"
+            },
+            "group": "build",
+            "dependsOn": [
+                "Configure CMake (MinGW)"
+            ],
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "detail": "Build the Geruest library using MinGW"
+        },
+        {
+            "label": "Install Library (MSVC)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--install",
+                ".",
+                "--config",
+                "Release"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/build"
+            },
+            "group": "build",
+            "dependsOn": [
+                "Build Library (MSVC)"
+            ],
+            "detail": "Install the Geruest library"
+        },
+        {
+            "label": "Install Library (MinGW)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--install",
+                ".",
+                "--config",
+                "Release"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/build"
+            },
+            "group": "build",
+            "dependsOn": [
+                "Build Library (MinGW)"
+            ],
+            "detail": "Install the Geruest library"
+        },
+        {
+            "label": "Build Example (MSVC)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "..",
+                "-A",
+                "x64",
+                "-DCMAKE_BUILD_TYPE=Release"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/exemple/build"
+            },
+            "group": "build",
+            "dependsOn": [
+                "Create Example Build Directory"
+            ],
+            "detail": "Configure and build the example"
+        },
+        {
+            "label": "Build Example (MinGW)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "..",
+                "-G",
+                "MinGW Makefiles",
+                "-DCMAKE_BUILD_TYPE=Release"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/exemple/build"
+            },
+            "group": "build",
+            "dependsOn": [
+                "Create Example Build Directory"
+            ],
+            "detail": "Configure and build the example with MinGW"
+        },
+        {
+            "label": "Create Example Build Directory",
+            "type": "shell",
+            "command": "mkdir",
+            "args": [
+                "build"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/exemple"
+            },
+            "group": "build",
+            "detail": "Create example build directory"
+        },
+        {
+            "label": "Compile Example (MSVC)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                ".",
+                "--config",
+                "Release"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/exemple/build"
+            },
+            "group": "build",
+            "dependsOn": [
+                "Build Example (MSVC)"
+            ],
+            "problemMatcher": [
+                "$msCompile"
+            ],
+            "detail": "Compile the example executable"
+        },
+        {
+            "label": "Compile Example (MinGW)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                ".",
+                "--config",
+                "Release"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/exemple/build"
+            },
+            "group": "build",
+            "dependsOn": [
+                "Build Example (MinGW)"
+            ],
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "detail": "Compile the example executable with MinGW"
+        },
+        {
+            "label": "Run Example",
+            "type": "shell",
+            "command": ".\\Release\\exemple.exe",
+            "options": {
+                "cwd": "${workspaceFolder}/exemple/build"
+            },
+            "group": "test",
+            "dependsOn": [
+                "Compile Example (MSVC)"
+            ],
+            "isBackground": false,
+            "detail": "Run the example server"
+        },
+        {
+            "label": "Run Example (MinGW)",
+            "type": "shell",
+            "command": ".\\exemple.exe",
+            "options": {
+                "cwd": "${workspaceFolder}/exemple/build"
+            },
+            "group": "test",
+            "dependsOn": [
+                "Compile Example (MinGW)"
+            ],
+            "isBackground": false,
+            "detail": "Run the example server (MinGW build)"
+        },
+        {
+            "label": "Build and Run Example (MSVC)",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "Clean Example Build",
+                "Compile Example (MSVC)",
+                "Run Example"
+            ],
+            "group": "test",
+            "detail": "Build and run the example server with MSVC"
+        },
+        {
+            "label": "Build and Run Example (MinGW)",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "Clean Example Build",
+                "Compile Example (MinGW)",
+                "Run Example (MinGW)"
+            ],
+            "group": "test",
+            "detail": "Build and run the example server with MinGW"
+        },
+        {
+            "label": "Clean Example Build",
+            "type": "shell",
+            "command": "Remove-Item",
+            "args": [
+                "-Recurse",
+                "-Force",
+                "build",
+                "-ErrorAction",
+                "SilentlyContinue"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/exemple"
+            },
+            "group": "build",
+            "detail": "Clean the example build directory"
+        },
+        {
+            "label": "Full Build (MSVC)",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "Clean Build Directory",
+                "Build Library (MSVC)",
+                "Install Library (MSVC)"
+            ],
+            "group": "build",
+            "detail": "Complete build and install of the library with MSVC"
+        },
+        {
+            "label": "Full Build (MinGW)",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "Clean Build Directory",
+                "Build Library (MinGW)",
+                "Install Library (MinGW)"
+            ],
+            "group": "build",
+            "detail": "Complete build and install of the library with MinGW"
+        }
+    ]
+}

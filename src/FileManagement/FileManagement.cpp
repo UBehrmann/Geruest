@@ -9,6 +9,8 @@
 
 #include "FileManagement.hpp"
 
+namespace geruest {
+
 bool FileManagement::createFolder(const std::string& path) {
     try {
         // Check if parent folder exists
@@ -93,3 +95,5 @@ bool FileManagement::isOlderThan(const std::string &filePath, int hours) {
     // Return true if the file is older than the specified number of hours
     return (diffInHours > hours);
 }
+
+}  // namespace geruest

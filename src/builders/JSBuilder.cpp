@@ -11,6 +11,8 @@
 
 #include "JSBuilder.hpp"
 
+namespace geruest {
+
 JSBuilder::JSBuilder(const std::string& path, const std::string& serverRoot) 
     : ContentBuilder(path, serverRoot) {
     json = getJSONFromFile(serverRoot + "/files_maps/js_file_map.json");
@@ -36,6 +38,9 @@ std::string JSBuilder::getFileNameWithoutExtension(const std::string& path) {
 }
 
 void JSBuilder::builJS() {
+	if(json == nullptr) {
+		  return;
+	 }
     JSONParser jsonForFile = json->getObject(pageName);
 
     // If there are no files to include, return
@@ -48,3 +53,5 @@ void JSBuilder::builJS() {
         builtFile += loadFile(root + "/assets/js" + jsonForFile.getString(key)) + "\n\n";
     }
 }
+
+}  // namespace geruest

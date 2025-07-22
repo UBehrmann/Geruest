@@ -20,6 +20,8 @@
 
 namespace fs = std::filesystem;
 
+namespace geruest {
+
 class HtmlBuilder : public ContentBuilder {
    public:
     HtmlBuilder(const std::string &path, const std::string &serverRoot);
@@ -42,5 +44,7 @@ class HtmlBuilder : public ContentBuilder {
      */
     void replaceReferences(const std::string &language);
 };
+
+}  // namespace geruest
 
 #endif  // HTMLBUILDER_HPP

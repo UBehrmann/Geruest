@@ -15,6 +15,8 @@
 #include <vector>
 #include "parser/JSONParser.hpp"
 
+namespace geruest {
+
 class CSSBuilder : public ContentBuilder {
  public:
 
@@ -30,5 +32,7 @@ class CSSBuilder : public ContentBuilder {
   void builCSS();
 
 };
+
+}  // namespace geruest
 
 #endif //CSSBUILDER_HPP

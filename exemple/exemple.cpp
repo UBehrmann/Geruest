@@ -16,6 +16,8 @@
 #define PORT 80
 #define HOSTNAME "localhost"
 
+using namespace geruest;
+
 Geruest* server;
 
 void signalHandler(int signum) {
@@ -59,18 +61,43 @@ int main(int argc, char* argv[]) {
 }
 
 void addRoutes(Geruest* serverToAddRoutes) {
-    // Example of how to add a route:
-    serverToAddRoutes->addRoute("test", [](const HTTPRequest& req) {
+    // Example GET route
+    serverToAddRoutes->addRoute("/test", [](const HTTPRequest& req) {
         HTTPResponse response("200 OK");
         response.setHeader("Content-Type", "text/html");
         response.setBody("<h1>Hello, World!</h1><p>Welcome to Geruest server!</p>");
         return response;
     });
 
-    serverToAddRoutes->addRoute("api/hello", [](const HTTPRequest& req) {
+    // GET endpoint
+    serverToAddRoutes->addRoute("/api/get", [](const HTTPRequest& req) {
         HTTPResponse response("200 OK");
         response.setHeader("Content-Type", "application/json");
-        response.setBody(R"({"message": "Hello from API!"})");
+        response.setBody(R"({"method": "GET", "message": "GET request received!"})");
+        return response;
+    });
+
+    // POST endpoint
+    serverToAddRoutes->addRoute("/api/post", [](const HTTPRequest& req) {
+        HTTPResponse response("200 OK");
+        response.setHeader("Content-Type", "application/json");
+        response.setBody(R"({\"method\": \"POST\", \"message\": \"POST request received!\", \"body\": ")" + req.getBody() + "}");
+        return response;
+    });
+
+    // PUT endpoint
+    serverToAddRoutes->addRoute("/api/put", [](const HTTPRequest& req) {
+        HTTPResponse response("200 OK");
+        response.setHeader("Content-Type", "application/json");
+        response.setBody(R"({\"method\": \"PUT\", \"message\": \"PUT request received!\", \"body\": ")" + req.getBody() + "}");
+        return response;
+    });
+
+    // DELETE endpoint
+    serverToAddRoutes->addRoute("/api/delete", [](const HTTPRequest& req) {
+        HTTPResponse response("200 OK");
+        response.setHeader("Content-Type", "application/json");
+        response.setBody(R"({\"method\": \"DELETE\", \"message\": \"DELETE request received!\"})");
         return response;
     });
 }
