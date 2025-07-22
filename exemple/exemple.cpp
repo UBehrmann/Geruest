@@ -73,7 +73,7 @@ void addRoutes(Geruest* serverToAddRoutes) {
     serverToAddRoutes->addRoute("/api/get", [](const HTTPRequest& req) {
         HTTPResponse response("200 OK");
         response.setHeader("Content-Type", "application/json");
-        response.setBody(R"({\"method\": \"GET\", \"message\": \"GET request received!\"})");
+        response.setBody(R"({"method": "GET", "message": "GET request received!"})");
         return response;
     });
 
