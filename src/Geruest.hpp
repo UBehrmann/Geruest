@@ -72,7 +72,7 @@ class Geruest {
     int server_fd = -1;  // Socket descriptor for the server
 #endif
 
-    struct sockaddr_in address = {0};
+    struct sockaddr_in address{};
 
     bool running = true;
 
