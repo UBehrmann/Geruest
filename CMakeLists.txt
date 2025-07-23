@@ -10,6 +10,13 @@ if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++ -static")
 endif()
 
+# Enable more warnings for all compilers
+if (MSVC)
+    add_compile_options(/W4 /permissive-)
+else()
+    add_compile_options(-Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+endif()
+
 # Output static libs to /lib
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
