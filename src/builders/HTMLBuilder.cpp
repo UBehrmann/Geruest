@@ -12,8 +12,8 @@
 
 namespace geruest {
 
-HtmlBuilder::HtmlBuilder(const std::string &path, const std::string &serverRoot) 
-    : ContentBuilder(path, serverRoot) {
+HtmlBuilder::HtmlBuilder(const std::string &path, const std::string &serverRoot, bool removeComments) 
+    : ContentBuilder(path, serverRoot, removeComments) {
     buildHtml();
 }
 
@@ -43,6 +43,11 @@ void HtmlBuilder::buildHtml() {
     templatePath.erase(langStart, langSize + 1);  // remove the language part
 
     builtFile = loadFile(templatePath);
+
+    // Remove comments if enabled
+    if (removeComments) {
+        builtFile = removeCommentsFromString(builtFile, FILETYPE_HTML);
+    }
 
     // Check if template file was loaded
     if (builtFile.empty()) return;

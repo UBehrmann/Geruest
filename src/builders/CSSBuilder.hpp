@@ -20,7 +20,7 @@ namespace geruest {
 class CSSBuilder : public ContentBuilder {
  public:
 
-  CSSBuilder(const std::string& path, const std::string& serverRoot);
+  CSSBuilder(const std::string& path, const std::string& serverRoot, bool removeComments = true);
 
  private:
 

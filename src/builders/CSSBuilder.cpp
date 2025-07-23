@@ -11,8 +11,8 @@
 
 namespace geruest {
 
-CSSBuilder::CSSBuilder(const std::string& path, const std::string& serverRoot) 
-    : ContentBuilder(path, serverRoot) {
+CSSBuilder::CSSBuilder(const std::string& path, const std::string& serverRoot, bool removeComments) 
+    : ContentBuilder(path, serverRoot, removeComments) {
     json = getJSONFromFile(serverRoot + "/files_maps/css_file_map.json");
     pageName = getFileNameWithoutExtension(path);
     builCSS();
@@ -46,6 +46,11 @@ void CSSBuilder::builCSS() {
     // Build the file by including all the files
     for (const auto& key : jsonForFile.getKeys()) {
         builtFile += loadFile(root + "/assets/css" + jsonForFile.getString(key)) + "\n\n";
+    }
+
+    // Remove comments if enabled
+    if (removeComments) {
+        builtFile = removeCommentsFromString(builtFile, FILETYPE_CSS);
     }
 }
 

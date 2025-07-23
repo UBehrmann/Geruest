@@ -241,12 +241,12 @@ void Handler::sendFile(const std::string &contentType, const std::string &conten
                 return;
             }
 
-            contentBuilder = new HtmlBuilder(contentPath, serverData.getRoot());
+            contentBuilder = new HtmlBuilder(contentPath, serverData.getRoot(), serverData.getRemoveComments());
 
         } else if (contentType == "text/javascript") {
-            contentBuilder = new JSBuilder(contentPath, serverData.getRoot());
+            contentBuilder = new JSBuilder(contentPath, serverData.getRoot(), serverData.getRemoveComments());
         } else if (contentType == "text/css") {
-            contentBuilder = new CSSBuilder(contentPath, serverData.getRoot());
+            contentBuilder = new CSSBuilder(contentPath, serverData.getRoot(), serverData.getRemoveComments());
         }
 
         // Check if builder was created

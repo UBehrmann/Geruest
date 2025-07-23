@@ -51,10 +51,10 @@ void Geruest::setPort(int _port) { port = _port; }
 void Geruest::setHostname(const std::string &hostname) { hostname_ = hostname; }
 
 void Geruest::addRoute(const std::string &path, RouteHandler routeHandler) {
-    serverData.routes[path] = std::move(routeHandler);
+    serverData.addRoute(path, std::move(routeHandler));
 }
 
-void Geruest::addRoot(const std::string &root) { serverData.root = root; }
+void Geruest::addRoot(const std::string &root) { serverData.setRoot(root); }
 
 void Geruest::init() {
 

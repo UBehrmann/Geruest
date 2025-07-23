@@ -20,7 +20,7 @@ namespace geruest {
 class ContentBuilder {
 public:
 
-    ContentBuilder(std::string pathReceived, std::string serverRoot);
+    ContentBuilder(std::string pathReceived, std::string serverRoot, bool removeComments);
 
     [[nodiscard]] std::string sizeString() const;
 
@@ -30,16 +30,31 @@ public:
 
 protected:
 
+    // File type constants
+    static constexpr const char* FILETYPE_JS = "js";
+    static constexpr const char* FILETYPE_HTML = "html";
+    static constexpr const char* FILETYPE_CSS = "css";
+
     const std::string root;
     std::string builtFile;
-	std::string path;
+    std::string path;
 
-	/**
-	 * Load a file
-	 *
-	 * @param pathReceived
-	 * @return The content of the file
-	 */
+    const bool removeComments;
+
+    /**
+     * Remove comments from a string (CSS, JS, or HTML style)
+     * @param content The input string
+     * @param type The file type: "css", "js", or "html"
+     * @return The string with comments removed
+     */
+    static std::string removeCommentsFromString(const std::string& content, const std::string& type);
+
+    /**
+     * Load a file
+     *
+     * @param pathReceived
+     * @return The content of the file
+     */
     [[nodiscard]] static std::string loadFile(const std::string& pathReceived);
 };
 
