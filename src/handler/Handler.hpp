@@ -96,10 +96,11 @@ private:
 	static std::string getContentType(const std::string &extension);
 
 public:
+
 #ifdef _WIN32
-	Handler(SOCKET socket, std::string IP, ServerData serverData);
+	Handler(SOCKET socket, std::string clientIP, ServerData serverDataArg);
 #else
-	Handler(int socket, std::string IP, ServerData serverData);
+	Handler(int socket, std::string clientIP, ServerData serverDataArg);
 #endif
 
 	~Handler();

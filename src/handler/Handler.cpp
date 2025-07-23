@@ -20,11 +20,11 @@
 namespace geruest {
 
 #ifdef _WIN32
-Handler::Handler(SOCKET socket, std::string IP, ServerData serverData)
+Handler::Handler(SOCKET socket, std::string clientIP, ServerData serverDataArg)
 #else
-Handler::Handler(int socket, std::string IP, ServerData serverData)
+Handler::Handler(int socket, std::string clientIP, ServerData serverDataArg)
 #endif
-    : clientSocket(socket), IP(std::move(IP)), serverData(serverData) {
+    : clientSocket(socket), serverData(serverDataArg), IP(std::move(clientIP)) {
     buffer = new char[BUFFER_SIZE];
 }
 
