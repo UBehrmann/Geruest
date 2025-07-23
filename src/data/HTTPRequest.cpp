@@ -32,7 +32,7 @@ std::string urlDecode(const std::string& str) {
 }
 
 HTTPRequest::HTTPRequest(std::string rawRequest, std::string clientIP, std::string serverRootPath)
-    : ip(std::move(clientIP)), _rawRequest(std::move(rawRequest)), serverRoot(std::move(serverRootPath)) {
+    : ip(std::move(clientIP)), serverRoot(std::move(serverRootPath)), _rawRequest(std::move(rawRequest)) {
     parseRequest(_rawRequest);
 }
 
