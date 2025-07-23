@@ -29,8 +29,8 @@
 
 #include "data/HTTPRequest.hpp"
 #include "data/HTTPResponse.hpp"
-#include "handler/Handler.hpp"
 #include "data/ServerData.hpp"
+#include "handler/Handler.hpp"
 
 // Constants
 #define TIMEOUT_SEC 30
@@ -65,6 +65,12 @@ class Geruest {
 
     void stop();
 
+    /**
+     * @brief Checks if the server is currently running.
+     * @return true if the server is running, false otherwise.
+     */
+    bool isRunning();
+
    private:
 #ifdef _WIN32
     SOCKET server_fd = INVALID_SOCKET;  // Socket descriptor for the server
@@ -74,15 +80,13 @@ class Geruest {
 
     struct sockaddr_in address{};
 
-    bool running = true;
+    bool running = false;
 
     int port = 8080;
 
     std::string hostname_ = "localhost";
 
     ServerData serverData;
-
-    bool isRunning();
 
     void sendToLogger(const std::string& message) const;
 

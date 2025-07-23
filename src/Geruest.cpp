@@ -42,7 +42,9 @@ Geruest::~Geruest() {
     }
     WSACleanup();
 #else
-    close(this->server_fd);
+    if (this->server_fd >= 0) {
+        close(this->server_fd);
+    }
 #endif
     sendToLogger("Server closed.");
 }
@@ -57,13 +59,12 @@ void Geruest::addRoute(const std::string &path, RouteHandler routeHandler) {
 void Geruest::addRoot(const std::string &root) { serverData.setRoot(root); }
 
 void Geruest::init() {
-
     this->server_fd = socket(AF_INET, SOCK_STREAM, 0);
 #ifdef _WIN32
     if (this->server_fd == INVALID_SOCKET) {
         sendToLoggerError("Socket creation failed: " + std::to_string(WSAGetLastError()));
 #else
-    if (this->server_fd == 0) {
+    if (this->server_fd < 0) {
         sendToLoggerError("Socket creation failed");
 #endif
         exit(EXIT_FAILURE);
@@ -91,10 +92,10 @@ void Geruest::init() {
         exit(EXIT_FAILURE);
     }
 
-    // Setting timeout for accepting connections (e.g., 5 seconds)
+// Setting timeout for accepting connections (e.g., 5 seconds)
 #ifdef _WIN32
     DWORD timeout = TIMEOUT_SEC * 1000;  // Convert to milliseconds
-    if (setsockopt(server_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout)) == SOCKET_ERROR) {
+    if (setsockopt(server_fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(timeout)) == SOCKET_ERROR) {
         sendToLoggerError("Failed to set receive timeout: " + std::to_string(WSAGetLastError()));
 #else
     struct timeval timeout;
@@ -103,7 +104,7 @@ void Geruest::init() {
 
     // Set socket option for receive timeout
     if (setsockopt(server_fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof timeout) < 0) {
-        sendToLoggerError("Failed to set send buffer size");
+        sendToLoggerError("Failed to set receive timeout");
 #endif
         exit(EXIT_FAILURE);
     }
@@ -111,7 +112,7 @@ void Geruest::init() {
     int send_buffer_size = BUFFER_SIZE;
     int receive_buffer_size = BUFFER_SIZE;
 
-    if (setsockopt(server_fd, SOL_SOCKET, SO_SNDBUF, (const char*)&send_buffer_size, sizeof(send_buffer_size)) < 0) {
+    if (setsockopt(server_fd, SOL_SOCKET, SO_SNDBUF, (const char *)&send_buffer_size, sizeof(send_buffer_size)) < 0) {
 #ifdef _WIN32
         sendToLoggerError("Failed to set send buffer size: " + std::to_string(WSAGetLastError()));
 #else
@@ -120,7 +121,8 @@ void Geruest::init() {
         exit(EXIT_FAILURE);
     }
 
-    if (setsockopt(server_fd, SOL_SOCKET, SO_RCVBUF, (const char*)&receive_buffer_size, sizeof(receive_buffer_size)) < 0) {
+    if (setsockopt(server_fd, SOL_SOCKET, SO_RCVBUF, (const char *)&receive_buffer_size, sizeof(receive_buffer_size)) <
+        0) {
 #ifdef _WIN32
         sendToLoggerError("Failed to set receive buffer size: " + std::to_string(WSAGetLastError()));
 #else
@@ -135,6 +137,8 @@ void Geruest::init() {
 void Geruest::start() {
     int addrlen = sizeof(this->address);
 
+    running = true;
+
     sendToLogger("Waiting for connections...");
 
     while (running) {
@@ -148,7 +152,7 @@ void Geruest::start() {
 #else
             int new_socket = accept(this->server_fd, (struct sockaddr *)&this->address, (socklen_t *)&addrlen);
 
-            if (new_socket < 0){
+            if (new_socket < 0) {
                 if (errno == EWOULDBLOCK || errno == EAGAIN) {
 #endif
                     //                sendToLogger("Timeout for accepting connections.");
@@ -188,24 +192,20 @@ void Geruest::giveToHandler(SOCKET new_socket, std::string &IP) {
 #else
 void Geruest::giveToHandler(int new_socket, std::string &IP) {
 #endif
-    if (auto clientHandler = std::make_unique<Handler>(new_socket, IP, serverData)) {
-        // sendToLogger("New connection");
+    auto clientHandler = std::make_unique<Handler>(new_socket, IP, serverData);
+    // sendToLogger("New connection");
 
-        std::thread clientThread([handler = std::move(clientHandler)]() mutable {
-            try {
-                handler->run();
-            } catch (const std::exception &e) {
-                handler->sendToLoggerError(std::string("Handler error: ") + e.what());
-            } catch (...) {
-                handler->sendToLoggerError("Handler encountered an unknown error");
-            }
-        });
+    std::thread clientThread([handler = std::move(clientHandler)]() mutable {
+        try {
+            handler->run();
+        } catch (const std::exception &e) {
+            handler->sendToLoggerError(std::string("Handler error: ") + e.what());
+        } catch (...) {
+            handler->sendToLoggerError("Handler encountered an unknown error");
+        }
+    });
 
-        clientThread.detach();
-
-    } else {
-        sendToLoggerError("Failed to create new handler");
-    }
+    clientThread.detach();
 }
 
 void Geruest::stop() {
@@ -216,12 +216,8 @@ void Geruest::stop() {
 
 bool Geruest::isRunning() { return running; }
 
-void Geruest::sendToLogger(const std::string &message) const {
-	std::cout << message << std::endl;
-}
+void Geruest::sendToLogger(const std::string &message) const { std::cout << message << std::endl; }
 
-void Geruest::sendToLoggerError(const std::string &message) const {
-	std::cerr << "Error: " << message << std::endl;
-}
+void Geruest::sendToLoggerError(const std::string &message) const { std::cerr << "Error: " << message << std::endl; }
 
 }  // namespace geruest
