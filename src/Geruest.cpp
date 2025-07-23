@@ -71,7 +71,7 @@ void Geruest::init() {
 
     this->address.sin_family = AF_INET;
     this->address.sin_addr.s_addr = INADDR_ANY;
-    this->address.sin_port = htons(port);
+    this->address.sin_port = htons((unsigned short)port);
 
     if (bind(this->server_fd, (struct sockaddr *)&this->address, sizeof(this->address)) < 0) {
 #ifdef _WIN32
