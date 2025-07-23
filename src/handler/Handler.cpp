@@ -164,9 +164,11 @@ void Handler::handleRequest(HTTPRequest *request) {
         return;
     }
 
-    if (serverData.getRoutes()[request->getPathString()] != nullptr) {
+    auto it = serverData.getRoutes().find(request->getPathString());
+    if (it != serverData.getRoutes().end()) {
+        
         // Call the route handler
-        HTTPResponse response = serverData.getRoutes()[request->getPathString()](*request);
+        HTTPResponse response = it->second(*request);
 
         // Send the response
         sendSocket(response.toString().c_str(), response.toString().size());
