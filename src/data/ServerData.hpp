@@ -26,30 +26,30 @@ using RouteHandler = std::function<HTTPResponse(const HTTPRequest&)>;
 // class with the server data
 class ServerData {
 private:
-    std::unordered_map<std::string, RouteHandler> routes;
-    std::string root;
-    bool removeComments = true;
+    std::unordered_map<std::string, RouteHandler> _routes;
+    std::string _root;
+    bool _removeComments = true;
 
 public:
     ServerData() = default;
 
     ServerData(const std::unordered_map<std::string, RouteHandler>& routes, std::string root)
-        : routes(routes), root(std::move(root)) {}
+        : _routes(routes), _root(std::move(root)) {}
 
-    std::unordered_map<std::string, RouteHandler>& getRoutes() { return routes; }
-    const std::unordered_map<std::string, RouteHandler>& getRoutes() const { return routes; }
+    std::unordered_map<std::string, RouteHandler>& getRoutes() { return _routes; }
+    const std::unordered_map<std::string, RouteHandler>& getRoutes() const { return _routes; }
     
     void addRoute(const std::string& path, RouteHandler routeHandler) {
-        routes[path] = std::move(routeHandler);
+        _routes[path] = std::move(routeHandler);
     }
 
-    std::string getRoot() const { return root; }
-    void setRoot(const std::string& newRoot) { root = newRoot; }
+    std::string getRoot() const { return _root; }
+    void setRoot(const std::string& newRoot) { _root = newRoot; }
 
-    bool getRemoveComments() const { return removeComments; }
-    void setRemoveComments(bool value) { removeComments = value; }
-    
-    void keepComments() { removeComments = false; }
+    bool getRemoveComments() const { return _removeComments; }
+    void setRemoveComments(bool value) { _removeComments = value; }
+
+    void keepComments() { _removeComments = false; }
 };
 
 }  // namespace geruest
