@@ -3,7 +3,7 @@
 REM Create website directory and subdirectories
 mkdir website\assets\JSONs
 mkdir website\assets\css
-mkdir website\assets\docs7
+mkdir website\assets\docs
 mkdir website\assets\images
 mkdir website\assets\js
 mkdir website\assets\translations
