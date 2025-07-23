@@ -24,7 +24,7 @@ namespace geruest {
 
 class HtmlBuilder : public ContentBuilder {
    public:
-    HtmlBuilder(const std::string &path, const std::string &serverRoot, bool removeComments = true);
+    HtmlBuilder(const std::string &inputPath, const std::string &inputServerRoot, bool removeCommentsFlag = true);
 
    private:
     void buildHtml();

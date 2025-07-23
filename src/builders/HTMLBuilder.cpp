@@ -12,8 +12,8 @@
 
 namespace geruest {
 
-HtmlBuilder::HtmlBuilder(const std::string &path, const std::string &serverRoot, bool removeComments) 
-    : ContentBuilder(path, serverRoot, removeComments) {
+HtmlBuilder::HtmlBuilder(const std::string &inputPath, const std::string &inputServerRoot, bool removeCommentsFlag) 
+    : ContentBuilder(inputPath, inputServerRoot, removeCommentsFlag) {
     buildHtml();
 }
 

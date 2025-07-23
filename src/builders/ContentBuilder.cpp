@@ -11,8 +11,8 @@
 
 namespace geruest {
 
-ContentBuilder::ContentBuilder(std::string pathReceived, std::string serverRoot, bool removeComments)
-    : root(std::move(serverRoot)), path(std::move(pathReceived)), removeComments(removeComments) {
+ContentBuilder::ContentBuilder(const std::string &inputPath, const std::string &inputServerRoot, bool removeCommentsFlag)
+    : root(std::move(inputServerRoot)), path(std::move(inputPath)), removeComments(removeCommentsFlag) {
     builtFile = loadFile(path);
 }
 

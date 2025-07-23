@@ -20,7 +20,7 @@ namespace geruest {
 class ContentBuilder {
 public:
 
-    ContentBuilder(std::string pathReceived, std::string serverRoot, bool removeComments);
+    ContentBuilder(const std::string &inputPath, const std::string &inputServerRoot, bool removeCommentsFlag = true);
 
     [[nodiscard]] std::string sizeString() const;
 
