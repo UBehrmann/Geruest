@@ -99,7 +99,7 @@ std::string geruest::ContentBuilder::removeCommentsFromString(const std::string&
                 
                 // Find the closing quote, handling escaped quotes
                 while (pos < result.length()) {
-                    if (result[pos] == '\\') {
+                    if (result[pos] == '\\' && pos + 1 < result.length()) {
                         pos += 2; // Skip escaped character
                     } else if (result[pos] == quote) {
                         pos++; // Skip closing quote
