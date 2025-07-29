@@ -44,25 +44,86 @@ std::string geruest::ContentBuilder::removeCommentsFromString(const std::string&
 
     // Remove /* ... */ comments
     if (type == FILETYPE_CSS || type == FILETYPE_JS) {
-        size_t start = 0;
-        while ((start = result.find("/*", start)) != std::string::npos) {
-            size_t end = result.find("*/", start + 2);
-            if (end == std::string::npos) break;
-            result.erase(start, end - start + 2);
+        if (type == FILETYPE_JS) {
+            // For JavaScript, handle string literals properly
+            size_t pos = 0;
+            while (pos < result.length()) {
+                // Check if we're inside a string literal
+                if (result[pos] == '"' || result[pos] == '\'' || result[pos] == '`') {
+                    char quote = result[pos];
+                    pos++; // Skip opening quote
+                    
+                    // Find the closing quote, handling escaped quotes
+                    while (pos < result.length()) {
+                        if (result[pos] == '\\' && pos + 1 < result.length()) {
+                            pos += 2; // Skip escaped character
+                        } else if (result[pos] == quote) {
+                            pos++; // Skip closing quote
+                            break;
+                        } else {
+                            pos++;
+                        }
+                    }
+                    continue;
+                }
+                
+                // Look for /* comment outside of strings
+                if (pos < result.length() - 1 && result[pos] == '/' && result[pos + 1] == '*') {
+                    size_t end = result.find("*/", pos + 2);
+                    if (end == std::string::npos) break;
+                    result.erase(pos, end - pos + 2);
+                    continue;
+                }
+                
+                pos++;
+            }
+        } else {
+            // For CSS, use simple find/replace (no string literals to worry about)
+            size_t start = 0;
+            while ((start = result.find("/*", start)) != std::string::npos) {
+                size_t end = result.find("*/", start + 2);
+                if (end == std::string::npos) break;
+                result.erase(start, end - start + 2);
+            }
         }
     }
 
     // Remove // ... comments (single line)
     if (type == FILETYPE_JS) {
         size_t pos = 0;
-        while ((pos = result.find("//", pos)) != std::string::npos) {
-            size_t lineEnd = result.find('\n', pos);
-            if (lineEnd == std::string::npos) {
-                result.erase(pos);
-                break;
-            } else {
-                result.erase(pos, lineEnd - pos);
+        while (pos < result.length()) {
+            // Check if we're inside a string literal
+            if (result[pos] == '"' || result[pos] == '\'' || result[pos] == '`') {
+                char quote = result[pos];
+                pos++; // Skip opening quote
+                
+                // Find the closing quote, handling escaped quotes
+                while (pos < result.length()) {
+                    if (result[pos] == '\\' && pos + 1 < result.length()) {
+                        pos += 2; // Skip escaped character
+                    } else if (result[pos] == quote) {
+                        pos++; // Skip closing quote
+                        break;
+                    } else {
+                        pos++;
+                    }
+                }
+                continue;
             }
+            
+            // Look for // comment outside of strings
+            if (pos < result.length() - 1 && result[pos] == '/' && result[pos + 1] == '/') {
+                size_t lineEnd = result.find('\n', pos);
+                if (lineEnd == std::string::npos) {
+                    result.erase(pos);
+                    break;
+                } else {
+                    result.erase(pos, lineEnd - pos);
+                }
+                continue;
+            }
+            
+            pos++;
         }
     }
 
