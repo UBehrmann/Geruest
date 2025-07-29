@@ -29,13 +29,13 @@ void HTTPResponse::setBody(const std::string& responseBody) {
 
 std::string HTTPResponse::toString() const {
     std::ostringstream response;
-    response << "HTTP/1.1 " << status << "\n";
+    response << "HTTP/1.1 " << status << "\r\n";
 
     for (const auto& header : headers) {
-        response << header.first << ": " << header.second << "\n";
+        response << header.first << ": " << header.second << "\r\n";
     }
 
-    response << "\n" << body;
+    response << "\r\n" << body;
     return response.str();
 }
 

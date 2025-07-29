@@ -12,8 +12,8 @@
 
 namespace geruest {
 
-HtmlBuilder::HtmlBuilder(const std::string &path, const std::string &serverRoot) 
-    : ContentBuilder(path, serverRoot) {
+HtmlBuilder::HtmlBuilder(const std::string &inputPath, const std::string &inputServerRoot, bool removeCommentsFlag) 
+    : ContentBuilder(inputPath, inputServerRoot, removeCommentsFlag) {
     buildHtml();
 }
 
@@ -44,6 +44,11 @@ void HtmlBuilder::buildHtml() {
 
     builtFile = loadFile(templatePath);
 
+    // Remove comments if enabled
+    if (removeComments) {
+        builtFile = removeCommentsFromString(builtFile, FILETYPE_HTML);
+    }
+
     // Check if template file was loaded
     if (builtFile.empty()) return;
 
@@ -67,16 +72,31 @@ void HtmlBuilder::buildHtml() {
 void HtmlBuilder::replaceCurlyBrackets() {
     size_t startPos;
     size_t endPos = 0;
+    size_t scriptStart = 0;
+    size_t scriptEnd = 0;
 
     while ((startPos = builtFile.find('{', endPos + 1)) != std::string::npos) {
-        endPos = builtFile.find('}', startPos + 1);
+        // Check if startPos is inside a <script>...</script> block
+        bool insideScript = false;
+        scriptStart = builtFile.rfind("<script", startPos);
+        if (scriptStart != std::string::npos) {
+            scriptEnd = builtFile.find("</script>", scriptStart);
+            if (scriptEnd != std::string::npos && startPos > scriptStart && startPos < scriptEnd) {
+                insideScript = true;
+            }
+        }
+        if (insideScript) {
+            endPos = startPos; // skip this '{', move to next
+            continue;
+        }
 
+        endPos = builtFile.find('}', startPos + 1);
         if (endPos == std::string::npos) {
             endPos = builtFile.size();
         }
 
         std::string keyword = builtFile.substr(startPos, endPos - startPos);
-        std::string pathToInsert = root + keyword.substr(1);  // remove the '}' character
+        std::string pathToInsert = root + keyword.substr(1);  // remove the '{' character
 
         std::string toInsert;
 
@@ -85,6 +105,8 @@ void HtmlBuilder::replaceCurlyBrackets() {
         }
 
         builtFile.replace(startPos, keyword.size() + 1, toInsert);
+        // After replacement, endPos points to the end of inserted text
+        endPos = startPos + toInsert.size() - 1;
     }
 }
 

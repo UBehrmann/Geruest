@@ -22,7 +22,7 @@ namespace geruest {
 class JSBuilder : public ContentBuilder {
 public:
 
-    JSBuilder(const std::string& path, const std::string& serverRoot);
+    JSBuilder(const std::string &inputPath, const std::string &inputServerRoot, bool removeCommentsFlag = true);
 
 private:
 

@@ -20,11 +20,11 @@
 namespace geruest {
 
 #ifdef _WIN32
-Handler::Handler(SOCKET socket, std::string IP, ServerData serverData)
+Handler::Handler(SOCKET socket, std::string clientIP, ServerData serverDataArg)
 #else
-Handler::Handler(int socket, std::string IP, ServerData serverData)
+Handler::Handler(int socket, std::string clientIP, ServerData serverDataArg)
 #endif
-    : clientSocket(socket), IP(std::move(IP)), serverData(serverData) {
+    : clientSocket(socket), serverData(serverDataArg), IP(std::move(clientIP)) {
     buffer = new char[BUFFER_SIZE];
 }
 
@@ -164,9 +164,11 @@ void Handler::handleRequest(HTTPRequest *request) {
         return;
     }
 
-    if (serverData.getRoutes()[request->getPathString()] != nullptr) {
+    auto it = serverData.getRoutes().find(request->getPathString());
+    if (it != serverData.getRoutes().end()) {
+        
         // Call the route handler
-        HTTPResponse response = serverData.getRoutes()[request->getPathString()](*request);
+        HTTPResponse response = it->second(*request);
 
         // Send the response
         sendSocket(response.toString().c_str(), response.toString().size());
@@ -240,12 +242,12 @@ void Handler::sendFile(const std::string &contentType, const std::string &conten
                 return;
             }
 
-            contentBuilder = new HtmlBuilder(contentPath, serverData.getRoot());
+            contentBuilder = new HtmlBuilder(contentPath, serverData.getRoot(), serverData.getRemoveComments());
 
         } else if (contentType == "text/javascript") {
-            contentBuilder = new JSBuilder(contentPath, serverData.getRoot());
+            contentBuilder = new JSBuilder(contentPath, serverData.getRoot(), serverData.getRemoveComments());
         } else if (contentType == "text/css") {
-            contentBuilder = new CSSBuilder(contentPath, serverData.getRoot());
+            contentBuilder = new CSSBuilder(contentPath, serverData.getRoot(), serverData.getRemoveComments());
         }
 
         // Check if builder was created

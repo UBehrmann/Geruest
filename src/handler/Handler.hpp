@@ -11,10 +11,14 @@
 #define GERUEST_HANDLER_HPP
 
 #ifdef _WIN32
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#ifdef _MSC_VER
 #pragma comment(lib, "ws2_32.lib")
+#endif
 #else
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -92,10 +96,11 @@ private:
 	static std::string getContentType(const std::string &extension);
 
 public:
+
 #ifdef _WIN32
-	Handler(SOCKET socket, std::string IP, ServerData serverData);
+	Handler(SOCKET socket, std::string clientIP, ServerData serverDataArg);
 #else
-	Handler(int socket, std::string IP, ServerData serverData);
+	Handler(int socket, std::string clientIP, ServerData serverDataArg);
 #endif
 
 	~Handler();

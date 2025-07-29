@@ -13,9 +13,9 @@
 
 namespace geruest {
 
-JSBuilder::JSBuilder(const std::string& path, const std::string& serverRoot) 
-    : ContentBuilder(path, serverRoot) {
-    json = getJSONFromFile(serverRoot + "/files_maps/js_file_map.json");
+JSBuilder::JSBuilder(const std::string &inputPath, const std::string &inputServerRoot, bool removeCommentsFlag) 
+    : ContentBuilder(inputPath, inputServerRoot, removeCommentsFlag) {
+    json = getJSONFromFile(inputServerRoot + "/files_maps/js_file_map.json");
     pageName = getFileNameWithoutExtension(path);
     builJS();
 }
@@ -51,6 +51,11 @@ void JSBuilder::builJS() {
     // Build the file by including all the files
     for (const auto& key : jsonForFile.getKeys()) {
         builtFile += loadFile(root + "/assets/js" + jsonForFile.getString(key)) + "\n\n";
+    }
+
+    // Remove comments if enabled
+    if (removeComments) {
+        builtFile = removeCommentsFromString(builtFile, FILETYPE_JS);
     }
 }
 

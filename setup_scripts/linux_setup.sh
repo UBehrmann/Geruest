@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Create website directory and subdirectories
-mkdir -p website/assets/{JSONs,css,docs7,images,js,translations}
+mkdir -p website/assets/{JSONs,css,docs,images,js,translations}
 mkdir -p website/components
 mkdir -p website/configs
 mkdir -p website/files_maps
