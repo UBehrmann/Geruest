@@ -13,24 +13,34 @@ namespace geruest {
 
 HTTPResponse::HTTPResponse(const std::string& statusCode) : status(statusCode) {
     // Default headers
-    headers["Content-Type"] = "text/html";
-    headers["Connection"] = "Keep-Alive";
-    headers["Keep-Alive"] = "timeout=5, max=100";
+    headers.insert({"Content-Type", "text/html"});
+    headers.insert({"Connection", "Keep-Alive"});
+    headers.insert({"Keep-Alive", "timeout=5, max=100"});
 }
 
 void HTTPResponse::setHeader(const std::string& key, const std::string& value) {
-    headers[key] = value;
+    // Remove any existing headers with the same key, then add the new one
+    headers.erase(key);
+    headers.insert({key, value});
+}
+
+void HTTPResponse::addHeader(const std::string& key, const std::string& value) {
+    // Add header to the multimap, allowing multiple headers with same key
+    headers.insert({key, value});
 }
 
 void HTTPResponse::setBody(const std::string& responseBody) {
     body = responseBody;
-    headers["Content-Length"] = std::to_string(body.size());
+    // Remove existing Content-Length headers and add new one
+    headers.erase("Content-Length");
+    headers.insert({"Content-Length", std::to_string(body.size())});
 }
 
 std::string HTTPResponse::toString() const {
     std::ostringstream response;
     response << "HTTP/1.1 " << status << "\r\n";
 
+    // Add all headers from the multimap
     for (const auto& header : headers) {
         response << header.first << ": " << header.second << "\r\n";
     }

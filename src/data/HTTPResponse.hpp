@@ -11,7 +11,7 @@
 #define GERUEST_HTTPRESPONSE_HPP
 
 #include <string>
-#include <unordered_map>
+#include <map>
 #include <sstream>
 
 namespace geruest {
@@ -23,7 +23,7 @@ namespace geruest {
 class HTTPResponse {
 private:
     std::string status;
-    std::unordered_map<std::string, std::string> headers;
+    std::multimap<std::string, std::string> headers; // Changed to multimap to allow duplicate keys
     std::string body;
 
 public:
@@ -39,6 +39,14 @@ public:
      * @param value The header value.
      */
     void setHeader(const std::string& key, const std::string& value);
+
+    /**
+     * Adds a header that can coexist with other headers of the same key.
+     * This allows multiple headers with the same name (e.g., multiple Set-Cookie headers).
+     * @param key The header name.
+     * @param value The header value to add.
+     */
+    void addHeader(const std::string& key, const std::string& value);
 
     /**
      * Sets the response body and updates the Content-Length header.
