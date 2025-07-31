@@ -271,8 +271,6 @@ void Handler::sendFile(const std::string &contentType, const std::string &conten
 
         std::string bufferToSocket = htmlResponse.toString();
 
-        std::cout << "File send: " << bufferToSocket << std::endl;
-
         sendSocket(bufferToSocket.c_str(), bufferToSocket.size());
 
         delete contentBuilder;
