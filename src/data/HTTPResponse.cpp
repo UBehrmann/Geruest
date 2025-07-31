@@ -148,46 +148,46 @@ void addDefaultHeaders(HTTPResponse* response, const HTTPRequest* request) {
 }
 
 // Generic helper for building responses with status and body
-HTTPResponse buildResponse(const std::string& status, const std::string& body, HTTPRequest* request) {
+HTTPResponse buildResponse(const std::string& status, const std::string& body, const HTTPRequest* request) {
     HTTPResponse response(status);
     addDefaultHeaders(&response, request);
     response.setBody(body);
     return response;
 }
 
-HTTPResponse responseOK(HTTPRequest* request){
+HTTPResponse responseOK(const HTTPRequest* request){
     return buildResponse("200 OK", "200 OK", request);
 }
 
-HTTPResponse responseCreated(HTTPRequest* request){
+HTTPResponse responseCreated(const HTTPRequest* request){
     return buildResponse("201 Created", "201 Created", request);
 }
 
-HTTPResponse responseAccepted(HTTPRequest* request){
+HTTPResponse responseAccepted(const HTTPRequest* request){
     return buildResponse("202 Accepted", "202 Accepted", request);
 }
 
-HTTPResponse responseNonAuthoritative(HTTPRequest* request){
+HTTPResponse responseNonAuthoritative(const HTTPRequest* request){
     return buildResponse("203 Non-Authoritative Information", "203 Non-Authoritative Information", request);
 }
 
-HTTPResponse responseNoContent(HTTPRequest* request){
+HTTPResponse responseNoContent(const HTTPRequest* request){
     return buildResponse("204 No Content", "204 No Content", request);
 }
 
-HTTPResponse responseResetContent(HTTPRequest* request){
+HTTPResponse responseResetContent(const HTTPRequest* request){
     return buildResponse("205 Reset Content", "205 Reset Content", request);
 }
 
-HTTPResponse responsePartialContent(HTTPRequest* request){
+HTTPResponse responsePartialContent(const HTTPRequest* request){
     return buildResponse("206 Partial Content", "206 Partial Content", request);
 }
 
-HTTPResponse responseBadRequest(HTTPRequest* request){
+HTTPResponse responseBadRequest(const HTTPRequest* request){
     return buildResponse("400 Bad Request", "400 Bad Request", request);
 }
 
-HTTPResponse responseAuthRequired(HTTPRequest* request){
+HTTPResponse responseAuthRequired(const HTTPRequest* request){
     HTTPResponse response("401 Unauthorized");
     addDefaultHeaders(&response, request);
     response.setHeader("WWW-Authenticate", "Basic realm=\"Restricted Area\"");
@@ -195,23 +195,23 @@ HTTPResponse responseAuthRequired(HTTPRequest* request){
     return response;
 }
 
-HTTPResponse responseForbidden(HTTPRequest* request){
+HTTPResponse responseForbidden(const HTTPRequest* request){
     return buildResponse("403 Forbidden", "403 Forbidden", request);
 }
 
-HTTPResponse responseNotFound(HTTPRequest* request){
+HTTPResponse responseNotFound(const HTTPRequest* request){
     return buildResponse("404 Not Found", "404 Not Found", request);
 }
 
-HTTPResponse responseMethodNotAllowed(HTTPRequest* request){
+HTTPResponse responseMethodNotAllowed(const HTTPRequest* request){
     return buildResponse("405 Method Not Allowed", "405 Method Not Allowed", request);
 }
 
-HTTPResponse responseConflict(HTTPRequest* request){
+HTTPResponse responseConflict(const HTTPRequest* request){
     return buildResponse("409 Conflict", "409 Conflict", request);
 }
 
-HTTPResponse responseInternalServerError(HTTPRequest* request){
+HTTPResponse responseInternalServerError(const HTTPRequest* request){
     return buildResponse("500 Internal Server Error", "500 Internal Server Error", request);
 }
 

@@ -89,33 +89,33 @@ public:
 // Inline functions that return HTTPResponse objects
 
 // 200 OK
-[[maybe_unused]] HTTPResponse responseOK(HTTPRequest* request = nullptr);
+[[maybe_unused]] HTTPResponse responseOK(const HTTPRequest* request = nullptr);
 // 201 Created
-[[maybe_unused]] HTTPResponse responseCreated(HTTPRequest* request = nullptr);
+[[maybe_unused]] HTTPResponse responseCreated(const HTTPRequest* request = nullptr);
 // 202 Accepted
-[[maybe_unused]] HTTPResponse responseAccepted(HTTPRequest* request = nullptr);
+[[maybe_unused]] HTTPResponse responseAccepted(const HTTPRequest* request = nullptr);
 // 203 Non-Authoritative Information
-[[maybe_unused]] HTTPResponse responseNonAuthoritative(HTTPRequest* request = nullptr);
+[[maybe_unused]] HTTPResponse responseNonAuthoritative(const HTTPRequest* request = nullptr);
 // 204 No Content
-[[maybe_unused]] HTTPResponse responseNoContent(HTTPRequest* request = nullptr);
+[[maybe_unused]] HTTPResponse responseNoContent(const HTTPRequest* request = nullptr);
 // 205 Reset Content
-[[maybe_unused]] HTTPResponse responseResetContent(HTTPRequest* request = nullptr);
+[[maybe_unused]] HTTPResponse responseResetContent(const HTTPRequest* request = nullptr);
 // 206 Partial Content
-[[maybe_unused]] HTTPResponse responsePartialContent(HTTPRequest* request = nullptr);
+[[maybe_unused]] HTTPResponse responsePartialContent(const HTTPRequest* request = nullptr);
 // 400 Bad Request
-[[maybe_unused]] HTTPResponse responseBadRequest(HTTPRequest* request = nullptr);
+[[maybe_unused]] HTTPResponse responseBadRequest(const HTTPRequest* request = nullptr);
 // 401 Unauthorized
-[[maybe_unused]] HTTPResponse responseAuthRequired(HTTPRequest* request = nullptr);
+[[maybe_unused]] HTTPResponse responseAuthRequired(const HTTPRequest* request = nullptr);
 // 403 Forbidden
-[[maybe_unused]] HTTPResponse responseForbidden(HTTPRequest* request = nullptr);
+[[maybe_unused]] HTTPResponse responseForbidden(const HTTPRequest* request = nullptr);
 // 404 Not Found
-[[maybe_unused]] HTTPResponse responseNotFound(HTTPRequest* request = nullptr);
+[[maybe_unused]] HTTPResponse responseNotFound(const HTTPRequest* request = nullptr);
 // 405 Method Not Allowed
-[[maybe_unused]] HTTPResponse responseMethodNotAllowed(HTTPRequest* request = nullptr);
+[[maybe_unused]] HTTPResponse responseMethodNotAllowed(const HTTPRequest* request = nullptr);
 // 409 Conflict
-[[maybe_unused]] HTTPResponse responseConflict(HTTPRequest* request = nullptr);
+[[maybe_unused]] HTTPResponse responseConflict(const HTTPRequest* request = nullptr);
 // 500 Internal Server Error
-[[maybe_unused]] HTTPResponse responseInternalServerError(HTTPRequest* request = nullptr);
+[[maybe_unused]] HTTPResponse responseInternalServerError(const HTTPRequest* request = nullptr);
 
 }  // namespace geruest
 
