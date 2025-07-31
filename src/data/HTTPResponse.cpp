@@ -8,6 +8,7 @@
  */
 
 #include "HTTPResponse.hpp"
+
 #include "HTTPRequest.hpp"
 
 namespace geruest {
@@ -20,9 +21,8 @@ HTTPResponse::HTTPResponse(const std::string& statusCode) : status(statusCode) {
 }
 
 void HTTPResponse::setHeader(const std::string& key, const std::string& value) {
-
     if (key == "Content-Length") {
-        return; // Do not set Content-Length here, it will be handled in setBody
+        return;  // Do not set Content-Length here, it will be handled in setBody
     }
 
     // Remove any existing headers with the same key, then add the new one
@@ -31,9 +31,8 @@ void HTTPResponse::setHeader(const std::string& key, const std::string& value) {
 }
 
 void HTTPResponse::addHeader(const std::string& key, const std::string& value) {
-
     if (key == "Content-Length") {
-        return; // Do not set Content-Length here, it will be handled in setBody
+        return;  // Do not set Content-Length here, it will be handled in setBody
     }
 
     // Add header to the multimap, allowing multiple headers with same key
@@ -59,26 +58,22 @@ std::string HTTPResponse::toString() const {
     // Check body size and add Content-Length if body is not empty
     if (!body.empty()) {
         response << "Content-Length: " << body.size() << "\r\n";
-
-        // add a blank line to separate headers from the body
-        response << "\r\n";
-
-        // Append the body to the response
-        response << body;
-
     } else {
         response << "Content-Length: 0\r\n";
     }
 
+    // add a blank line to separate headers from the body
+    response << "\r\n";
+
+    // Append the body to the response
+    response << body;
+
     return response.str();
 }
 
-std::string buildHeader(const std::string &status,
-                       const std::string &contentType,
-                       const std::string &size) {
+std::string buildHeader(const std::string& status, const std::string& contentType, const std::string& size) {
     HTTPResponse response(status);
     response.setHeader("Content-Type", contentType);
-    response.setHeader("Content-Length", size);
     return response.toString();
 }
 
@@ -155,39 +150,37 @@ HTTPResponse buildResponse(const std::string& status, const std::string& body, c
     return response;
 }
 
-HTTPResponse responseOK(const HTTPRequest* request){
-    return buildResponse("200 OK", "200 OK", request);
-}
+HTTPResponse responseOK(const HTTPRequest* request) { return buildResponse("200 OK", "200 OK", request); }
 
-HTTPResponse responseCreated(const HTTPRequest* request){
+HTTPResponse responseCreated(const HTTPRequest* request) {
     return buildResponse("201 Created", "201 Created", request);
 }
 
-HTTPResponse responseAccepted(const HTTPRequest* request){
+HTTPResponse responseAccepted(const HTTPRequest* request) {
     return buildResponse("202 Accepted", "202 Accepted", request);
 }
 
-HTTPResponse responseNonAuthoritative(const HTTPRequest* request){
+HTTPResponse responseNonAuthoritative(const HTTPRequest* request) {
     return buildResponse("203 Non-Authoritative Information", "203 Non-Authoritative Information", request);
 }
 
-HTTPResponse responseNoContent(const HTTPRequest* request){
+HTTPResponse responseNoContent(const HTTPRequest* request) {
     return buildResponse("204 No Content", "204 No Content", request);
 }
 
-HTTPResponse responseResetContent(const HTTPRequest* request){
+HTTPResponse responseResetContent(const HTTPRequest* request) {
     return buildResponse("205 Reset Content", "205 Reset Content", request);
 }
 
-HTTPResponse responsePartialContent(const HTTPRequest* request){
+HTTPResponse responsePartialContent(const HTTPRequest* request) {
     return buildResponse("206 Partial Content", "206 Partial Content", request);
 }
 
-HTTPResponse responseBadRequest(const HTTPRequest* request){
+HTTPResponse responseBadRequest(const HTTPRequest* request) {
     return buildResponse("400 Bad Request", "400 Bad Request", request);
 }
 
-HTTPResponse responseAuthRequired(const HTTPRequest* request){
+HTTPResponse responseAuthRequired(const HTTPRequest* request) {
     HTTPResponse response("401 Unauthorized");
     addDefaultHeaders(&response, request);
     response.setHeader("WWW-Authenticate", "Basic realm=\"Restricted Area\"");
@@ -195,26 +188,24 @@ HTTPResponse responseAuthRequired(const HTTPRequest* request){
     return response;
 }
 
-HTTPResponse responseForbidden(const HTTPRequest* request){
+HTTPResponse responseForbidden(const HTTPRequest* request) {
     return buildResponse("403 Forbidden", "403 Forbidden", request);
 }
 
-HTTPResponse responseNotFound(const HTTPRequest* request){
+HTTPResponse responseNotFound(const HTTPRequest* request) {
     return buildResponse("404 Not Found", "404 Not Found", request);
 }
 
-HTTPResponse responseMethodNotAllowed(const HTTPRequest* request){
+HTTPResponse responseMethodNotAllowed(const HTTPRequest* request) {
     return buildResponse("405 Method Not Allowed", "405 Method Not Allowed", request);
 }
 
-HTTPResponse responseConflict(const HTTPRequest* request){
+HTTPResponse responseConflict(const HTTPRequest* request) {
     return buildResponse("409 Conflict", "409 Conflict", request);
 }
 
-HTTPResponse responseInternalServerError(const HTTPRequest* request){
+HTTPResponse responseInternalServerError(const HTTPRequest* request) {
     return buildResponse("500 Internal Server Error", "500 Internal Server Error", request);
 }
-
-
 
 }  // namespace geruest

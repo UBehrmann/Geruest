@@ -263,9 +263,13 @@ void Handler::sendFile(const std::string &contentType, const std::string &conten
             return;
         }
 
-        std::string header = buildHeader("200 OK", contentType, contentBuilder->sizeString());
+        HTTPResponse htmlResponse("200 OK");
 
-        std::string bufferToSocket = header + contentBuilder->file();
+        htmlResponse.setHeader("Content-Type", contentType);
+
+        htmlResponse.setBody(contentBuilder->file());
+
+        std::string bufferToSocket = htmlResponse.toString();
 
         sendSocket(bufferToSocket.c_str(), bufferToSocket.size());
 
