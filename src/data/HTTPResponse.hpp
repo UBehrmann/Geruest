@@ -13,6 +13,7 @@
 #include <string>
 #include <map>
 #include <sstream>
+#include "HTTPRequest.hpp"
 
 namespace geruest {
 
@@ -84,6 +85,22 @@ public:
 [[maybe_unused]] std::string buildFailHeader();
 
 [[maybe_unused]] std::string buildInternalServerErrorHeader();
+
+// Inline functions that return HTTPResponse objects
+
+[[maybe_unused]] HTTPResponse responseBadRequest(HTTPRequest* request = nullptr);
+
+[[maybe_unused]] HTTPResponse responseForbidden(HTTPRequest* request = nullptr);
+
+[[maybe_unused]] HTTPResponse responseNotFound(HTTPRequest* request = nullptr);
+
+[[maybe_unused]] HTTPResponse responseMethodNotAllowed(HTTPRequest* request = nullptr);
+
+[[maybe_unused]] HTTPResponse responseOK(HTTPRequest* request = nullptr);
+
+[[maybe_unused]] HTTPResponse responseInternalServerError(HTTPRequest* request = nullptr);
+
+[[maybe_unused]] HTTPResponse responseAuthRequired(HTTPRequest* request = nullptr);
 
 }  // namespace geruest
 
