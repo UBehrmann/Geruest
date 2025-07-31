@@ -142,6 +142,8 @@ void addDefaultHeaders(HTTPResponse* response, const HTTPRequest* request) {
 
     if (request && request->hasHeader("origin")) {
         response->setHeader("Access-Control-Allow-Origin", request->getHeader("origin"));
+        response->setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+        response->setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
     }
 }
 
@@ -153,8 +155,44 @@ HTTPResponse buildResponse(const std::string& status, const std::string& body, H
     return response;
 }
 
+HTTPResponse responseOK(HTTPRequest* request){
+    return buildResponse("200 OK", "200 OK", request);
+}
+
+HTTPResponse responseCreated(HTTPRequest* request){
+    return buildResponse("201 Created", "201 Created", request);
+}
+
+HTTPResponse responseAccepted(HTTPRequest* request){
+    return buildResponse("202 Accepted", "202 Accepted", request);
+}
+
+HTTPResponse responseNonAuthoritative(HTTPRequest* request){
+    return buildResponse("203 Non-Authoritative Information", "203 Non-Authoritative Information", request);
+}
+
+HTTPResponse responseNoContent(HTTPRequest* request){
+    return buildResponse("204 No Content", "204 No Content", request);
+}
+
+HTTPResponse responseResetContent(HTTPRequest* request){
+    return buildResponse("205 Reset Content", "205 Reset Content", request);
+}
+
+HTTPResponse responsePartialContent(HTTPRequest* request){
+    return buildResponse("206 Partial Content", "206 Partial Content", request);
+}
+
 HTTPResponse responseBadRequest(HTTPRequest* request){
     return buildResponse("400 Bad Request", "400 Bad Request", request);
+}
+
+HTTPResponse responseAuthRequired(HTTPRequest* request){
+    HTTPResponse response("401 Unauthorized");
+    addDefaultHeaders(&response, request);
+    response.setHeader("WWW-Authenticate", "Basic realm=\"Restricted Area\"");
+    response.setBody("401 Unauthorized");
+    return response;
 }
 
 HTTPResponse responseForbidden(HTTPRequest* request){
@@ -169,21 +207,14 @@ HTTPResponse responseMethodNotAllowed(HTTPRequest* request){
     return buildResponse("405 Method Not Allowed", "405 Method Not Allowed", request);
 }
 
-HTTPResponse responseOK(HTTPRequest* request){
-    return buildResponse("200 OK", "200 OK", request);
+HTTPResponse responseConflict(HTTPRequest* request){
+    return buildResponse("409 Conflict", "409 Conflict", request);
 }
 
 HTTPResponse responseInternalServerError(HTTPRequest* request){
     return buildResponse("500 Internal Server Error", "500 Internal Server Error", request);
 }
 
-HTTPResponse responseAuthRequired(HTTPRequest* request){
-    HTTPResponse response("401 Unauthorized");
-    addDefaultHeaders(&response, request);
-    response.setHeader("WWW-Authenticate", "Basic realm=\"Restricted Area\"");
-    response.setBody("401 Unauthorized");
-    return response;
-}
 
 
 }  // namespace geruest
