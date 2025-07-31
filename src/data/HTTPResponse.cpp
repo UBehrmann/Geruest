@@ -8,6 +8,7 @@
  */
 
 #include "HTTPResponse.hpp"
+#include "HTTPRequest.hpp"
 
 namespace geruest {
 
@@ -19,12 +20,22 @@ HTTPResponse::HTTPResponse(const std::string& statusCode) : status(statusCode) {
 }
 
 void HTTPResponse::setHeader(const std::string& key, const std::string& value) {
+
+    if (key == "Content-Length") {
+        return; // Do not set Content-Length here, it will be handled in setBody
+    }
+
     // Remove any existing headers with the same key, then add the new one
     headers.erase(key);
     headers.insert({key, value});
 }
 
 void HTTPResponse::addHeader(const std::string& key, const std::string& value) {
+
+    if (key == "Content-Length") {
+        return; // Do not set Content-Length here, it will be handled in setBody
+    }
+
     // Add header to the multimap, allowing multiple headers with same key
     headers.insert({key, value});
 }
@@ -45,7 +56,20 @@ std::string HTTPResponse::toString() const {
         response << header.first << ": " << header.second << "\r\n";
     }
 
-    response << "\r\n" << body;
+    // Check body size and add Content-Length if body is not empty
+    if (!body.empty()) {
+        response << "Content-Length: " << body.size() << "\r\n";
+
+        // add a blank line to separate headers from the body
+        response << "\r\n";
+
+        // Append the body to the response
+        response << body;
+
+    } else {
+        response << "Content-Length: 0\r\n";
+    }
+
     return response.str();
 }
 
@@ -106,5 +130,60 @@ std::string buildInternalServerErrorHeader() {
     response.setBody("500 Internal Server Error");
     return response.toString();
 }
+
+// Inline functions that return HTTPResponse objects
+
+void addDefaultHeaders(HTTPResponse* response, const HTTPRequest* request) {
+    if (!response) return;
+    response->setHeader("Connection", "Keep-Alive");
+    response->setHeader("Keep-Alive", "timeout=5, max=100");
+    response->setHeader("Cache-Control", "no-cache");
+    response->setHeader("Content-Type", "text/plain");
+
+    if (request && request->hasHeader("origin")) {
+        response->setHeader("Access-Control-Allow-Origin", request->getHeader("origin"));
+    }
+}
+
+// Generic helper for building responses with status and body
+HTTPResponse buildResponse(const std::string& status, const std::string& body, HTTPRequest* request) {
+    HTTPResponse response(status);
+    addDefaultHeaders(&response, request);
+    response.setBody(body);
+    return response;
+}
+
+HTTPResponse responseBadRequest(HTTPRequest* request){
+    return buildResponse("400 Bad Request", "400 Bad Request", request);
+}
+
+HTTPResponse responseForbidden(HTTPRequest* request){
+    return buildResponse("403 Forbidden", "403 Forbidden", request);
+}
+
+HTTPResponse responseNotFound(HTTPRequest* request){
+    return buildResponse("404 Not Found", "404 Not Found", request);
+}
+
+HTTPResponse responseMethodNotAllowed(HTTPRequest* request){
+    return buildResponse("405 Method Not Allowed", "405 Method Not Allowed", request);
+}
+
+HTTPResponse responseOK(HTTPRequest* request){
+    return buildResponse("200 OK", "200 OK", request);
+}
+
+HTTPResponse responseInternalServerError(HTTPRequest* request){
+    return buildResponse("500 Internal Server Error", "500 Internal Server Error", request);
+}
+
+HTTPResponse responseAuthRequired(HTTPRequest* request){
+    HTTPResponse response("401 Unauthorized");
+    addDefaultHeaders(&response, request);
+    response.setHeader("WWW-Authenticate", "Basic realm=\"Restricted Area\"");
+    response.setBody("401 Unauthorized");
+    return response;
+}
+
 
 }  // namespace geruest
