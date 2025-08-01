@@ -21,20 +21,12 @@ HTTPResponse::HTTPResponse(const std::string& statusCode) : status(statusCode) {
 }
 
 void HTTPResponse::setHeader(const std::string& key, const std::string& value) {
-    if (key == "Content-Length") {
-        return;  // Do not set Content-Length here, it will be handled in setBody
-    }
-
     // Remove any existing headers with the same key, then add the new one
     headers.erase(key);
     headers.insert({key, value});
 }
 
 void HTTPResponse::addHeader(const std::string& key, const std::string& value) {
-    if (key == "Content-Length") {
-        return;  // Do not set Content-Length here, it will be handled in setBody
-    }
-
     // Add header to the multimap, allowing multiple headers with same key
     headers.insert({key, value});
 }
@@ -56,10 +48,12 @@ std::string HTTPResponse::toString() const {
     }
 
     // Check body size and add Content-Length if body is not empty
-    if (!body.empty()) {
-        response << "Content-Length: " << body.size() << "\r\n";
-    } else {
-        response << "Content-Length: 0\r\n";
+    if (headers.count("Content-Length") == 0) {
+        if (body.empty()) {
+            response << "Content-Length: 0\r\n";
+        } else {
+            response << "Content-Length: " << body.size() << "\r\n";
+        }
     }
 
     // add a blank line to separate headers from the body
