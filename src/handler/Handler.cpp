@@ -292,8 +292,13 @@ void Handler::sendFile(const std::string &contentType, const std::string &conten
 
         // sendToLogger("File size: " + std::to_string(fileSize));
 
-        std::string response = buildHeader("200 OK", contentType, std::to_string(fileSize));
+        HTTPResponse htmlResponse("200 OK");
 
+        htmlResponse.setHeader("Content-Type", contentType);
+        htmlResponse.setHeader("Content-Length", std::to_string(fileSize));
+
+        std::string response = htmlResponse.toString();
+        
         // Send response
         sendSocket((char *)response.c_str(), response.size());
 
