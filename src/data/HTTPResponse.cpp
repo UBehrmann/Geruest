@@ -175,11 +175,7 @@ HTTPResponse responseBadRequest(const HTTPRequest* request) {
 }
 
 HTTPResponse responseAuthRequired(const HTTPRequest* request) {
-    HTTPResponse response("401 Unauthorized");
-    addDefaultHeaders(&response, request);
-    response.setHeader("WWW-Authenticate", "Basic realm=\"Restricted Area\"");
-    response.setBody("401 Unauthorized");
-    return response;
+    return buildResponse("401 Unauthorized", "400 Bad Request", request);
 }
 
 HTTPResponse responseForbidden(const HTTPRequest* request) {
