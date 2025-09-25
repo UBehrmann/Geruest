@@ -31,6 +31,7 @@
 #include "data/HTTPResponse.hpp"
 #include "data/ServerData.hpp"
 #include "handler/Handler.hpp"
+#include "parser/JSONParser.hpp"
 
 // Constants
 #define TIMEOUT_SEC 30
