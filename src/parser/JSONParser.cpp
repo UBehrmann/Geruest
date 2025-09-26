@@ -1350,6 +1350,17 @@ std::vector<JSONParser> JSONParser::getJSONArray() {
     return arrayData;
 }
 
+/**
+ * @brief Serializes a std::any value to a JSON-compatible string.
+ *
+ * Converts supported types (string, int, bool, float, double, long, long long, long double,
+ * std::map<std::string, std::any>, std::vector<std::any>, std::vector<JSONParser>) to their
+ * JSON string representations. Returns "null" for unsupported types.
+ * Used internally for consistent serialization of values stored in std::any.
+ *
+ * @param val The std::any value to serialize.
+ * @return JSON-compatible string representation of the value.
+ */
 std::string JSONParser::anyToString(const std::any &val) const {
     if (val.type() == typeid(std::string)) {
         return "\"" + std::any_cast<std::string>(val) + "\"";
