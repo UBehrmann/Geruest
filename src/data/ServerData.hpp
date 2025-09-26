@@ -27,8 +27,68 @@ using RouteHandler = std::function<HTTPResponse(const HTTPRequest&)>;
 class ServerData {
 private:
     std::unordered_map<std::string, RouteHandler> _routes;
+    std::unordered_map<std::string, RouteHandler> _wildcardRoutes;
     std::string _root;
     bool _removeComments = true;
+
+    /**
+     * Check if a path matches a wildcard pattern
+     * @param pattern The route pattern (may contain *)
+     * @param path The actual request path
+     * @return true if the path matches the pattern
+     */
+    bool matchesWildcardPattern(const std::string& pattern, const std::string& path) const {
+        // If no wildcards, this should have been caught by exact match
+        if (pattern.find('*') == std::string::npos) {
+            return pattern == path;
+        }
+        
+        return matchWildcard(pattern.c_str(), path.c_str());
+    }
+    
+    /**
+     * Recursive wildcard matching algorithm
+     * @param pattern Pattern with potential wildcards
+     * @param text Text to match against
+     * @return true if text matches pattern
+     */
+    bool matchWildcard(const char* pattern, const char* text) const {
+        // If we reach end of pattern
+        if (*pattern == '\0') {
+            return *text == '\0';  // Match only if we also reached end of text
+        }
+        
+        // If pattern contains '*'
+        if (*pattern == '*') {
+            // Skip consecutive '*' characters
+            while (*pattern == '*') {
+                pattern++;
+            }
+            
+            // If pattern ends with '*', it matches everything
+            if (*pattern == '\0') {
+                return true;
+            }
+            
+            // Try to match '*' with empty string, single character, or multiple characters
+            while (*text != '\0') {
+                if (matchWildcard(pattern, text)) {
+                    return true;
+                }
+                text++;
+            }
+            
+            return matchWildcard(pattern, text);
+        }
+        
+        // If current characters match, continue with next characters
+        if (*text != '\0' && *pattern == *text) {
+            return matchWildcard(pattern + 1, text + 1);
+        }
+        
+        // Characters don't match
+        return false;
+    }
 
 public:
     ServerData() = default;
@@ -36,11 +96,52 @@ public:
     ServerData(const std::unordered_map<std::string, RouteHandler>& routes, std::string root)
         : _routes(routes), _root(std::move(root)) {}
 
-    std::unordered_map<std::string, RouteHandler>& getRoutes() { return _routes; }
-    const std::unordered_map<std::string, RouteHandler>& getRoutes() const { return _routes; }
+    std::unordered_map<std::string, RouteHandler>& getRoutes() { 
+        // For backward compatibility, merge both maps
+        // Note: This creates a temporary merged map which may impact performance
+        // Consider deprecating this method in favor of the new findMatchingRoute
+        static std::unordered_map<std::string, RouteHandler> merged;
+        merged.clear();
+        merged.insert(_routes.begin(), _routes.end());
+        merged.insert(_wildcardRoutes.begin(), _wildcardRoutes.end());
+        return merged; 
+    }
+    
+    const std::unordered_map<std::string, RouteHandler>& getRoutes() const { 
+        // For backward compatibility, return exact routes only
+        // This maintains existing behavior for const access
+        return _routes; 
+    }
     
     void addRoute(const std::string& path, RouteHandler routeHandler) {
-        _routes[path] = std::move(routeHandler);
+        // Separate wildcard routes from exact routes for performance
+        if (path.find('*') != std::string::npos) {
+            _wildcardRoutes[path] = std::move(routeHandler);
+        } else {
+            _routes[path] = std::move(routeHandler);
+        }
+    }
+
+    /**
+     * Find a matching route for the given path, supporting wildcard patterns
+     * @param path The requested path
+     * @return Pair of <found, RouteHandler>. found is true if a match was found
+     */
+    std::pair<bool, RouteHandler> findMatchingRoute(const std::string& path) const {
+        // First try exact match for performance (O(1) lookup)
+        auto exactMatch = _routes.find(path);
+        if (exactMatch != _routes.end()) {
+            return {true, exactMatch->second};
+        }
+        
+        // If no exact match, try wildcard patterns (O(n) lookup)
+        for (const auto& route : _wildcardRoutes) {
+            if (matchesWildcardPattern(route.first, path)) {
+                return {true, route.second};
+            }
+        }
+        
+        return {false, RouteHandler{}};
     }
 
     std::string getRoot() const { return _root; }

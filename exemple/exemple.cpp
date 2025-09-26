@@ -69,19 +69,55 @@ void addRoutes(Geruest* serverToAddRoutes) {
         return response;
     });
 
-    // GET endpoint
-    serverToAddRoutes->addRoute("/api/get", [](const HTTPRequest& req) {
+    // Wildcard route examples
+    
+    // Match any path under /api/
+    serverToAddRoutes->addRoute("/api/*", [](const HTTPRequest& req) {
         HTTPResponse response("200 OK");
         response.setHeader("Content-Type", "application/json");
-        response.setBody(R"({"method": "GET", "message": "GET request received!"})");
+        response.setBody(R"({"wildcard": "api", "path": ")" + req.getPathString() + R"(", "message": "Caught by /api/* wildcard route"})");
+        return response;
+    });
+    
+    // Match specific pattern like /users/{id}/profile
+    serverToAddRoutes->addRoute("/users/*/profile", [](const HTTPRequest& req) {
+        HTTPResponse response("200 OK");
+        response.setHeader("Content-Type", "application/json");
+        response.setBody(R"({"wildcard": "user_profile", "path": ")" + req.getPathString() + R"(", "message": "User profile accessed"})");
+        return response;
+    });
+    
+    // Match files with specific extensions
+    serverToAddRoutes->addRoute("/downloads/*.zip", [](const HTTPRequest& req) {
+        HTTPResponse response("200 OK");
+        response.setHeader("Content-Type", "application/json");
+        response.setBody(R"({"wildcard": "zip_download", "path": ")" + req.getPathString() + R"(", "message": "ZIP file download requested"})");
+        return response;
+    });
+    
+    // Match multiple levels
+    serverToAddRoutes->addRoute("/static/*/images/*", [](const HTTPRequest& req) {
+        HTTPResponse response("200 OK");
+        response.setHeader("Content-Type", "application/json");
+        response.setBody(R"({"wildcard": "static_images", "path": ")" + req.getPathString() + R"(", "message": "Static image accessed"})");
         return response;
     });
 
-    // POST endpoint
+    // Specific exact routes that should take precedence over wildcards
+    
+    // GET endpoint (exact match takes precedence over /api/*)
+    serverToAddRoutes->addRoute("/api/get", [](const HTTPRequest& req) {
+        HTTPResponse response("200 OK");
+        response.setHeader("Content-Type", "application/json");
+        response.setBody("{\"method\": \"GET\", \"message\": \"Exact GET endpoint (not wildcard)\", \"body\": \"" + req.getBody() + "\"}");
+        return response;
+    });
+
+    // POST endpoint (exact match takes precedence over /api/*)
     serverToAddRoutes->addRoute("/api/post", [](const HTTPRequest& req) {
         HTTPResponse response("200 OK");
         response.setHeader("Content-Type", "application/json");
-        response.setBody(R"({\"method\": \"POST\", \"message\": \"POST request received!\", \"body\": ")" + req.getBody() + "}");
+        response.setBody("{\"method\": \"POST\", \"message\": \"Exact POST endpoint (not wildcard)\", \"body\": \"" + req.getBody() + "\"}");
         return response;
     });
 
@@ -89,7 +125,7 @@ void addRoutes(Geruest* serverToAddRoutes) {
     serverToAddRoutes->addRoute("/api/put", [](const HTTPRequest& req) {
         HTTPResponse response("200 OK");
         response.setHeader("Content-Type", "application/json");
-        response.setBody(R"({\"method\": \"PUT\", \"message\": \"PUT request received!\", \"body\": ")" + req.getBody() + "}");
+        response.setBody("{\"method\": \"PUT\", \"message\": \"PUT request received!\", \"body\": \"" + req.getBody() + "\"}");
         return response;
     });
 
@@ -97,7 +133,7 @@ void addRoutes(Geruest* serverToAddRoutes) {
     serverToAddRoutes->addRoute("/api/delete", [](const HTTPRequest& req) {
         HTTPResponse response("200 OK");
         response.setHeader("Content-Type", "application/json");
-        response.setBody(R"({\"method\": \"DELETE\", \"message\": \"DELETE request received!\"})");
+        response.setBody(R"({"method": "DELETE", "message": "DELETE request received!"})");
         return response;
     });
 }

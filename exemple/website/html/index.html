@@ -3,26 +3,188 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Simple HTML Page</title>
+    <title>Geruest Wildcard Route Testing</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+        }
+        
+        h2 {
+            color: #444;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 5px;
+            margin-top: 30px;
+        }
+        
+        h3 {
+            color: #555;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+        
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 15px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            margin: 3px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        button:hover {
+            background: #5a6fd8;
+        }
+        
+        button:active {
+            background: #4c63d2;
+        }
+        
+        .exact-routes button {
+            background: #28a745;
+        }
+        
+        .exact-routes button:hover {
+            background: #218838;
+        }
+        
+        .wildcard-routes button {
+            background: #fd7e14;
+        }
+        
+        .wildcard-routes button:hover {
+            background: #e8690b;
+        }
+        
+        .no-match-routes button {
+            background: #dc3545;
+        }
+        
+        .no-match-routes button:hover {
+            background: #c82333;
+        }
+        
+        #requestBody {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: monospace;
+            margin: 10px 0;
+        }
+        
+        #result {
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            padding: 15px;
+            min-height: 100px;
+            background: #fff;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            border-radius: 4px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .description {
+            font-style: italic;
+            color: #666;
+            margin-bottom: 15px;
+        }
+        
+        .route-pattern {
+            font-family: monospace;
+            background: #f8f9fa;
+            padding: 2px 6px;
+            border-radius: 3px;
+            color: #495057;
+        }
+    </style>
 </head>
 <body>
-    <h1>Welcome to My Simple Website</h1>
-    <p>This is a basic HTML page with some example content.</p>
-    <p>You can add more content here as needed.</p>
+    <h1>🚀 Geruest Wildcard Route Testing</h1>
+    <p class="description">This page demonstrates the new wildcard routing functionality in Geruest. Test both exact routes and wildcard patterns to see how route precedence works.</p>
     
     <div style="text-align: center; margin: 20px 0;">
         <img src="languages.svg" alt="Programming Languages" style="max-width: 300px; height: auto;">
     </div>
 
-    <h2>API Test Buttons</h2>
-    <button id="getBtn">GET</button>
-    <button id="postBtn">POST</button>
-    <button id="putBtn">PUT</button>
-    <button id="deleteBtn">DELETE</button>
-    <br><br>
-    <textarea id="requestBody" rows="3" cols="40" placeholder="Request body for POST/PUT (optional)"></textarea>
-    <br>
-    <div id="result" style="margin-top:20px; border:1px solid #ccc; padding:10px; min-height:40px; background:#f9f9f9;"></div>
+    <div class="test-section exact-routes">
+        <h2>✅ Exact Route Tests</h2>
+        <p class="description">These test exact routes that take precedence over wildcards:</p>
+        <button id="getBtn">GET /api/get</button>
+        <button id="postBtn">POST /api/post</button>
+        <button id="putBtn">PUT /api/put</button>
+        <button id="deleteBtn">DELETE /api/delete</button>
+        <button id="testBtn">GET /test</button>
+    </div>
+    
+    <div class="test-section wildcard-routes">
+        <h2>🔗 Wildcard Route Tests</h2>
+        <p class="description">These test the new wildcard routing functionality:</p>
+        
+        <h3>1. API Wildcard <span class="route-pattern">/api/*</span></h3>
+        <button id="wildcardApiBtn1">GET /api/unknown</button>
+        <button id="wildcardApiBtn2">GET /api/v1/users</button>
+        <button id="wildcardApiBtn3">GET /api/anything/else</button>
+        
+        <h3>2. User Profile Pattern <span class="route-pattern">/users/*/profile</span></h3>
+        <button id="userProfileBtn1">GET /users/123/profile</button>
+        <button id="userProfileBtn2">GET /users/john/profile</button>
+        <button id="userProfileBtn3">GET /users/admin/profile</button>
+        
+        <h3>3. File Extension Pattern <span class="route-pattern">/downloads/*.zip</span></h3>
+        <button id="zipDownloadBtn1">GET /downloads/file.zip</button>
+        <button id="zipDownloadBtn2">GET /downloads/archive.zip</button>
+        <button id="zipDownloadBtn3">GET /downloads/app-v1.2.zip</button>
+        
+        <h3>4. Multi-Wildcard Pattern <span class="route-pattern">/static/*/images/*</span></h3>
+        <button id="staticImageBtn1">GET /static/v1/images/logo.png</button>
+        <button id="staticImageBtn2">GET /static/v2/images/header.jpg</button>
+        <button id="staticImageBtn3">GET /static/latest/images/favicon.ico</button>
+    </div>
+    
+    <div class="test-section no-match-routes">
+        <h2>❌ Non-Matching Tests</h2>
+        <p class="description">These should NOT match any wildcard patterns and fall back to file serving (404):</p>
+        <button id="noMatchBtn1">GET /users/profile</button>
+        <button id="noMatchBtn2">GET /downloads/file.txt</button>
+        <button id="noMatchBtn3">GET /nonexistent/path</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>📤 Request Body (for POST/PUT)</h2>
+        <textarea id="requestBody" rows="3" placeholder="Request body for POST/PUT (optional)&#10;Example: {&quot;name&quot;: &quot;John&quot;, &quot;email&quot;: &quot;john@example.com&quot;}"></textarea>
+    </div>
+    
+    <div class="test-section">
+        <h2>📄 Response</h2>
+        <div id="result">Click any button above to test the routes...</div>
+    </div>
 
     <script src="index.js"></script>
 </body>
