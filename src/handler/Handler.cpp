@@ -16,6 +16,7 @@
 #include "builders/CSSBuilder.hpp"
 #include "builders/HTMLBuilder.hpp"
 #include "builders/JSBuilder.hpp"
+#include "data/HTTPResponse.hpp"
 
 namespace geruest {
 
@@ -164,11 +165,12 @@ void Handler::handleRequest(HTTPRequest *request) {
         return;
     }
 
-    auto it = serverData.getRoutes().find(request->getPathString());
-    if (it != serverData.getRoutes().end()) {
+    // Try to find a matching route (exact or wildcard)
+    auto routeMatch = serverData.findMatchingRoute(request->getPathString());
+    if (routeMatch.first) {
         
         // Call the route handler
-        HTTPResponse response = it->second(*request);
+        HTTPResponse response = routeMatch.second(*request);
 
         // Send the response
         sendSocket(response.toString().c_str(), response.toString().size());
