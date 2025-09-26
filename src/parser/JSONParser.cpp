@@ -112,7 +112,7 @@ std::string JSONParser::toString() const {
         } else if (val.type() == typeid(short)) {
             result += std::to_string(std::any_cast<short>(val)) + ",";
         } else if (val.type() == typeid(bool)) {
-            result += std::to_string(std::any_cast<bool>(val)) + ",";
+            result += (std::any_cast<bool>(val) ? "true" : "false") + std::string(",");
         } else if (val.type() == typeid(float)) {
             result += std::to_string(std::any_cast<float>(val)) + ",";
         } else if (val.type() == typeid(double)) {
@@ -138,7 +138,7 @@ std::string JSONParser::toString() const {
                 } else if (v.type() == typeid(short)) {
                     result += std::to_string(std::any_cast<short>(v)) + ",";
                 } else if (v.type() == typeid(bool)) {
-                    result += std::to_string(std::any_cast<bool>(v)) + ",";
+                    result += (std::any_cast<bool>(v) ? "true" : "false") + std::string(",");
                 } else if (v.type() == typeid(float)) {
                     result += std::to_string(std::any_cast<float>(v)) + ",";
                 } else if (v.type() == typeid(double)) {
@@ -174,6 +174,10 @@ std::string JSONParser::toString() const {
 
 std::vector<std::string> JSONParser::getKeys() {
     return keys;
+}
+
+bool JSONParser::hasKey(const std::string &key) const {
+    return data.find(key) != data.end();
 }
 
 std::string JSONParser::readKey() {
@@ -1317,20 +1321,89 @@ void JSONParser::removeKey(const std::string &key) {
 }
 
 std::string JSONParser::arrayToString() const {
-    std::string result = "[\n";
-    for (const auto &it: arrayData) {
-        result += it.toString() + ",\n";
-    }
-
+    std::string result = "[";
+    
+    // Handle case where arrayData is used (JSON array at root level)
     if (!arrayData.empty()) {
-        result = result.substr(0, result.size() - 2);
+        for (size_t i = 0; i < arrayData.size(); ++i) {
+            if (i > 0) result += ",";
+            result += arrayData[i].toString();
+        }
     }
-    result += "\n]";
+    // Handle case where we want to serialize the entire data map as an array of values
+    else if (!data.empty()) {
+        bool first = true;
+        for (const auto& key : keys) {
+            if (!first) result += ",";
+            first = false;
+            
+            auto val = data.at(key);
+            result += anyToString(val);
+        }
+    }
+    
+    result += "]";
     return result;
 }
 
 std::vector<JSONParser> JSONParser::getJSONArray() {
     return arrayData;
+}
+
+/**
+ * @brief Serializes a std::any value to a JSON-compatible string.
+ *
+ * Converts supported types (string, int, bool, float, double, long, long long, long double,
+ * std::map<std::string, std::any>, std::vector<std::any>, std::vector<JSONParser>) to their
+ * JSON string representations. Returns "null" for unsupported types.
+ * Used internally for consistent serialization of values stored in std::any.
+ *
+ * @param val The std::any value to serialize.
+ * @return JSON-compatible string representation of the value.
+ */
+std::string JSONParser::anyToString(const std::any &val) const {
+    if (val.type() == typeid(std::string)) {
+        return "\"" + std::any_cast<std::string>(val) + "\"";
+    } else if (val.type() == typeid(int)) {
+        return std::to_string(std::any_cast<int>(val));
+    } else if (val.type() == typeid(short)) {
+        return std::to_string(std::any_cast<short>(val));
+    } else if (val.type() == typeid(bool)) {
+        return std::any_cast<bool>(val) ? "true" : "false";
+    } else if (val.type() == typeid(float)) {
+        return std::to_string(std::any_cast<float>(val));
+    } else if (val.type() == typeid(double)) {
+        return std::to_string(std::any_cast<double>(val));
+    } else if (val.type() == typeid(long)) {
+        return std::to_string(std::any_cast<long>(val));
+    } else if (val.type() == typeid(long long)) {
+        return std::to_string(std::any_cast<long long>(val));
+    } else if (val.type() == typeid(long double)) {
+        return std::to_string(std::any_cast<long double>(val));
+    } else if (val.type() == typeid(std::map<std::string, std::any>)) {
+        JSONParser json(std::any_cast<std::map<std::string, std::any>>(val));
+        return json.toString();
+    } else if (val.type() == typeid(std::vector<std::any>)) {
+        std::string result = "[";
+        auto anyArray = std::any_cast<std::vector<std::any>>(val);
+        for (size_t i = 0; i < anyArray.size(); ++i) {
+            if (i > 0) result += ",";
+            result += anyToString(anyArray[i]);
+        }
+        result += "]";
+        return result;
+    } else if (val.type() == typeid(std::vector<JSONParser>)) {
+        std::string result = "[";
+        auto jsonArray = std::any_cast<std::vector<JSONParser>>(val);
+        for (size_t i = 0; i < jsonArray.size(); ++i) {
+            if (i > 0) result += ",";
+            result += jsonArray[i].toString();
+        }
+        result += "]";
+        return result;
+    }
+    
+    return "null";
 }
 
 }  // namespace geruest

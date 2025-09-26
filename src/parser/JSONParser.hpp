@@ -190,6 +190,9 @@ public:
 
     // Get the keys of the JSONParser
     std::vector<std::string> getKeys();
+    
+    // Check if a key exists
+    bool hasKey(const std::string &key) const;
 };
 
 inline JSONParser* getJSONFromFile(const std::string &filePath) {
