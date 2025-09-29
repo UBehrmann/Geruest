@@ -1,175 +1,594 @@
-/**
- * @file JSONParser.cpp
- * @date 29.07.2024
- *
- * @author Urs Behrmann
- *
- * @brief JSONParser class implementation
- */
-
 #include "JSONParser.hpp"
+#include <iostream>
+#include <cctype>
+#include <stdexcept>
 
 namespace geruest {
 
-#include <string>
-#include <iostream>
-#include <map>
-#include <any>
-#include <cfloat>
-#include <climits>
-#include <utility>
-#include <vector>
+JSONParser::JSONParser(const std::string &input) : basicString(input), jp(0) {
+    parseJSON();
+}
 
-JSONParser::JSONParser(const std::string &input) {
+JSONParser::JSONParser(std::map<std::string, std::string> data) : data(std::move(data)) {}
 
-    basicString = input;
+bool JSONParser::isWhiteSpace(char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+}
 
-    if (input.empty()) {
-        throw(std::invalid_argument("Empty input"));
+std::string JSONParser::readKey() {
+    while (jp < basicString.length() && isWhiteSpace(basicString[jp])) {
+        jp++;
     }
-
-    if (input[jp] == '[') {
-        parseArray();
-    } else {
-        parseJSON();
+    if (jp >= basicString.length() || basicString[jp] != '"') {
+        return "";
     }
+    jp++;
+    std::string key;
+    while (jp < basicString.length() && basicString[jp] != '"') {
+        key += basicString[jp];
+        jp++;
+    }
+    if (jp < basicString.length()) {
+        jp++;
+    }
+    return key;
+}
 
+std::string JSONParser::readString() {
+    while (jp < basicString.length() && isWhiteSpace(basicString[jp])) {
+        jp++;
+    }
+    if (jp >= basicString.length() || basicString[jp] != '"') {
+        return "";
+    }
+    jp++;
+    std::string value;
+    while (jp < basicString.length() && basicString[jp] != '"') {
+        value += basicString[jp];
+        jp++;
+    }
+    if (jp < basicString.length()) {
+        jp++;
+    }
+    return value;
+}
 
+std::string JSONParser::readNumber() {
+    while (jp < basicString.length() && isWhiteSpace(basicString[jp])) {
+        jp++;
+    }
+    std::string number;
+    if (jp < basicString.length() && basicString[jp] == '-') {
+        number += basicString[jp];
+        jp++;
+    }
+    while (jp < basicString.length() && 
+           (std::isdigit(basicString[jp]) || basicString[jp] == '.')) {
+        number += basicString[jp];
+        jp++;
+    }
+    return number;
+}
+
+std::map<std::string, std::string> JSONParser::readObject() {
+    std::map<std::string, std::string> obj;
+    return obj;
+}
+
+std::vector<std::string> JSONParser::readArray() {
+    std::vector<std::string> arr;
+    return arr;
+}
+
+std::string JSONParser::readData() {
+    while (jp < basicString.length() && isWhiteSpace(basicString[jp])) {
+        jp++;
+    }
+    if (jp >= basicString.length()) {
+        return "";
+    }
+    char c = basicString[jp];
+    if (c == '"') {
+        return readString();
+    } else if (std::isdigit(c) || c == '-') {
+        return readNumber();
+    } else if (basicString.substr(jp, 4) == "true") {
+        jp += 4;
+        return "true";
+    } else if (basicString.substr(jp, 5) == "false") {
+        jp += 5;
+        return "false";
+    } else if (basicString.substr(jp, 4) == "null") {
+        jp += 4;
+        return "null";
+    }
+    return "";
 }
 
 void JSONParser::parseArray() {
-
-    if (basicString[jp] != '[') {
-        throw std::invalid_argument("Expected '[' at the beginning of array");
-    }
-    jp++; // Move past '['
-
-    size_t sp;
-    size_t ep;
-
-    while (jp < basicString.size() && basicString[jp] != ']') {
-
-        if (basicString[jp] == '{') {
-            sp = jp;
-        }
-        if(basicString[jp] == '}') {
-            ep = jp;
-            arrayData.emplace_back(basicString.substr(sp, ep - sp + 1));
-        }
-        jp++;
-    }
-
-    if (basicString[jp] == ']') {
-        jp++; // Move past ']'
-    } else {
-        throw std::invalid_argument("Expected ']' at the end of array");
-    }
-
+    arrayData.clear();
 }
 
 void JSONParser::parseJSON() {
-
-    std::string key;
-
     data.clear();
-
-    for (; jp < basicString.size();) {
-
-        if (basicString[jp] == '}') {
-            return;
-        } else if (basicString[jp] == '{' || basicString[jp] == ',') {
-
-            key = readKey();
-
-        } else if (basicString[jp] == ':') {
-            std::any value = readData();
-            data[key] = value;
-            keys.push_back(key);
-        } else {
+    keys.clear();
+    jp = 0;
+    
+    while (jp < basicString.length() && isWhiteSpace(basicString[jp])) {
+        jp++;
+    }
+    if (jp >= basicString.length() || basicString[jp] != '{') {
+        return;
+    }
+    jp++;
+    
+    while (jp < basicString.length()) {
+        while (jp < basicString.length() && isWhiteSpace(basicString[jp])) {
             jp++;
         }
+        if (jp < basicString.length() && basicString[jp] == '}') {
+            jp++;
+            break;
+        }
+        
+        std::string key = readKey();
+        if (key.empty()) break;
+        keys.push_back(key);
+        
+        while (jp < basicString.length() && isWhiteSpace(basicString[jp])) {
+            jp++;
+        }
+        if (jp >= basicString.length() || basicString[jp] != ':') {
+            break;
+        }
+        jp++;
+        
+        std::string value = readData();
+        data[key] = value;
+        
+        while (jp < basicString.length() && isWhiteSpace(basicString[jp])) {
+            jp++;
+        }
+        if (jp < basicString.length() && basicString[jp] == ',') {
+            jp++;
+        } else if (jp < basicString.length() && basicString[jp] == '}') {
+            jp++;
+            break;
+        }
     }
-
-    throw (std::invalid_argument("Invalid JSONParser"));
-
 }
 
-JSONParser::JSONParser(std::map<std::string, std::any> data) : data(std::move(data)) {
-    for (const auto &it : this->data) {
-        keys.push_back(it.first);
+std::string JSONParser::stringToString(const std::string &val) const {
+    return "\"" + val + "\"";
+}
+
+std::string JSONParser::getString(const std::string &key) {
+    if (data.find(key) == data.end()) {
+        return "";
     }
+    return data[key];
+}
+
+int JSONParser::getInt(const std::string &key) {
+    if (data.find(key) == data.end()) {
+        return 0;
+    }
+    try {
+        return std::stoi(data[key]);
+    } catch (const std::exception&) {
+        return 0;
+    }
+}
+
+short JSONParser::getShort(const std::string &key) {
+    if (data.find(key) == data.end()) {
+        return 0;
+    }
+    try {
+        return static_cast<short>(std::stoi(data[key]));
+    } catch (const std::exception&) {
+        return 0;
+    }
+}
+
+bool JSONParser::getBool(const std::string &key) {
+    if (data.find(key) == data.end()) {
+        return false;
+    }
+    const std::string& value = data[key];
+    return value == "true" || value == "1";
+}
+
+float JSONParser::getFloat(const std::string &key) {
+    if (data.find(key) == data.end()) {
+        return 0.0f;
+    }
+    try {
+        return std::stof(data[key]);
+    } catch (const std::exception&) {
+        return 0.0f;
+    }
+}
+
+double JSONParser::getDouble(const std::string &key) {
+    if (data.find(key) == data.end()) {
+        return 0.0;
+    }
+    try {
+        return std::stod(data[key]);
+    } catch (const std::exception&) {
+        return 0.0;
+    }
+}
+
+long JSONParser::getLong(const std::string &key) {
+    if (data.find(key) == data.end()) {
+        return 0L;
+    }
+    try {
+        return std::stol(data[key]);
+    } catch (const std::exception&) {
+        return 0L;
+    }
+}
+
+long long JSONParser::getLongLong(const std::string &key) {
+    if (data.find(key) == data.end()) {
+        return 0LL;
+    }
+    try {
+        return std::stoll(data[key]);
+    } catch (const std::exception&) {
+        return 0LL;
+    }
+}
+
+long double JSONParser::getLongDouble(const std::string &key) {
+    if (data.find(key) == data.end()) {
+        return 0.0L;
+    }
+    try {
+        return std::stold(data[key]);
+    } catch (const std::exception&) {
+        return 0.0L;
+    }
+}
+
+JSONParser JSONParser::getObject(const std::string &key) {
+    if (data.find(key) == data.end()) {
+        return JSONParser();
+    }
+    return JSONParser(data[key]);
+}
+
+std::vector<std::string> JSONParser::getStringArray(const std::string &key) {
+    std::vector<std::string> result;
+    return result;
+}
+
+std::vector<short> JSONParser::getShortArray(const std::string &key) {
+    std::vector<short> result;
+    return result;
+}
+
+std::vector<int> JSONParser::getIntArray(const std::string &key) {
+    std::vector<int> result;
+    return result;
+}
+
+std::vector<long> JSONParser::getLongArray(const std::string &key) {
+    std::vector<long> result;
+    return result;
+}
+
+std::vector<long long> JSONParser::getLongLongArray(const std::string &key) {
+    std::vector<long long> result;
+    return result;
+}
+
+std::vector<bool> JSONParser::getBoolArray(const std::string &key) {
+    std::vector<bool> result;
+    return result;
+}
+
+std::vector<float> JSONParser::getFloatArray(const std::string &key) {
+    std::vector<float> result;
+    return result;
+}
+
+std::vector<double> JSONParser::getDoubleArray(const std::string &key) {
+    std::vector<double> result;
+    return result;
+}
+
+std::vector<long double> JSONParser::getLongDoubleArray(const std::string &key) {
+    std::vector<long double> result;
+    return result;
+}
+
+std::vector<JSONParser> JSONParser::getArrayOfJSON(const std::string &key) {
+    std::vector<JSONParser> result;
+    return result;
+}
+
+std::vector<JSONParser> JSONParser::getJSONArray() {
+    return arrayData;
+}
+
+void JSONParser::setString(const std::string &key, const std::string &value) {
+    data[key] = value;
+    if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
+        keys.push_back(key);
+    }
+}
+
+void JSONParser::setInt(const std::string &key, int value) {
+    data[key] = std::to_string(value);
+    if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
+        keys.push_back(key);
+    }
+}
+
+void JSONParser::setShort(const std::string &key, short value) {
+    data[key] = std::to_string(value);
+    if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
+        keys.push_back(key);
+    }
+}
+
+void JSONParser::setBool(const std::string &key, bool value) {
+    data[key] = value ? "true" : "false";
+    if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
+        keys.push_back(key);
+    }
+}
+
+void JSONParser::setFloat(const std::string &key, float value) {
+    data[key] = std::to_string(value);
+    if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
+        keys.push_back(key);
+    }
+}
+
+void JSONParser::setDouble(const std::string &key, double value) {
+    data[key] = std::to_string(value);
+    if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
+        keys.push_back(key);
+    }
+}
+
+void JSONParser::setLong(const std::string &key, long value) {
+    data[key] = std::to_string(value);
+    if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
+        keys.push_back(key);
+    }
+}
+
+void JSONParser::setLongLong(const std::string &key, long long value) {
+    data[key] = std::to_string(value);
+    if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
+        keys.push_back(key);
+    }
+}
+
+void JSONParser::setLongDouble(const std::string &key, long double value) {
+    data[key] = std::to_string(value);
+    if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
+        keys.push_back(key);
+    }
+}
+
+void JSONParser::setJSON(const std::string &key, const JSONParser &value) {
+    data[key] = value.toString();
+    if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
+        keys.push_back(key);
+    }
+}
+
+void JSONParser::setStringArray(const std::string &key, const std::vector<std::string> &value) {
+    std::string arrayStr = "[";
+    for (size_t i = 0; i < value.size(); ++i) {
+        if (i > 0) arrayStr += ",";
+        arrayStr += "\"" + value[i] + "\"";
+    }
+    arrayStr += "]";
+    data[key] = arrayStr;
+    if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
+        keys.push_back(key);
+    }
+}
+
+void JSONParser::setShortArray(const std::string &key, const std::vector<short> &value) {
+    std::string arrayStr = "[";
+    for (size_t i = 0; i < value.size(); ++i) {
+        if (i > 0) arrayStr += ",";
+        arrayStr += std::to_string(value[i]);
+    }
+    arrayStr += "]";
+    data[key] = arrayStr;
+    if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
+        keys.push_back(key);
+    }
+}
+
+void JSONParser::setIntArray(const std::string &key, const std::vector<int> &value) {
+    std::string arrayStr = "[";
+    for (size_t i = 0; i < value.size(); ++i) {
+        if (i > 0) arrayStr += ",";
+        arrayStr += std::to_string(value[i]);
+    }
+    arrayStr += "]";
+    data[key] = arrayStr;
+    if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
+        keys.push_back(key);
+    }
+}
+
+void JSONParser::setLongArray(const std::string &key, const std::vector<long> &value) {
+    std::string arrayStr = "[";
+    for (size_t i = 0; i < value.size(); ++i) {
+        if (i > 0) arrayStr += ",";
+        arrayStr += std::to_string(value[i]);
+    }
+    arrayStr += "]";
+    data[key] = arrayStr;
+    if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
+        keys.push_back(key);
+    }
+}
+
+void JSONParser::setLongLongArray(const std::string &key, const std::vector<long long> &value) {
+    std::string arrayStr = "[";
+    for (size_t i = 0; i < value.size(); ++i) {
+        if (i > 0) arrayStr += ",";
+        arrayStr += std::to_string(value[i]);
+    }
+    arrayStr += "]";
+    data[key] = arrayStr;
+    if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
+        keys.push_back(key);
+    }
+}
+
+void JSONParser::setBoolArray(const std::string &key, const std::vector<bool> &value) {
+    std::string arrayStr = "[";
+    for (size_t i = 0; i < value.size(); ++i) {
+        if (i > 0) arrayStr += ",";
+        arrayStr += value[i] ? "true" : "false";
+    }
+    arrayStr += "]";
+    data[key] = arrayStr;
+    if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
+        keys.push_back(key);
+    }
+}
+
+void JSONParser::setFloatArray(const std::string &key, const std::vector<float> &value) {
+    std::string arrayStr = "[";
+    for (size_t i = 0; i < value.size(); ++i) {
+        if (i > 0) arrayStr += ",";
+        arrayStr += std::to_string(value[i]);
+    }
+    arrayStr += "]";
+    data[key] = arrayStr;
+    if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
+        keys.push_back(key);
+    }
+}
+
+void JSONParser::setDoubleArray(const std::string &key, const std::vector<double> &value) {
+    std::string arrayStr = "[";
+    for (size_t i = 0; i < value.size(); ++i) {
+        if (i > 0) arrayStr += ",";
+        arrayStr += std::to_string(value[i]);
+    }
+    arrayStr += "]";
+    data[key] = arrayStr;
+    if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
+        keys.push_back(key);
+    }
+}
+
+void JSONParser::setLongDoubleArray(const std::string &key, const std::vector<long double> &value) {
+    std::string arrayStr = "[";
+    for (size_t i = 0; i < value.size(); ++i) {
+        if (i > 0) arrayStr += ",";
+        arrayStr += std::to_string(value[i]);
+    }
+    arrayStr += "]";
+    data[key] = arrayStr;
+    if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
+        keys.push_back(key);
+    }
+}
+
+void JSONParser::setArrayOfJSON(const std::string &key, const std::vector<JSONParser> &value) {
+    std::string arrayStr = "[";
+    for (size_t i = 0; i < value.size(); ++i) {
+        if (i > 0) arrayStr += ",";
+        arrayStr += value[i].toString();
+    }
+    arrayStr += "]";
+    data[key] = arrayStr;
+    if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
+        keys.push_back(key);
+    }
+}
+
+void JSONParser::setJSONArray(const std::vector<JSONParser> &value) {
+    arrayData = value;
+}
+
+void JSONParser::addArrayOfJSON(const std::string &key, const std::vector<JSONParser> &value) {
+    setArrayOfJSON(key, value);
+}
+
+void JSONParser::addJSONToArray(const JSONParser &value) {
+    arrayData.push_back(value);
+}
+
+void JSONParser::removeKey(const std::string &key) {
+    data.erase(key);
+    keys.erase(std::remove(keys.begin(), keys.end(), key), keys.end());
 }
 
 std::string JSONParser::toString() const {
-    std::string result = "{\n";
-    for (const std::string &key: keys) {
-        result += "\t\"" + key + "\" : ";
-        auto val = data.at(key);
-        if (val.type() == typeid(std::string)) {
-            result += "\"" + std::any_cast<std::string>(val) + "\",";
-        } else if (val.type() == typeid(int)) {
-            result += std::to_string(std::any_cast<int>(val)) + ",";
-        } else if (val.type() == typeid(short)) {
-            result += std::to_string(std::any_cast<short>(val)) + ",";
-        } else if (val.type() == typeid(bool)) {
-            result += (std::any_cast<bool>(val) ? "true" : "false") + std::string(",");
-        } else if (val.type() == typeid(float)) {
-            result += std::to_string(std::any_cast<float>(val)) + ",";
-        } else if (val.type() == typeid(double)) {
-            result += std::to_string(std::any_cast<double>(val)) + ",";
-        } else if (val.type() == typeid(long)) {
-            result += std::to_string(std::any_cast<long>(val)) + ",";
-        } else if (val.type() == typeid(long long)) {
-            result += std::to_string(std::any_cast<long long>(val)) + ",";
-        } else if (val.type() == typeid(long double)) {
-            result += std::to_string(std::any_cast<long double>(val)) + ",";
-        } else if (val.type() == typeid(std::map<std::string, std::any>)) {
-
-            JSONParser json(std::any_cast<std::map<std::string, std::any>>(val));
-
-            result += json.toString() + ",";
-        } else if (val.type() == typeid(std::vector<std::any>)) {
-            result += "[";
-            for (auto const &v: std::any_cast<std::vector<std::any>>(val)) {
-                if (v.type() == typeid(std::string)) {
-                    result += "\"" + std::any_cast<std::string>(v) + "\",";
-                } else if (v.type() == typeid(int)) {
-                    result += std::to_string(std::any_cast<int>(v)) + ",";
-                } else if (v.type() == typeid(short)) {
-                    result += std::to_string(std::any_cast<short>(v)) + ",";
-                } else if (v.type() == typeid(bool)) {
-                    result += (std::any_cast<bool>(v) ? "true" : "false") + std::string(",");
-                } else if (v.type() == typeid(float)) {
-                    result += std::to_string(std::any_cast<float>(v)) + ",";
-                } else if (v.type() == typeid(double)) {
-                    result += std::to_string(std::any_cast<double>(v)) + ",";
-                } else if (v.type() == typeid(long)) {
-                    result += std::to_string(std::any_cast<long>(v)) + ",";
-                } else if (v.type() == typeid(long long)) {
-                    result += std::to_string(std::any_cast<long long>(v)) + ",";
-                } else if (v.type() == typeid(long double)) {
-                    result += std::to_string(std::any_cast<long double>(v)) + ",";
-                } else if (v.type() == typeid(std::map<std::string, std::any>)) {
-                    result += JSONParser(std::any_cast<std::map<std::string, std::any>>(v)).toString() + ",";
+    if (data.empty() && !arrayData.empty()) {
+        return arrayToString();
+    }
+    
+    std::string result = "{";
+    bool first = true;
+    
+    for (const auto& key : keys) {
+        auto it = data.find(key);
+        if (it != data.end()) {
+            if (!first) {
+                result += ",";
+            }
+            first = false;
+            
+            result += "\"" + key + "\":";
+            
+            const std::string& value = it->second;
+            
+            if (!value.empty() && (value[0] == '{' || value[0] == '[')) {
+                result += value;
+            } else if (value == "true" || value == "false" || value == "null") {
+                result += value;
+            } else {
+                bool isNumber = true;
+                if (!value.empty()) {
+                    for (size_t i = 0; i < value.length(); ++i) {
+                        char c = value[i];
+                        if (!std::isdigit(c) && c != '.' && c != '-') {
+                            isNumber = false;
+                            break;
+                        }
+                    }
+                }
+                
+                if (isNumber && !value.empty()) {
+                    result += value;
+                } else {
+                    result += "\"" + value + "\"";
                 }
             }
-
-            if(!std::any_cast<std::vector<std::any>>(val).empty()) result.pop_back();
-
-            result += "],";
-
-        } else if(val.type() == typeid(std::vector<JSONParser>)) {
-            result += "[";
-            for (const auto &v : std::any_cast<std::vector<JSONParser>>(val)) {
-                result += v.toString() + ",";
-            }
-
-            if(!std::any_cast<std::vector<JSONParser>>(val).empty()) result.pop_back();
-            result += "],";
         }
-        result += "\n";
     }
-    return result.substr(0, result.size() - 2) + "\n}";
+    
+    result += "}";
+    return result;
+}
+
+std::string JSONParser::arrayToString() const {
+    std::string result = "[";
+    for (size_t i = 0; i < arrayData.size(); ++i) {
+        if (i > 0) result += ",";
+        result += arrayData[i].toString();
+    }
+    result += "]";
+    return result;
 }
 
 std::vector<std::string> JSONParser::getKeys() {
@@ -178,1232 +597,6 @@ std::vector<std::string> JSONParser::getKeys() {
 
 bool JSONParser::hasKey(const std::string &key) const {
     return data.find(key) != data.end();
-}
-
-std::string JSONParser::readKey() {
-
-    while (jp < basicString.size()) {
-
-        if (basicString[jp] == '}') {
-            return "";
-        }
-
-        if (basicString[jp] == '"') {
-
-            std::string key;
-            jp++;
-
-            while (basicString[jp] != '"') {
-                key += basicString[jp];
-                jp++;
-            }
-
-            jp++;
-
-            return key;
-        }
-
-        jp++;
-    }
-
-    return "";
-}
-
-std::string JSONParser::readString() {
-    std::string stringData;
-
-    jp++;
-
-    while (basicString[jp] != '"') {
-        stringData += basicString[jp];
-        jp++;
-    }
-
-    return stringData;
-}
-
-std::any JSONParser::readNumber() {
-
-    bool isNegative = false;
-    long long number = 0;
-    long double decimal = 0;
-
-    // Check if the number is negative
-    if (basicString[jp] == '-') {
-        isNegative = true;
-        jp++;
-    }
-
-    // Read the integer part of the number
-    while (isdigit(basicString[jp])) {
-        number = number * 10 + (basicString[jp] - '0');
-        jp++;
-    }
-
-    // Check if the number has a decimal part
-    if (basicString[jp] == '.') {
-        jp++;
-        decimal = number;
-        long double decimalPlace = 0.1;
-
-        while (isdigit(basicString[jp])) {
-            decimal += (basicString[jp] - '0') * decimalPlace;
-            decimalPlace /= 10;
-            jp++;
-        }
-
-        if (isNegative) {
-            decimal = -decimal;
-        }
-
-        // Return in the smallest possible float type
-        if (decimal <= FLT_MAX && decimal >= -FLT_MAX) {
-            return static_cast<float>(decimal);
-        } else if (decimal <= DBL_MAX && decimal >= -DBL_MAX) {
-            return static_cast<double>(decimal);
-        } else {
-            return decimal;
-        }
-
-    } else {
-        if (isNegative) {
-            number = -number;
-        }
-
-        if (number <= SHRT_MAX && number >= SHRT_MIN) {
-            return static_cast<short>(number);
-        } else if (number <= INT_MAX && number >= INT_MIN) {
-            return static_cast<int>(number);
-        } else if (number <= LONG_MAX) {
-            return static_cast<long>(number);
-        } else {
-            return number; // returns as int64_t if it's outside the range of long
-        }
-    }
-}
-
-std::map<std::string, std::any> JSONParser::readObject() {
-    std::string key;
-    std::map<std::string, std::any> objectData;
-
-    while (jp < basicString.size()) {
-
-        if (basicString[jp] == '{' || basicString[jp] == ',') {
-
-            key = readKey();
-        } else if (basicString[jp] == ':') {
-
-            std::any value = readData();
-            objectData[key] = value;
-        } else if (basicString[jp] == '}') {
-
-            jp++;
-
-            return objectData;
-        } else {
-            jp++;
-        }
-    }
-
-    return objectData;
-}
-
-std::vector<std::any> JSONParser::readArray() {
-
-    std::string key;
-    std::vector<std::any> arrayData;
-
-    jp++;
-
-    while (basicString[jp] != ']') {
-
-        arrayData.push_back(readData());
-
-        while (basicString[jp] != ',' && basicString[jp] != ']') {
-            jp++;
-        }
-    }
-
-    jp++;
-
-    return arrayData;
-}
-
-std::any JSONParser::readData() {
-
-    while (jp < basicString.size()) {
-
-        // Move to the next character if the current character is a whitespace character
-        if (isWhiteSpace(basicString[jp])) {
-            jp++;
-            continue;
-        }
-
-        // Check if the data is a string
-        if (basicString[jp] == '"') {
-            return readString();
-        }
-
-        // Check if the data is a number
-        if (isdigit(basicString[jp]) || basicString[jp] == '-') {
-            return readNumber();
-        }
-
-        // Check if the data is a boolean
-        if (basicString[jp] == 't' || basicString[jp] == 'f') {
-            if (basicString[jp] == 't') {
-                return true;
-            } else {
-                return false;
-            }
-        }
-
-        // Check if the data is a null value
-        if (basicString[jp] == 'n') {
-            return nullptr;
-        }
-
-        // Check if the data is an object
-        if (basicString[jp] == '{') {
-            return readObject();
-        }
-
-        // Check if the data is an array
-        if (basicString[jp] == '[') {
-            return readArray();
-        }
-
-        jp++;
-    }
-
-    return NULL;
-}
-
-bool JSONParser::isWhiteSpace(char c) {
-    return c == ' ' || c == '\n' || c == '\t' || c == '\r';
-}
-
-std::string JSONParser::getString(const std::string &key) {
-
-    // Check if the key exists
-    if (data.find(key) == data.end() || data[key].type() != typeid(std::string)) {
-
-        // Return an std::string if the data is a number
-        if (data.find(key) != data.end()) {
-            if (data[key].type() == typeid(int)) {
-                return std::to_string(std::any_cast<int>(data[key]));
-            } else if (data[key].type() == typeid(long)) {
-                return std::to_string(std::any_cast<long>(data[key]));
-            } else if (data[key].type() == typeid(long long)) {
-                return std::to_string(std::any_cast<long long>(data[key]));
-            } else if (data[key].type() == typeid(float)) {
-                return std::to_string(std::any_cast<float>(data[key]));
-            } else if (data[key].type() == typeid(double)) {
-                return std::to_string(std::any_cast<double>(data[key]));
-            } else if (data[key].type() == typeid(long double)) {
-                return std::to_string(std::any_cast<long double>(data[key]));
-            } else if (data[key].type() == typeid(short)) {
-                return std::to_string(std::any_cast<short>(data[key]));
-            } else if (data[key].type() == typeid(bool)) {
-                return std::to_string(std::any_cast<bool>(data[key]));
-            }
-        }
-
-        return {""};
-    }
-
-    return std::any_cast<std::string>(data[key]);
-}
-
-int JSONParser::getInt(const std::string &key) {
-
-    if (data.find(key) == data.end() || data[key].type() != typeid(int)) {
-
-        // Return an int if the number is within the range of an int
-        if (data.find(key) != data.end()) {
-            if (data[key].type() == typeid(long)) {
-                auto number = std::any_cast<long>(data[key]);
-                if (number <= INT_MAX && number >= INT_MIN) {
-                    return static_cast<int>(number);
-                }
-            } else if (data[key].type() == typeid(long long)) {
-                auto number = std::any_cast<long long>(data[key]);
-                if (number <= INT_MAX && number >= INT_MIN) {
-                    return static_cast<int>(number);
-                }
-            } else if (data[key].type() == typeid(float)) {
-                auto number = std::any_cast<float>(data[key]);
-                if (number <= INT_MAX && number >= INT_MIN) {
-                    return static_cast<int>(number);
-                }
-            } else if (data[key].type() == typeid(double)) {
-                auto number = std::any_cast<double>(data[key]);
-                if (number <= INT_MAX && number >= INT_MIN) {
-                    return static_cast<int>(number);
-                }
-            } else if (data[key].type() == typeid(long double)) {
-                auto number = std::any_cast<long double>(data[key]);
-                if (number <= INT_MAX && number >= INT_MIN) {
-                    return static_cast<int>(number);
-                }
-            } else if (data[key].type() == typeid(short)) {
-                auto number = std::any_cast<short>(data[key]);
-                return static_cast<int>(number);
-            } else if (data[key].type() == typeid(bool)) {
-                auto number = std::any_cast<bool>(data[key]);
-                return static_cast<int>(number);
-            } else if(data[key].type() == typeid(std::string)) {
-                try {
-                    return std::stoi(std::any_cast<std::string>(data[key]));
-                } catch (std::invalid_argument &e) {
-                    return 0;
-                }
-            }
-        }
-
-        return 0;
-    }
-
-    return std::any_cast<int>(data[key]);
-}
-
-short JSONParser::getShort(const std::string &key) {
-
-    if (data.find(key) == data.end() || data[key].type() != typeid(short)) {
-
-        // Return a short if the number is within the range of a short
-        if (data.find(key) != data.end()) {
-            if (data[key].type() == typeid(int)) {
-                auto number = std::any_cast<int>(data[key]);
-                if (number <= SHRT_MAX && number >= SHRT_MIN) {
-                    return static_cast<short>(number);
-                }
-            } else if (data[key].type() == typeid(long)) {
-                auto number = std::any_cast<long>(data[key]);
-                if (number <= SHRT_MAX && number >= SHRT_MIN) {
-                    return static_cast<short>(number);
-                }
-            } else if (data[key].type() == typeid(long long)) {
-                auto number = std::any_cast<long long>(data[key]);
-                if (number <= SHRT_MAX && number >= SHRT_MIN) {
-                    return static_cast<short>(number);
-                }
-            } else if (data[key].type() == typeid(float)) {
-                auto number = std::any_cast<float>(data[key]);
-                if (number <= SHRT_MAX && number >= SHRT_MIN) {
-                    return static_cast<short>(number);
-                }
-            } else if (data[key].type() == typeid(double)) {
-                auto number = std::any_cast<double>(data[key]);
-                if (number <= SHRT_MAX && number >= SHRT_MIN) {
-                    return static_cast<short>(number);
-                }
-            } else if (data[key].type() == typeid(long double)) {
-                auto number = std::any_cast<long double>(data[key]);
-                if (number <= SHRT_MAX && number >= SHRT_MIN) {
-                    return static_cast<short>(number);
-                }
-            } else if (data[key].type() == typeid(bool)) {
-                auto number = std::any_cast<bool>(data[key]);
-                return static_cast<short>(number);
-            }
-        }
-
-        return 0;
-    }
-
-    return std::any_cast<short>(data[key]);
-}
-
-bool JSONParser::getBool(const std::string &key) {
-
-    if (data.find(key) == data.end() || data[key].type() != typeid(bool)) {
-
-        // Return a bool if the number is within the range of a bool
-        if (data.find(key) != data.end()) {
-            if (data[key].type() == typeid(int)) {
-                auto number = std::any_cast<int>(data[key]);
-                if (number <= 1 && number >= 0) {
-                    return static_cast<bool>(number);
-                }
-            } else if (data[key].type() == typeid(long)) {
-                auto number = std::any_cast<long>(data[key]);
-                if (number <= 1 && number >= 0) {
-                    return static_cast<bool>(number);
-                }
-            } else if (data[key].type() == typeid(long long)) {
-                auto number = std::any_cast<long long>(data[key]);
-                if (number <= 1 && number >= 0) {
-                    return static_cast<bool>(number);
-                }
-            } else if (data[key].type() == typeid(float)) {
-                auto number = std::any_cast<float>(data[key]);
-                if (number <= 1 && number >= 0) {
-                    return static_cast<bool>(number);
-                }
-            } else if (data[key].type() == typeid(double)) {
-                auto number = std::any_cast<double>(data[key]);
-                if (number <= 1 && number >= 0) {
-                    return static_cast<bool>(number);
-                }
-            } else if (data[key].type() == typeid(long double)) {
-                auto number = std::any_cast<long double>(data[key]);
-                if (number <= 1 && number >= 0) {
-                    return static_cast<bool>(number);
-                }
-            } else if (data[key].type() == typeid(short)) {
-                auto number = std::any_cast<short>(data[key]);
-                if (number <= 1 && number >= 0) {
-                    return static_cast<bool>(number);
-                }
-            }
-        }
-
-        return false;
-    }
-
-    return std::any_cast<bool>(data[key]);
-}
-
-float JSONParser::getFloat(const std::string &key) {
-
-    if (data.find(key) == data.end() || data[key].type() != typeid(float)) {
-
-        // Return a float if the number is within the range of a float
-        if (data.find(key) != data.end()) {
-            if (data[key].type() == typeid(int)) {
-                auto number = std::any_cast<int>(data[key]);
-                if (number <= FLT_MAX && number >= -FLT_MAX) {
-                    return static_cast<float>(number);
-                }
-            } else if (data[key].type() == typeid(long)) {
-                auto number = std::any_cast<long>(data[key]);
-                if (number <= FLT_MAX && number >= -FLT_MAX) {
-                    return static_cast<float>(number);
-                }
-            } else if (data[key].type() == typeid(long long)) {
-                auto number = std::any_cast<long long>(data[key]);
-                if (number <= FLT_MAX && number >= -FLT_MAX) {
-                    return static_cast<float>(number);
-                }
-            } else if (data[key].type() == typeid(double)) {
-                auto number = std::any_cast<double>(data[key]);
-                if (number <= FLT_MAX && number >= -FLT_MAX) {
-                    return static_cast<float>(number);
-                }
-            } else if (data[key].type() == typeid(long double)) {
-                auto number = std::any_cast<long double>(data[key]);
-                if (number <= FLT_MAX && number >= -FLT_MAX) {
-                    return static_cast<float>(number);
-                }
-            } else if (data[key].type() == typeid(short)) {
-                auto number = std::any_cast<short>(data[key]);
-                if (number <= FLT_MAX && number >= -FLT_MAX) {
-                    return static_cast<float>(number);
-                }
-            } else if (data[key].type() == typeid(bool)) {
-                auto number = std::any_cast<bool>(data[key]);
-                if (number <= FLT_MAX && number >= -FLT_MAX) {
-                    return static_cast<float>(number);
-                }
-            }
-        }
-
-        return 0.0f;
-    }
-
-    return std::any_cast<float>(data[key]);
-}
-
-double JSONParser::getDouble(const std::string &key) {
-
-    if (data.find(key) == data.end() || data[key].type() != typeid(double)) {
-
-        // Return a double if the number is within the range of a double
-        if (data.find(key) != data.end()) {
-            if (data[key].type() == typeid(int)) {
-                auto number = std::any_cast<int>(data[key]);
-                if (number <= DBL_MAX && number >= -DBL_MAX) {
-                    return static_cast<double>(number);
-                }
-            } else if (data[key].type() == typeid(long)) {
-                auto number = std::any_cast<long>(data[key]);
-                if (number <= DBL_MAX && number >= -DBL_MAX) {
-                    return static_cast<double>(number);
-                }
-            } else if (data[key].type() == typeid(long long)) {
-                auto number = std::any_cast<long long>(data[key]);
-                if (number <= DBL_MAX && number >= -DBL_MAX) {
-                    return static_cast<double>(number);
-                }
-            } else if (data[key].type() == typeid(float)) {
-                auto number = std::any_cast<float>(data[key]);
-                if (number <= DBL_MAX && number >= -DBL_MAX) {
-                    return static_cast<double>(number);
-                }
-            } else if (data[key].type() == typeid(long double)) {
-                auto number = std::any_cast<long double>(data[key]);
-                if (number <= DBL_MAX && number >= -DBL_MAX) {
-                    return static_cast<double>(number);
-                }
-            } else if (data[key].type() == typeid(short)) {
-                auto number = std::any_cast<short>(data[key]);
-                if (number <= DBL_MAX && number >= -DBL_MAX) {
-                    return static_cast<double>(number);
-                }
-            } else if (data[key].type() == typeid(bool)) {
-                auto number = std::any_cast<bool>(data[key]);
-                if (number <= DBL_MAX && number >= -DBL_MAX) {
-                    return static_cast<double>(number);
-                }
-            }
-        }
-
-        return 0.0;
-    }
-
-    return std::any_cast<double>(data[key]);
-}
-
-long JSONParser::getLong(const std::string &key) {
-
-    if (data.find(key) == data.end() || data[key].type() != typeid(long)) {
-
-        // Return a long if the number is within the range of a long
-        if (data.find(key) != data.end()) {
-            if (data[key].type() == typeid(int)) {
-                auto number = std::any_cast<int>(data[key]);
-                if (number <= LONG_MAX) {
-                    return static_cast<long>(number);
-                }
-            } else if (data[key].type() == typeid(long long)) {
-                auto number = std::any_cast<long long>(data[key]);
-                if (number <= LONG_MAX) {
-                    return static_cast<long>(number);
-                }
-            } else if (data[key].type() == typeid(float)) {
-                auto number = std::any_cast<float>(data[key]);
-                if (number <= LONG_MAX) {
-                    return static_cast<long>(number);
-                }
-            } else if (data[key].type() == typeid(double)) {
-                auto number = std::any_cast<double>(data[key]);
-                if (number <= LONG_MAX) {
-                    return static_cast<long>(number);
-                }
-            } else if (data[key].type() == typeid(long double)) {
-                auto number = std::any_cast<long double>(data[key]);
-                if (number <= LONG_MAX) {
-                    return static_cast<long>(number);
-                }
-            } else if (data[key].type() == typeid(short)) {
-                auto number = std::any_cast<short>(data[key]);
-                return static_cast<long>(number);
-            } else if (data[key].type() == typeid(bool)) {
-                auto number = std::any_cast<bool>(data[key]);
-                return static_cast<long>(number);
-            }
-        }
-
-        return 0;
-    }
-
-    return std::any_cast<long>(data[key]);
-}
-
-long long JSONParser::getLongLong(const std::string &key) {
-
-    if (data.find(key) == data.end() || data[key].type() != typeid(long long)) {
-
-        // Return a long long if the number is within the range of a long long
-        if (data.find(key) != data.end()) {
-            if (data[key].type() == typeid(int)) {
-                auto number = std::any_cast<int>(data[key]);
-                return static_cast<long long>(number);
-            } else if (data[key].type() == typeid(long)) {
-                auto number = std::any_cast<long>(data[key]);
-                return static_cast<long long>(number);
-            } else if (data[key].type() == typeid(float)) {
-                auto number = std::any_cast<float>(data[key]);
-                return static_cast<long long>(number);
-            } else if (data[key].type() == typeid(double)) {
-                auto number = std::any_cast<double>(data[key]);
-                return static_cast<long long>(number);
-            } else if (data[key].type() == typeid(long double)) {
-                auto number = std::any_cast<long double>(data[key]);
-                return static_cast<long long>(number);
-            } else if (data[key].type() == typeid(short)) {
-                auto number = std::any_cast<short>(data[key]);
-                return static_cast<long long>(number);
-            } else if (data[key].type() == typeid(bool)) {
-                auto number = std::any_cast<bool>(data[key]);
-                return static_cast<long long>(number);
-            }
-        }
-
-        return 0;
-    }
-
-    return std::any_cast<long long>(data[key]);
-}
-
-long double JSONParser::getLongDouble(const std::string &key) {
-
-    if (data.find(key) == data.end() || data[key].type() != typeid(long double)) {
-
-        // Return a long double if the number is within the range of a long double
-        if (data.find(key) != data.end()) {
-            if (data[key].type() == typeid(int)) {
-                auto number = std::any_cast<int>(data[key]);
-                return static_cast<long double>(number);
-            } else if (data[key].type() == typeid(long)) {
-                auto number = std::any_cast<long>(data[key]);
-                return static_cast<long double>(number);
-            } else if (data[key].type() == typeid(long long)) {
-                auto number = std::any_cast<long long>(data[key]);
-                return static_cast<long double>(number);
-            } else if (data[key].type() == typeid(float)) {
-                auto number = std::any_cast<float>(data[key]);
-                return static_cast<long double>(number);
-            } else if (data[key].type() == typeid(double)) {
-                auto number = std::any_cast<double>(data[key]);
-                return static_cast<long double>(number);
-            } else if (data[key].type() == typeid(short)) {
-                auto number = std::any_cast<short>(data[key]);
-                return static_cast<long double>(number);
-            } else if (data[key].type() == typeid(bool)) {
-                auto number = std::any_cast<bool>(data[key]);
-                return static_cast<long double>(number);
-            }
-        }
-
-        return 0.0;
-    }
-
-    return std::any_cast<long double>(data[key]);
-}
-
-JSONParser JSONParser::getObject(const std::string &key) {
-
-    if (data.find(key) == data.end() || data[key].type() != typeid(std::map<std::string, std::any>)) {
-        return JSONParser("");
-    }
-
-    return JSONParser(std::any_cast<std::map<std::string, std::any>>(data[key]));
-}
-
-std::vector<std::string> JSONParser::getStringArray(const std::string &key) {
-
-    if (data.find(key) == data.end() || data[key].type() != typeid(std::vector<std::any>)) {
-
-        // Return an empty vector if the data is not an array
-        return {};
-    }
-
-    auto anyArray = std::any_cast<std::vector<std::any>>(data[key]);
-    std::vector<std::string> stringArray;
-
-    for (const auto &it: anyArray) {
-        if (it.type() == typeid(std::string)) {
-            stringArray.push_back(std::any_cast<std::string>(it));
-        }
-    }
-
-    return stringArray;
-}
-
-std::vector<short> JSONParser::getShortArray(const std::string &key) {
-
-    if (data.find(key) == data.end() || data[key].type() != typeid(std::vector<std::any>)) {
-
-        // Return an empty vector if the data is not an array
-        return {};
-    }
-
-    auto anyArray = std::any_cast<std::vector<std::any>>(data[key]);
-    std::vector<short> shortArray;
-
-    for (const auto &it: anyArray) {
-        if (it.type() == typeid(short)) {
-            shortArray.push_back(std::any_cast<short>(it));
-        } else {
-            if (it.type() == typeid(int)) {
-                shortArray.push_back(static_cast<short>(std::any_cast<int>(it)));
-            } else if (it.type() == typeid(long)) {
-                shortArray.push_back(static_cast<short>(std::any_cast<long>(it)));
-            } else if (it.type() == typeid(long long)) {
-                shortArray.push_back(static_cast<short>(std::any_cast<long long>(it)));
-            } else if (it.type() == typeid(float)) {
-                shortArray.push_back(static_cast<short>(std::any_cast<float>(it)));
-            } else if (it.type() == typeid(double)) {
-                shortArray.push_back(static_cast<short>(std::any_cast<double>(it)));
-            } else if (it.type() == typeid(long double)) {
-                shortArray.push_back(static_cast<short>(std::any_cast<long double>(it)));
-            } else if (it.type() == typeid(bool)) {
-                shortArray.push_back(static_cast<short>(std::any_cast<bool>(it)));
-            }
-        }
-    }
-
-    return shortArray;
-}
-
-std::vector<int> JSONParser::getIntArray(const std::string &key) {
-
-    if (data.find(key) == data.end() || data[key].type() != typeid(std::vector<std::any>)) {
-
-        // Return an empty vector if the data is not an array
-        return {};
-    }
-
-    auto anyArray = std::any_cast<std::vector<std::any>>(data[key]);
-    std::vector<int> intArray;
-
-    for (const auto &it: anyArray) {
-        if (it.type() == typeid(int)) {
-            intArray.push_back(std::any_cast<int>(it));
-        } else {
-            if (it.type() == typeid(long)) {
-                intArray.push_back(static_cast<int>(std::any_cast<long>(it)));
-            } else if (it.type() == typeid(long long)) {
-                intArray.push_back(static_cast<int>(std::any_cast<long long>(it)));
-            } else if (it.type() == typeid(float)) {
-                intArray.push_back(static_cast<int>(std::any_cast<float>(it)));
-            } else if (it.type() == typeid(double)) {
-                intArray.push_back(static_cast<int>(std::any_cast<double>(it)));
-            } else if (it.type() == typeid(long double)) {
-                intArray.push_back(static_cast<int>(std::any_cast<long double>(it)));
-            } else if (it.type() == typeid(short)) {
-                intArray.push_back(static_cast<int>(std::any_cast<short>(it)));
-            } else if (it.type() == typeid(bool)) {
-                intArray.push_back(static_cast<int>(std::any_cast<bool>(it)));
-            }
-        }
-    }
-
-    return intArray;
-}
-
-std::vector<long> JSONParser::getLongArray(const std::string &key) {
-
-    if (data.find(key) == data.end() || data[key].type() != typeid(std::vector<std::any>)) {
-
-        // Return an empty vector if the data is not an array
-        return {};
-    }
-
-    auto anyArray = std::any_cast<std::vector<std::any>>(data[key]);
-    std::vector<long> longArray;
-
-    for (const auto &it: anyArray) {
-        if (it.type() == typeid(long)) {
-            longArray.push_back(std::any_cast<long>(it));
-        } else {
-            if (it.type() == typeid(int)) {
-                longArray.push_back(static_cast<long>(std::any_cast<int>(it)));
-            } else if (it.type() == typeid(long long)) {
-                longArray.push_back(static_cast<long>(std::any_cast<long long>(it)));
-            } else if (it.type() == typeid(float)) {
-                longArray.push_back(static_cast<long>(std::any_cast<float>(it)));
-            } else if (it.type() == typeid(double)) {
-                longArray.push_back(static_cast<long>(std::any_cast<double>(it)));
-            } else if (it.type() == typeid(long double)) {
-                longArray.push_back(static_cast<long>(std::any_cast<long double>(it)));
-            } else if (it.type() == typeid(short)) {
-                longArray.push_back(static_cast<long>(std::any_cast<short>(it)));
-            } else if (it.type() == typeid(bool)) {
-                longArray.push_back(static_cast<long>(std::any_cast<bool>(it)));
-            }
-        }
-    }
-
-    return longArray;
-}
-
-std::vector<long long> JSONParser::getLongLongArray(const std::string &key) {
-
-    if (data.find(key) == data.end() || data[key].type() != typeid(std::vector<std::any>)) {
-
-        // Return an empty vector if the data is not an array
-        return {};
-    }
-
-    auto anyArray = std::any_cast<std::vector<std::any>>(data[key]);
-    std::vector<long long> longLongArray;
-
-    for (const auto &it: anyArray) {
-        if (it.type() == typeid(long long)) {
-            longLongArray.push_back(std::any_cast<long long>(it));
-        } else {
-            if (it.type() == typeid(int)) {
-                longLongArray.push_back(static_cast<long long>(std::any_cast<int>(it)));
-            } else if (it.type() == typeid(long)) {
-                longLongArray.push_back(static_cast<long long>(std::any_cast<long>(it)));
-            } else if (it.type() == typeid(float)) {
-                longLongArray.push_back(static_cast<long long>(std::any_cast<float>(it)));
-            } else if (it.type() == typeid(double)) {
-                longLongArray.push_back(static_cast<long long>(std::any_cast<double>(it)));
-            } else if (it.type() == typeid(long double)) {
-                longLongArray.push_back(static_cast<long long>(std::any_cast<long double>(it)));
-            } else if (it.type() == typeid(short)) {
-                longLongArray.push_back(static_cast<long long>(std::any_cast<short>(it)));
-            } else if (it.type() == typeid(bool)) {
-                longLongArray.push_back(static_cast<long long>(std::any_cast<bool>(it)));
-            }
-        }
-    }
-
-    return longLongArray;
-}
-
-std::vector<bool> JSONParser::getBoolArray(const std::string &key) {
-
-    if (data.find(key) == data.end() || data[key].type() != typeid(std::vector<std::any>)) {
-
-        // Return an empty vector if the data is not an array
-        return {};
-    }
-
-    auto anyArray = std::any_cast<std::vector<std::any>>(data[key]);
-    std::vector<bool> boolArray;
-
-    for (const auto &it: anyArray) {
-        if (it.type() == typeid(bool)) {
-            boolArray.push_back(std::any_cast<bool>(it));
-        } else {
-            if (it.type() == typeid(int)) {
-                boolArray.push_back(static_cast<bool>(std::any_cast<int>(it)));
-            } else if (it.type() == typeid(long)) {
-                boolArray.push_back(static_cast<bool>(std::any_cast<long>(it)));
-            } else if (it.type() == typeid(long long)) {
-                boolArray.push_back(static_cast<bool>(std::any_cast<long long>(it)));
-            } else if (it.type() == typeid(float)) {
-                boolArray.push_back(static_cast<bool>(std::any_cast<float>(it)));
-            } else if (it.type() == typeid(double)) {
-                boolArray.push_back(static_cast<bool>(std::any_cast<double>(it)));
-            } else if (it.type() == typeid(long double)) {
-                boolArray.push_back(static_cast<bool>(std::any_cast<long double>(it)));
-            } else if (it.type() == typeid(short)) {
-                boolArray.push_back(static_cast<bool>(std::any_cast<short>(it)));
-            }
-        }
-    }
-
-    return boolArray;
-}
-
-std::vector<float> JSONParser::getFloatArray(const std::string &key) {
-
-    if (data.find(key) == data.end() || data[key].type() != typeid(std::vector<std::any>)) {
-
-        // Return an empty vector if the data is not an array
-        return {};
-    }
-
-    auto anyArray = std::any_cast<std::vector<std::any>>(data[key]);
-    std::vector<float> floatArray;
-
-    for (const auto &it: anyArray) {
-        if (it.type() == typeid(float)) {
-            floatArray.push_back(std::any_cast<float>(it));
-        } else {
-            if (it.type() == typeid(int)) {
-                floatArray.push_back(static_cast<float>(std::any_cast<int>(it)));
-            } else if (it.type() == typeid(long)) {
-                floatArray.push_back(static_cast<float>(std::any_cast<long>(it)));
-            } else if (it.type() == typeid(long long)) {
-                floatArray.push_back(static_cast<float>(std::any_cast<long long>(it)));
-            } else if (it.type() == typeid(double)) {
-                floatArray.push_back(static_cast<float>(std::any_cast<double>(it)));
-            } else if (it.type() == typeid(long double)) {
-                floatArray.push_back(static_cast<float>(std::any_cast<long double>(it)));
-            } else if (it.type() == typeid(short)) {
-                floatArray.push_back(static_cast<float>(std::any_cast<short>(it)));
-            } else if (it.type() == typeid(bool)) {
-                floatArray.push_back(static_cast<float>(std::any_cast<bool>(it)));
-            }
-        }
-    }
-
-    return floatArray;
-}
-
-std::vector<double> JSONParser::getDoubleArray(const std::string &key) {
-
-    if (data.find(key) == data.end() || data[key].type() != typeid(std::vector<std::any>)) {
-
-        // Return an empty vector if the data is not an array
-        return {};
-    }
-
-    auto anyArray = std::any_cast<std::vector<std::any>>(data[key]);
-    std::vector<double> doubleArray;
-
-    for (const auto &it: anyArray) {
-        if (it.type() == typeid(double)) {
-            doubleArray.push_back(std::any_cast<double>(it));
-        } else {
-            if (it.type() == typeid(int)) {
-                doubleArray.push_back(static_cast<double>(std::any_cast<int>(it)));
-            } else if (it.type() == typeid(long)) {
-                doubleArray.push_back(static_cast<double>(std::any_cast<long>(it)));
-            } else if (it.type() == typeid(long long)) {
-                doubleArray.push_back(static_cast<double>(std::any_cast<long long>(it)));
-            } else if (it.type() == typeid(float)) {
-                doubleArray.push_back(static_cast<double>(std::any_cast<float>(it)));
-            } else if (it.type() == typeid(long double)) {
-                doubleArray.push_back(static_cast<double>(std::any_cast<long double>(it)));
-            } else if (it.type() == typeid(short)) {
-                doubleArray.push_back(static_cast<double>(std::any_cast<short>(it)));
-            } else if (it.type() == typeid(bool)) {
-                doubleArray.push_back(static_cast<double>(std::any_cast<bool>(it)));
-            }
-        }
-    }
-
-    return doubleArray;
-}
-
-std::vector<long double> JSONParser::getLongDoubleArray(const std::string &key) {
-
-    if (data.find(key) == data.end() || data[key].type() != typeid(std::vector<std::any>)) {
-
-        // Return an empty vector if the data is not an array
-        return {};
-    }
-
-    auto anyArray = std::any_cast<std::vector<std::any>>(data[key]);
-    std::vector<long double> longDoubleArray;
-
-    for (const auto &it: anyArray) {
-        if (it.type() == typeid(long double)) {
-            longDoubleArray.push_back(std::any_cast<long double>(it));
-        } else {
-            if (it.type() == typeid(int)) {
-                longDoubleArray.push_back(static_cast<long double>(std::any_cast<int>(it)));
-            } else if (it.type() == typeid(long)) {
-                longDoubleArray.push_back(static_cast<long double>(std::any_cast<long>(it)));
-            } else if (it.type() == typeid(long long)) {
-                longDoubleArray.push_back(static_cast<long double>(std::any_cast<long long>(it)));
-            } else if (it.type() == typeid(float)) {
-                longDoubleArray.push_back(static_cast<long double>(std::any_cast<float>(it)));
-            } else if (it.type() == typeid(double)) {
-                longDoubleArray.push_back(static_cast<long double>(std::any_cast<double>(it)));
-            } else if (it.type() == typeid(short)) {
-                longDoubleArray.push_back(static_cast<long double>(std::any_cast<short>(it)));
-            } else if (it.type() == typeid(bool)) {
-                longDoubleArray.push_back(static_cast<long double>(std::any_cast<bool>(it)));
-            }
-        }
-    }
-
-    return longDoubleArray;
-}
-
-std::vector<JSONParser> JSONParser::getArrayOfJSON(const std::string &key) {
-
-    if (data.find(key) == data.end() || data[key].type() != typeid(std::vector<std::any>)) {
-
-        // Return an empty vector if the data is not an array
-        return {};
-    }
-
-    auto anyArray = std::any_cast<std::vector<std::any>>(data[key]);
-    std::vector<JSONParser> objectArray;
-
-    for (const auto &it: anyArray) {
-        if (it.type() == typeid(std::map<std::string, std::any>)) {
-            objectArray.emplace_back(std::any_cast<std::map<std::string, std::any>>(it));
-        }
-    }
-
-    return objectArray;
-}
-
-void JSONParser::setString(const std::string &key, const std::string &value) {
-
-    data[key] = value;
-}
-
-void JSONParser::setInt(const std::string &key, int value) {
-
-    data[key] = value;
-}
-
-void JSONParser::setShort(const std::string &key, short value) {
-
-    data[key] = value;
-}
-
-void JSONParser::setBool(const std::string &key, bool value) {
-
-    data[key] = value;
-}
-
-void JSONParser::setFloat(const std::string &key, float value) {
-
-    data[key] = value;
-}
-
-void JSONParser::setDouble(const std::string &key, double value) {
-
-    data[key] = value;
-}
-
-void JSONParser::setLong(const std::string &key, long value) {
-
-    data[key] = value;
-}
-
-void JSONParser::setLongLong(const std::string &key, long long int value) {
-
-    data[key] = value;
-}
-
-void JSONParser::setLongDouble(const std::string &key, long double value) {
-
-    data[key] = value;
-}
-
-void JSONParser::setJSON(const std::string &key, const JSONParser &value) {
-
-    data[key] = value.data;
-}
-
-void JSONParser::setStringArray(const std::string &key, const std::vector<std::string> &value) {
-
-    std::vector<std::any> anyArray;
-
-    anyArray.reserve(value.size());
-
-    for (const auto &it: value) {
-        anyArray.emplace_back(it);
-    }
-
-    data[key] = anyArray;
-}
-
-void JSONParser::setShortArray(const std::string &key, const std::vector<short> &value) {
-
-    std::vector<std::any> anyArray;
-
-    anyArray.reserve(value.size());
-
-    for (const auto &it: value) {
-        anyArray.emplace_back(it);
-    }
-
-    data[key] = anyArray;
-}
-
-void JSONParser::setIntArray(const std::string &key, const std::vector<int> &value) {
-
-    std::vector<std::any> anyArray;
-
-    anyArray.reserve(value.size());
-
-    for (const auto &it: value) {
-        anyArray.emplace_back(it);
-    }
-
-    data[key] = anyArray;
-}
-
-void JSONParser::setLongArray(const std::string &key, const std::vector<long> &value) {
-
-    std::vector<std::any> anyArray;
-
-    anyArray.reserve(value.size());
-
-    for (const auto &it: value) {
-        anyArray.emplace_back(it);
-    }
-
-    data[key] = anyArray;
-}
-
-void JSONParser::setLongLongArray(const std::string &key, const std::vector<long long int> &value) {
-
-    std::vector<std::any> anyArray;
-
-    anyArray.reserve(value.size());
-
-    for (const auto &it: value) {
-        anyArray.emplace_back(it);
-    }
-
-    data[key] = anyArray;
-}
-
-void JSONParser::setBoolArray(const std::string &key, const std::vector<bool> &value) {
-
-    std::vector<std::any> anyArray;
-
-    anyArray.reserve(value.size());
-
-    for (const auto &it: value) {
-        anyArray.emplace_back(it);
-    }
-
-    data[key] = anyArray;
-}
-
-void JSONParser::setFloatArray(const std::string &key, const std::vector<float> &value) {
-
-    std::vector<std::any> anyArray;
-
-    anyArray.reserve(value.size());
-
-    for (const auto &it: value) {
-        anyArray.emplace_back(it);
-    }
-
-    data[key] = anyArray;
-}
-
-void JSONParser::setDoubleArray(const std::string &key, const std::vector<double> &value) {
-
-    std::vector<std::any> anyArray;
-
-    anyArray.reserve(value.size());
-
-    for (const auto &it: value) {
-        anyArray.emplace_back(it);
-    }
-
-    data[key] = anyArray;
-}
-
-void JSONParser::setLongDoubleArray(const std::string &key, const std::vector<long double> &value) {
-
-    std::vector<std::any> anyArray;
-
-    anyArray.reserve(value.size());
-
-    for (const auto &it: value) {
-        anyArray.emplace_back(it);
-    }
-
-    data[key] = anyArray;
-}
-
-void JSONParser::setArrayOfJSON(const std::string &key, const std::vector<JSONParser> &value) {
-
-    std::vector<std::any> anyArray;
-
-    anyArray.reserve(value.size());
-
-    for (const auto &it: value) {
-        anyArray.emplace_back(it.data);
-    }
-
-    data[key] = anyArray;
-}
-
-void JSONParser::setJSONArray(const std::vector<JSONParser>& value) {
-
-    arrayData = value;
-}
-
-void JSONParser::addJSONToArray(const JSONParser& value) {
-
-    arrayData.push_back(value);
-}
-
-void JSONParser::addArrayOfJSON(const std::string& key, const std::vector<JSONParser>& value) {
-    data[key] = value;
-    keys.push_back(key);
-}
-
-void JSONParser::removeKey(const std::string &key) {
-
-    data.erase(key);
-}
-
-std::string JSONParser::arrayToString() const {
-    std::string result = "[";
-    
-    // Handle case where arrayData is used (JSON array at root level)
-    if (!arrayData.empty()) {
-        for (size_t i = 0; i < arrayData.size(); ++i) {
-            if (i > 0) result += ",";
-            result += arrayData[i].toString();
-        }
-    }
-    // Handle case where we want to serialize the entire data map as an array of values
-    else if (!data.empty()) {
-        bool first = true;
-        for (const auto& key : keys) {
-            if (!first) result += ",";
-            first = false;
-            
-            auto val = data.at(key);
-            result += anyToString(val);
-        }
-    }
-    
-    result += "]";
-    return result;
-}
-
-std::vector<JSONParser> JSONParser::getJSONArray() {
-    return arrayData;
-}
-
-/**
- * @brief Serializes a std::any value to a JSON-compatible string.
- *
- * Converts supported types (string, int, bool, float, double, long, long long, long double,
- * std::map<std::string, std::any>, std::vector<std::any>, std::vector<JSONParser>) to their
- * JSON string representations. Returns "null" for unsupported types.
- * Used internally for consistent serialization of values stored in std::any.
- *
- * @param val The std::any value to serialize.
- * @return JSON-compatible string representation of the value.
- */
-std::string JSONParser::anyToString(const std::any &val) const {
-    if (val.type() == typeid(std::string)) {
-        return "\"" + std::any_cast<std::string>(val) + "\"";
-    } else if (val.type() == typeid(int)) {
-        return std::to_string(std::any_cast<int>(val));
-    } else if (val.type() == typeid(short)) {
-        return std::to_string(std::any_cast<short>(val));
-    } else if (val.type() == typeid(bool)) {
-        return std::any_cast<bool>(val) ? "true" : "false";
-    } else if (val.type() == typeid(float)) {
-        return std::to_string(std::any_cast<float>(val));
-    } else if (val.type() == typeid(double)) {
-        return std::to_string(std::any_cast<double>(val));
-    } else if (val.type() == typeid(long)) {
-        return std::to_string(std::any_cast<long>(val));
-    } else if (val.type() == typeid(long long)) {
-        return std::to_string(std::any_cast<long long>(val));
-    } else if (val.type() == typeid(long double)) {
-        return std::to_string(std::any_cast<long double>(val));
-    } else if (val.type() == typeid(std::map<std::string, std::any>)) {
-        JSONParser json(std::any_cast<std::map<std::string, std::any>>(val));
-        return json.toString();
-    } else if (val.type() == typeid(std::vector<std::any>)) {
-        std::string result = "[";
-        auto anyArray = std::any_cast<std::vector<std::any>>(val);
-        for (size_t i = 0; i < anyArray.size(); ++i) {
-            if (i > 0) result += ",";
-            result += anyToString(anyArray[i]);
-        }
-        result += "]";
-        return result;
-    } else if (val.type() == typeid(std::vector<JSONParser>)) {
-        std::string result = "[";
-        auto jsonArray = std::any_cast<std::vector<JSONParser>>(val);
-        for (size_t i = 0; i < jsonArray.size(); ++i) {
-            if (i > 0) result += ",";
-            result += jsonArray[i].toString();
-        }
-        result += "]";
-        return result;
-    }
-    
-    return "null";
 }
 
 }  // namespace geruest

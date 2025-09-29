@@ -486,4 +486,92 @@ void test_functions_file(){
     assert(str == expected);
 }
 
+// Test adding elements to a JSON array and using arrayToString
+void test_add_to_array_and_array_to_string() {
+    // Start with an initial JSON array
+    JSONParser json;
+    std::vector<JSONParser> initialArray;
+    
+    // Create first element
+    JSONParser element1;
+    element1.setString("name", "Initial Item");
+    element1.setInt("id", 1);
+    initialArray.push_back(element1);
+    
+    // Set the initial array
+    json.setJSONArray(initialArray);
+    
+    // Add more elements using addJSONToArray
+    JSONParser element2;
+    element2.setString("name", "Added Item 1");
+    element2.setInt("id", 2);
+    json.addJSONToArray(element2);
+    
+    JSONParser element3;
+    element3.setString("name", "Added Item 2");
+    element3.setInt("id", 3);
+    element3.setBool("active", true);
+    json.addJSONToArray(element3);
+    
+    // Convert back to string using arrayToString
+    std::string result = json.arrayToString();
+    
+    // Expected JSON structure (whitespace will be removed for comparison)
+    std::string expected = R"([
+        {
+            "name": "Initial Item",
+            "id": 1
+        },
+        {
+            "name": "Added Item 1",
+            "id": 2
+        },
+        {
+            "name": "Added Item 2",
+            "id": 3,
+            "active": true
+        }
+    ])";
+    
+    // Remove all whitespaces for comparison
+    result.erase(std::remove_if(result.begin(), result.end(), ::isspace), result.end());
+    expected.erase(std::remove_if(expected.begin(), expected.end(), ::isspace), expected.end());
+    
+    assert(result == expected);
+    
+    // Also test that we can retrieve the array properly
+    std::vector<JSONParser> retrievedArray = json.getJSONArray();
+    assert(retrievedArray.size() == 3);
+    assert(retrievedArray[0].getString("name") == "Initial Item");
+    assert(retrievedArray[0].getInt("id") == 1);
+    assert(retrievedArray[1].getString("name") == "Added Item 1");
+    assert(retrievedArray[1].getInt("id") == 2);
+    assert(retrievedArray[2].getString("name") == "Added Item 2");
+    assert(retrievedArray[2].getInt("id") == 3);
+    assert(retrievedArray[2].getBool("active") == true);
+}
+
+// Test the specific problem scenario: add to empty array then arrayToString
+void test_add_to_empty_array_and_array_to_string() {
+    // Start with completely empty JSONParser
+    JSONParser json;
+    
+    // Initialize as empty array
+    std::vector<JSONParser> emptyArray;
+    json.setJSONArray(emptyArray);
+    
+    // Add a simple element
+    JSONParser item1;
+    item1.setString("test", "value");
+    json.addJSONToArray(item1);
+    
+    // The critical test: arrayToString should work correctly after adding
+    std::string result = json.arrayToString();
+    
+    // Basic verification
+    assert(!result.empty());
+    assert(result.find("test") != std::string::npos);
+    assert(result.find("value") != std::string::npos);
+}
+
 #endif // GERUEST_TEST_FUNCTIONS_HPP

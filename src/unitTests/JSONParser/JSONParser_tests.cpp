@@ -75,6 +75,8 @@ bool runJSONParserTests() {
     runTest(test_json_array_with_one_element, "test_json_array_with_one_element");
     runTest(test_adding_json_array_to_json_array, "test_adding_json_array_to_json_array");
     runTest(test_functions_file, "test_functions_file");
+    runTest(test_add_to_array_and_array_to_string, "test_add_to_array_and_array_to_string");
+    runTest(test_add_to_empty_array_and_array_to_string, "test_add_to_empty_array_and_array_to_string");
 
     std::cout << std::endl;
     std::cout << "=== JSONParser Test Results ===" << std::endl;
