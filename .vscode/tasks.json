@@ -334,6 +334,230 @@
             ],
             "group": "build",
             "detail": "Complete build and install of the library with MinGW"
+        },
+        {
+            "label": "Create Unit Tests Build Directory",
+            "type": "shell",
+            "command": "powershell",
+            "args": [
+                "-Command",
+                "if (!(Test-Path 'build')) { mkdir build }"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/src/unitTests"
+            },
+            "group": "build",
+            "detail": "Create unit tests build directory if it doesn't exist"
+        },
+        {
+            "label": "Configure Unit Tests (MSVC)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "..",
+                "-A",
+                "x64",
+                "-DCMAKE_BUILD_TYPE=Release"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/src/unitTests/build"
+            },
+            "group": "build",
+            "dependsOn": [
+                "Create Unit Tests Build Directory"
+            ],
+            "detail": "Configure CMake for unit tests with MSVC compiler"
+        },
+        {
+            "label": "Configure Unit Tests (MinGW)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "..",
+                "-G",
+                "MinGW Makefiles",
+                "-DCMAKE_BUILD_TYPE=Release"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/src/unitTests/build"
+            },
+            "group": "build",
+            "dependsOn": [
+                "Create Unit Tests Build Directory"
+            ],
+            "detail": "Configure CMake for unit tests with MinGW compiler"
+        },
+        {
+            "label": "Build Unit Tests (MSVC)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                ".",
+                "--config",
+                "Release"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/src/unitTests/build"
+            },
+            "group": "build",
+            "dependsOn": [
+                "Configure Unit Tests (MSVC)"
+            ],
+            "problemMatcher": [
+                "$msCompile"
+            ],
+            "detail": "Build the unit tests using MSVC"
+        },
+        {
+            "label": "Build Unit Tests (MinGW)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                ".",
+                "--config",
+                "Release"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/src/unitTests/build"
+            },
+            "group": "build",
+            "dependsOn": [
+                "Configure Unit Tests (MinGW)"
+            ],
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "detail": "Build the unit tests using MinGW"
+        },
+        {
+            "label": "Run All Unit Tests (MSVC)",
+            "type": "shell",
+            "command": ".\\Release\\Geruest_Unit_Tests.exe",
+            "options": {
+                "cwd": "${workspaceFolder}/src/unitTests"
+            },
+            "group": "test",
+            "dependsOn": [
+                "Build Unit Tests (MSVC)"
+            ],
+            "detail": "Run all unit tests (MSVC build)"
+        },
+        {
+            "label": "Run All Unit Tests (MinGW)",
+            "type": "shell",
+            "command": ".\\build\\Geruest_Unit_Tests.exe",
+            "options": {
+                "cwd": "${workspaceFolder}/src/unitTests"
+            },
+            "group": "test",
+            "dependsOn": [
+                "Build Unit Tests (MinGW)"
+            ],
+            "detail": "Run all unit tests (MinGW build)"
+        },
+        {
+            "label": "Run JSONParser Tests (MSVC)",
+            "type": "shell",
+            "command": ".\\build\\Release\\JSONParser_Tests.exe",
+            "options": {
+                "cwd": "${workspaceFolder}/src/unitTests"
+            },
+            "group": "test",
+            "dependsOn": [
+                "Build Unit Tests (MSVC)"
+            ],
+            "detail": "Run JSONParser unit tests only (MSVC)"
+        },
+        {
+            "label": "Run HTTPRequest Tests (MSVC)",
+            "type": "shell",
+            "command": ".\\build\\Release\\HTTPRequest_Tests.exe",
+            "options": {
+                "cwd": "${workspaceFolder}/src/unitTests"
+            },
+            "group": "test",
+            "dependsOn": [
+                "Build Unit Tests (MSVC)"
+            ],
+            "detail": "Run HTTPRequest unit tests only (MSVC)"
+        },
+        {
+            "label": "Run HTTPResponse Tests (MSVC)",
+            "type": "shell",
+            "command": ".\\build\\Release\\HTTPResponse_Tests.exe",
+            "options": {
+                "cwd": "${workspaceFolder}/src/unitTests"
+            },
+            "group": "test",
+            "dependsOn": [
+                "Build Unit Tests (MSVC)"
+            ],
+            "detail": "Run HTTPResponse unit tests only (MSVC)"
+        },
+        {
+            "label": "Run FileManagement Tests (MSVC)",
+            "type": "shell",
+            "command": ".\\build\\Release\\FileManagement_Tests.exe",
+            "options": {
+                "cwd": "${workspaceFolder}/src/unitTests"
+            },
+            "group": "test",
+            "dependsOn": [
+                "Build Unit Tests (MSVC)"
+            ],
+            "detail": "Run FileManagement unit tests only (MSVC)"
+        },
+        {
+            "label": "Run ContentBuilder Tests (MSVC)",
+            "type": "shell",
+            "command": ".\\build\\Release\\ContentBuilder_Tests.exe",
+            "options": {
+                "cwd": "${workspaceFolder}/src/unitTests"
+            },
+            "group": "test",
+            "dependsOn": [
+                "Build Unit Tests (MSVC)"
+            ],
+            "detail": "Run ContentBuilder unit tests only (MSVC)"
+        },
+        {
+            "label": "Build and Run All Unit Tests (MSVC)",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "Build Unit Tests (MSVC)",
+                "Run All Unit Tests (MSVC)"
+            ],
+            "group": "test",
+            "detail": "Build and run all unit tests with MSVC"
+        },
+        {
+            "label": "Build and Run All Unit Tests (MinGW)",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "Build Unit Tests (MinGW)",
+                "Run All Unit Tests (MinGW)"
+            ],
+            "group": "test",
+            "detail": "Build and run all unit tests with MinGW"
+        },
+        {
+            "label": "Clean Unit Tests Build",
+            "type": "shell",
+            "command": "Remove-Item",
+            "args": [
+                "-Recurse",
+                "-Force",
+                "build",
+                "-ErrorAction",
+                "SilentlyContinue"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/src/unitTests"
+            },
+            "group": "build",
+            "detail": "Clean the unit tests build directory"
         }
     ]
 }

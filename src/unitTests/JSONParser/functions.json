@@ -1,0 +1,24 @@
+{
+  "functions": [
+    {
+      "inputs": 2,
+      "name": "Add",
+      "outputs": 1
+    },
+    {
+      "inputs": 2,
+      "name": "Subtract",
+      "outputs": 1
+    },
+    {
+      "inputs": 2,
+      "name": "Multiply",
+      "outputs": 1
+    },
+    {
+      "inputs": 2,
+      "name": "Divide",
+      "outputs": 1
+    }
+  ]
+}

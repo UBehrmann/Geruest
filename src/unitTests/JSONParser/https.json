@@ -1,0 +1,7 @@
+{
+  "serverName": "HTTPS",
+  "serverRoot": "/home/ub/Desktop/PortfolioWebsite",
+  "certPath":  "/home/ub/Desktop/cert",
+  "logPath": "/home/ub/Desktop/logs",
+  "port": 443
+}
