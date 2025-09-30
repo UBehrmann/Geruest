@@ -76,8 +76,10 @@ void HtmlBuilder::replaceCurlyBrackets() {
     size_t scriptEnd = 0;
 
     while ((startPos = builtFile.find('{', endPos + 1)) != std::string::npos) {
-        // Check if startPos is inside a <script>...</script> block
+        // Check if startPos is inside a <script>...</script> or <style>...</style> block
         bool insideScript = false;
+        bool insideStyle = false;
+        
         scriptStart = builtFile.rfind("<script", startPos);
         if (scriptStart != std::string::npos) {
             scriptEnd = builtFile.find("</script>", scriptStart);
@@ -85,7 +87,16 @@ void HtmlBuilder::replaceCurlyBrackets() {
                 insideScript = true;
             }
         }
-        if (insideScript) {
+        
+        size_t styleStart = builtFile.rfind("<style", startPos);
+        if (styleStart != std::string::npos) {
+            size_t styleEnd = builtFile.find("</style>", styleStart);
+            if (styleEnd != std::string::npos && startPos > styleStart && startPos < styleEnd) {
+                insideStyle = true;
+            }
+        }
+        
+        if (insideScript || insideStyle) {
             endPos = startPos; // skip this '{', move to next
             continue;
         }
