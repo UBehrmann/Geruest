@@ -15,7 +15,7 @@
             "preLaunchTask": "Compile Example (MSVC)"
         },
         {
-            "name": "Debug Example (MinGW)",
+            "name": "Debug Example (Unix/MinGW)",
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/exemple/build/exemple.exe",
@@ -33,7 +33,15 @@
                     "ignoreFailures": true
                 }
             ],
-            "preLaunchTask": "Compile Example (MinGW)"
+            "preLaunchTask": "Compile Example (Unix/MinGW)",
+            "windows": {
+                "program": "${workspaceFolder}/exemple/build/exemple.exe",
+                "miDebuggerPath": "gdb.exe"
+            },
+            "linux": {
+                "program": "${workspaceFolder}/exemple/build/exemple",
+                "miDebuggerPath": "gdb"
+            }
         },
         {
             "name": "Run All Unit Tests (MSVC)",
@@ -48,7 +56,7 @@
             "preLaunchTask": "Build Unit Tests (MSVC)"
         },
         {
-            "name": "Run All Unit Tests (MinGW)",
+            "name": "Run All Unit Tests (Unix/MinGW)",
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/src/unitTests/build/Geruest_Unit_Tests.exe",
@@ -66,7 +74,15 @@
                     "ignoreFailures": true
                 }
             ],
-            "preLaunchTask": "Build Unit Tests (MinGW)"
+            "preLaunchTask": "Build Unit Tests (Unix/MinGW)",
+            "windows": {
+                "program": "${workspaceFolder}/src/unitTests/build/Geruest_Unit_Tests.exe",
+                "miDebuggerPath": "gdb.exe"
+            },
+            "linux": {
+                "program": "${workspaceFolder}/src/unitTests/build/Geruest_Unit_Tests",
+                "miDebuggerPath": "gdb"
+            }
         },
         {
             "name": "Debug JSONParser Tests (MSVC)",
@@ -127,6 +143,153 @@
             "environment": [],
             "console": "integratedTerminal",
             "preLaunchTask": "Build Unit Tests (MSVC)"
+        },
+        {
+            "name": "Debug Example (Linux)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/exemple/build/exemple",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/exemple/build",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Compile Example (Unix/MinGW)"
+        },
+        {
+            "name": "Run All Unit Tests (Linux)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/unitTests/build/Geruest_Unit_Tests",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/src/unitTests",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Build Unit Tests (Unix/MinGW)"
+        },
+        {
+            "name": "Debug JSONParser Tests (Linux)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/unitTests/build/JSONParser_Tests",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/src/unitTests",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Build Unit Tests (Unix/MinGW)"
+        },
+        {
+            "name": "Debug HTTPRequest Tests (Linux)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/unitTests/build/HTTPRequest_Tests",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/src/unitTests",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Build Unit Tests (Unix/MinGW)"
+        },
+        {
+            "name": "Debug HTTPResponse Tests (Linux)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/unitTests/build/HTTPResponse_Tests",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/src/unitTests",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Build Unit Tests (Unix/MinGW)"
+        },
+        {
+            "name": "Debug FileManagement Tests (Linux)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/unitTests/build/FileManagement_Tests",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/src/unitTests",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Build Unit Tests (Unix/MinGW)"
+        },
+        {
+            "name": "Debug ContentBuilder Tests (Linux)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/unitTests/build/ContentBuilder_Tests",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/src/unitTests",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Build Unit Tests (Unix/MinGW)"
         }
     ]
 }

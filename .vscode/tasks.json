@@ -13,7 +13,24 @@
                 "SilentlyContinue"
             ],
             "group": "build",
-            "detail": "Clean the build directory"
+            "detail": "Clean the build directory",
+            "windows": {
+                "command": "Remove-Item",
+                "args": [
+                    "-Recurse",
+                    "-Force",
+                    "build",
+                    "-ErrorAction",
+                    "SilentlyContinue"
+                ]
+            },
+            "linux": {
+                "command": "rm",
+                "args": [
+                    "-rf",
+                    "build"
+                ]
+            }
         },
         {
             "label": "Configure CMake (MSVC)",
@@ -35,7 +52,7 @@
             "detail": "Configure CMake with MSVC compiler"
         },
         {
-            "label": "Configure CMake (MinGW)",
+            "label": "Configure CMake (Unix/MinGW)",
             "type": "shell",
             "command": "cmake",
             "args": [
@@ -51,7 +68,23 @@
             "dependsOn": [
                 "Create Build Directory"
             ],
-            "detail": "Configure CMake with MinGW compiler"
+            "detail": "Configure CMake with MinGW compiler (Windows) or Unix Makefiles (Linux)",
+            "windows": {
+                "args": [
+                    "..",
+                    "-G",
+                    "MinGW Makefiles",
+                    "-DCMAKE_BUILD_TYPE=Release"
+                ]
+            },
+            "linux": {
+                "args": [
+                    "..",
+                    "-G",
+                    "Unix Makefiles",
+                    "-DCMAKE_BUILD_TYPE=Release"
+                ]
+            }
         },
         {
             "label": "Create Build Directory",
@@ -64,7 +97,20 @@
                 "cwd": "${workspaceFolder}"
             },
             "group": "build",
-            "detail": "Create build directory if it doesn't exist"
+            "detail": "Create build directory if it doesn't exist",
+            "windows": {
+                "command": "mkdir",
+                "args": [
+                    "build"
+                ]
+            },
+            "linux": {
+                "command": "mkdir",
+                "args": [
+                    "-p",
+                    "build"
+                ]
+            }
         },
         {
             "label": "Build Library (MSVC)",
@@ -92,7 +138,7 @@
             "detail": "Build the Geruest library using MSVC"
         },
         {
-            "label": "Build Library (MinGW)",
+            "label": "Build Library (Unix/MinGW)",
             "type": "shell",
             "command": "cmake",
             "args": [
@@ -104,14 +150,23 @@
             "options": {
                 "cwd": "${workspaceFolder}/build"
             },
-            "group": "build",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
             "dependsOn": [
-                "Configure CMake (MinGW)"
+                "Configure CMake (Unix/MinGW)"
             ],
             "problemMatcher": [
                 "$gcc"
             ],
-            "detail": "Build the Geruest library using MinGW"
+            "detail": "Build the Geruest library using MinGW (Windows) or GCC (Linux)",
+            "linux": {
+                "args": [
+                    "--build",
+                    "."
+                ]
+            }
         },
         {
             "label": "Install Library (MSVC)",
@@ -133,7 +188,7 @@
             "detail": "Install the Geruest library"
         },
         {
-            "label": "Install Library (MinGW)",
+            "label": "Install Library (Unix/MinGW)",
             "type": "shell",
             "command": "cmake",
             "args": [
@@ -147,9 +202,15 @@
             },
             "group": "build",
             "dependsOn": [
-                "Build Library (MinGW)"
+                "Build Library (Unix/MinGW)"
             ],
-            "detail": "Install the Geruest library"
+            "detail": "Install the Geruest library",
+            "linux": {
+                "args": [
+                    "--install",
+                    "."
+                ]
+            }
         },
         {
             "label": "Build Example (MSVC)",
@@ -171,7 +232,7 @@
             "detail": "Configure and build the example"
         },
         {
-            "label": "Build Example (MinGW)",
+            "label": "Build Example (Unix/MinGW)",
             "type": "shell",
             "command": "cmake",
             "args": [
@@ -187,7 +248,23 @@
             "dependsOn": [
                 "Create Example Build Directory"
             ],
-            "detail": "Configure and build the example with MinGW"
+            "detail": "Configure and build the example with MinGW (Windows) or Unix Makefiles (Linux)",
+            "windows": {
+                "args": [
+                    "..",
+                    "-G",
+                    "MinGW Makefiles",
+                    "-DCMAKE_BUILD_TYPE=Release"
+                ]
+            },
+            "linux": {
+                "args": [
+                    "..",
+                    "-G",
+                    "Unix Makefiles",
+                    "-DCMAKE_BUILD_TYPE=Release"
+                ]
+            }
         },
         {
             "label": "Create Example Build Directory",
@@ -200,7 +277,20 @@
                 "cwd": "${workspaceFolder}/exemple"
             },
             "group": "build",
-            "detail": "Create example build directory"
+            "detail": "Create example build directory",
+            "windows": {
+                "command": "mkdir",
+                "args": [
+                    "build"
+                ]
+            },
+            "linux": {
+                "command": "mkdir",
+                "args": [
+                    "-p",
+                    "build"
+                ]
+            }
         },
         {
             "label": "Compile Example (MSVC)",
@@ -225,7 +315,7 @@
             "detail": "Compile the example executable"
         },
         {
-            "label": "Compile Example (MinGW)",
+            "label": "Compile Example (Unix/MinGW)",
             "type": "shell",
             "command": "cmake",
             "args": [
@@ -239,12 +329,18 @@
             },
             "group": "build",
             "dependsOn": [
-                "Build Example (MinGW)"
+                "Build Example (Unix/MinGW)"
             ],
             "problemMatcher": [
                 "$gcc"
             ],
-            "detail": "Compile the example executable with MinGW"
+            "detail": "Compile the example executable with MinGW (Windows) or GCC (Linux)",
+            "linux": {
+                "args": [
+                    "--build",
+                    "."
+                ]
+            }
         },
         {
             "label": "Run Example",
@@ -261,7 +357,7 @@
             "detail": "Run the example server"
         },
         {
-            "label": "Run Example (MinGW)",
+            "label": "Run Example (Unix/MinGW)",
             "type": "shell",
             "command": ".\\exemple.exe",
             "options": {
@@ -269,10 +365,16 @@
             },
             "group": "test",
             "dependsOn": [
-                "Compile Example (MinGW)"
+                "Compile Example (Unix/MinGW)"
             ],
             "isBackground": false,
-            "detail": "Run the example server (MinGW build)"
+            "detail": "Run the example server (MinGW build on Windows or GCC build on Linux)",
+            "windows": {
+                "command": ".\\exemple.exe"
+            },
+            "linux": {
+                "command": "./exemple"
+            }
         },
         {
             "label": "Build and Run Example (MSVC)",
@@ -286,15 +388,15 @@
             "detail": "Build and run the example server with MSVC"
         },
         {
-            "label": "Build and Run Example (MinGW)",
+            "label": "Build and Run Example (Unix/MinGW)",
             "dependsOrder": "sequence",
             "dependsOn": [
                 "Clean Example Build",
-                "Compile Example (MinGW)",
-                "Run Example (MinGW)"
+                "Compile Example (Unix/MinGW)",
+                "Run Example (Unix/MinGW)"
             ],
             "group": "test",
-            "detail": "Build and run the example server with MinGW"
+            "detail": "Build and run the example server with MinGW (Windows) or GCC (Linux)"
         },
         {
             "label": "Clean Example Build",
@@ -311,7 +413,24 @@
                 "cwd": "${workspaceFolder}/exemple"
             },
             "group": "build",
-            "detail": "Clean the example build directory"
+            "detail": "Clean the example build directory",
+            "windows": {
+                "command": "Remove-Item",
+                "args": [
+                    "-Recurse",
+                    "-Force",
+                    "build",
+                    "-ErrorAction",
+                    "SilentlyContinue"
+                ]
+            },
+            "linux": {
+                "command": "rm",
+                "args": [
+                    "-rf",
+                    "build"
+                ]
+            }
         },
         {
             "label": "Full Build (MSVC)",
@@ -325,15 +444,15 @@
             "detail": "Complete build and install of the library with MSVC"
         },
         {
-            "label": "Full Build (MinGW)",
+            "label": "Full Build (Unix/MinGW)",
             "dependsOrder": "sequence",
             "dependsOn": [
                 "Clean Build Directory",
-                "Build Library (MinGW)",
-                "Install Library (MinGW)"
+                "Build Library (Unix/MinGW)",
+                "Install Library (Unix/MinGW)"
             ],
             "group": "build",
-            "detail": "Complete build and install of the library with MinGW"
+            "detail": "Complete build and install of the library with MinGW (Windows) or GCC (Linux)"
         },
         {
             "label": "Create Unit Tests Build Directory",
@@ -347,7 +466,21 @@
                 "cwd": "${workspaceFolder}/src/unitTests"
             },
             "group": "build",
-            "detail": "Create unit tests build directory if it doesn't exist"
+            "detail": "Create unit tests build directory if it doesn't exist",
+            "windows": {
+                "command": "powershell",
+                "args": [
+                    "-Command",
+                    "if (!(Test-Path 'build')) { mkdir build }"
+                ]
+            },
+            "linux": {
+                "command": "mkdir",
+                "args": [
+                    "-p",
+                    "build"
+                ]
+            }
         },
         {
             "label": "Configure Unit Tests (MSVC)",
@@ -369,7 +502,7 @@
             "detail": "Configure CMake for unit tests with MSVC compiler"
         },
         {
-            "label": "Configure Unit Tests (MinGW)",
+            "label": "Configure Unit Tests (Unix/MinGW)",
             "type": "shell",
             "command": "cmake",
             "args": [
@@ -385,7 +518,23 @@
             "dependsOn": [
                 "Create Unit Tests Build Directory"
             ],
-            "detail": "Configure CMake for unit tests with MinGW compiler"
+            "detail": "Configure CMake for unit tests with MinGW (Windows) or Unix Makefiles (Linux)",
+            "windows": {
+                "args": [
+                    "..",
+                    "-G",
+                    "MinGW Makefiles",
+                    "-DCMAKE_BUILD_TYPE=Release"
+                ]
+            },
+            "linux": {
+                "args": [
+                    "..",
+                    "-G",
+                    "Unix Makefiles",
+                    "-DCMAKE_BUILD_TYPE=Release"
+                ]
+            }
         },
         {
             "label": "Build Unit Tests (MSVC)",
@@ -410,7 +559,7 @@
             "detail": "Build the unit tests using MSVC"
         },
         {
-            "label": "Build Unit Tests (MinGW)",
+            "label": "Build Unit Tests (Unix/MinGW)",
             "type": "shell",
             "command": "cmake",
             "args": [
@@ -424,12 +573,18 @@
             },
             "group": "build",
             "dependsOn": [
-                "Configure Unit Tests (MinGW)"
+                "Configure Unit Tests (Unix/MinGW)"
             ],
             "problemMatcher": [
                 "$gcc"
             ],
-            "detail": "Build the unit tests using MinGW"
+            "detail": "Build the unit tests using MinGW (Windows) or GCC (Linux)",
+            "linux": {
+                "args": [
+                    "--build",
+                    "."
+                ]
+            }
         },
         {
             "label": "Run All Unit Tests (MSVC)",
@@ -445,7 +600,7 @@
             "detail": "Run all unit tests (MSVC build)"
         },
         {
-            "label": "Run All Unit Tests (MinGW)",
+            "label": "Run All Unit Tests (Unix/MinGW)",
             "type": "shell",
             "command": ".\\build\\Geruest_Unit_Tests.exe",
             "options": {
@@ -453,9 +608,15 @@
             },
             "group": "test",
             "dependsOn": [
-                "Build Unit Tests (MinGW)"
+                "Build Unit Tests (Unix/MinGW)"
             ],
-            "detail": "Run all unit tests (MinGW build)"
+            "detail": "Run all unit tests (MinGW build on Windows or GCC build on Linux)",
+            "windows": {
+                "command": ".\\build\\Geruest_Unit_Tests.exe"
+            },
+            "linux": {
+                "command": "./build/Geruest_Unit_Tests"
+            }
         },
         {
             "label": "Run JSONParser Tests (MSVC)",
@@ -533,14 +694,14 @@
             "detail": "Build and run all unit tests with MSVC"
         },
         {
-            "label": "Build and Run All Unit Tests (MinGW)",
+            "label": "Build and Run All Unit Tests (Unix/MinGW)",
             "dependsOrder": "sequence",
             "dependsOn": [
-                "Build Unit Tests (MinGW)",
-                "Run All Unit Tests (MinGW)"
+                "Build Unit Tests (Unix/MinGW)",
+                "Run All Unit Tests (Unix/MinGW)"
             ],
             "group": "test",
-            "detail": "Build and run all unit tests with MinGW"
+            "detail": "Build and run all unit tests with MinGW (Windows) or GCC (Linux)"
         },
         {
             "label": "Clean Unit Tests Build",
@@ -557,7 +718,24 @@
                 "cwd": "${workspaceFolder}/src/unitTests"
             },
             "group": "build",
-            "detail": "Clean the unit tests build directory"
+            "detail": "Clean the unit tests build directory",
+            "windows": {
+                "command": "Remove-Item",
+                "args": [
+                    "-Recurse",
+                    "-Force",
+                    "build",
+                    "-ErrorAction",
+                    "SilentlyContinue"
+                ]
+            },
+            "linux": {
+                "command": "rm",
+                "args": [
+                    "-rf",
+                    "build"
+                ]
+            }
         }
     ]
 }
