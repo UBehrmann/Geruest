@@ -1,0 +1,217 @@
+# Geruest Framework Unit Tests
+
+This directory contains comprehensive unit tests for the Geruest C++ web framework. The tests are organized in a modular structure with separate test suites for each major component.
+
+## Test Structure
+
+```
+unitTests/
+├── unit_tests.cpp                     # Main test runner
+├── CMakeLists.txt                     # Build configuration
+├── JSONParser/                        # JSONParser tests
+│   ├── JSONParser_tests.cpp
+│   ├── testFunctions.hpp
+│   └── *.json                         # Test data files
+├── HTTPRequest/                       # HTTPRequest tests
+│   └── HTTPRequest_tests.cpp
+├── HTTPResponse/                      # HTTPResponse tests
+│   └── HTTPResponse_tests.cpp
+├── FileManagement/                    # FileManagement tests
+│   └── FileManagement_tests.cpp
+└── ContentBuilder/                    # ContentBuilder tests
+    └── ContentBuilder_tests.cpp
+```
+
+## Building and Running Tests
+
+### Prerequisites
+- CMake 3.28 or higher
+- C++17 compatible compiler (MSVC, MinGW, GCC, Clang)
+- Platform-specific dependencies:
+  - Windows: `ws2_32` library
+  - Linux: `pthread` library
+
+### Build Commands
+
+#### Full Test Suite
+```bash
+# Create and enter build directory
+mkdir build && cd build
+
+# Configure (Windows MSVC)
+cmake .. -A x64 -DCMAKE_BUILD_TYPE=Release
+
+# Configure (Windows MinGW)
+cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
+
+# Configure (Linux)
+cmake .. -DCMAKE_BUILD_TYPE=Release
+
+# Build all tests
+cmake --build . --config Release
+```
+
+#### Run All Tests
+```bash
+# Run the complete test suite
+./Geruest_Unit_Tests         # (Linux)
+.\Release\Geruest_Unit_Tests.exe  # (Windows MSVC)
+.\Geruest_Unit_Tests.exe     # (Windows MinGW)
+
+# Or use CTest for detailed output
+ctest --output-on-failure --verbose
+```
+
+#### Run Individual Test Suites
+```bash
+# JSONParser tests only
+./JSONParser_Tests
+
+# HTTPRequest tests only
+./HTTPRequest_Tests
+
+# HTTPResponse tests only  
+./HTTPResponse_Tests
+
+# FileManagement tests only
+./FileManagement_Tests
+
+# ContentBuilder tests only
+./ContentBuilder_Tests
+```
+
+## Test Modules
+
+### 1. JSONParser Tests
+- **Location**: `JSONParser/JSONParser_tests.cpp`
+- **Test Data**: Various `.json` files for different scenarios
+- **Coverage**: 
+  - String, integer, float, boolean parsing
+  - Array handling (all data types)
+  - Nested objects
+  - File I/O operations
+  - Error handling for invalid JSON
+
+### 2. HTTPRequest Tests  
+- **Location**: `HTTPRequest/HTTPRequest_tests.cpp`
+- **Coverage**:
+  - HTTP method parsing (GET, POST, etc.)
+  - Header parsing (case-insensitive)
+  - Body content extraction
+  - Query parameter handling
+  - URL decoding
+
+### 3. HTTPResponse Tests
+- **Location**: `HTTPResponse/HTTPResponse_tests.cpp` 
+- **Coverage**:
+  - Response construction
+  - Header management (set/add)
+  - Body content handling
+  - Predefined response functions
+  - CORS header generation
+
+### 4. FileManagement Tests
+- **Location**: `FileManagement/FileManagement_tests.cpp`
+- **Coverage**:
+  - File creation and deletion
+  - Directory creation
+  - File existence checking
+  - File content saving/loading
+  - Path handling and validation
+
+### 5. ContentBuilder Tests
+- **Location**: `ContentBuilder/ContentBuilder_tests.cpp`
+- **Coverage**:
+  - File loading functionality
+  - Comment removal (HTML, CSS, JS)
+  - Content building pipeline
+  - Template processing capabilities
+
+## CI/CD Integration
+
+The unit tests are designed to work in continuous integration environments:
+
+### Exit Codes
+- `0`: All tests passed
+- `1`: One or more tests failed
+
+### Test Output Format
+- ✓ Indicates passed tests
+- ✗ Indicates failed tests  
+- Detailed failure messages with error descriptions
+- Summary statistics (tests run, passed, failed)
+
+### Example CI Usage
+```yaml
+# GitHub Actions example
+- name: Build and Run Tests
+  run: |
+    mkdir build && cd build
+    cmake .. -DCMAKE_BUILD_TYPE=Release
+    cmake --build . --config Release
+    ctest --output-on-failure
+```
+
+## Adding New Tests
+
+### Creating a New Test Module
+1. Create a new directory under `unitTests/`
+2. Create the test file following the naming pattern `ComponentName_tests.cpp`
+3. Use the standard test template:
+
+```cpp
+namespace geruest {
+namespace test {
+
+void test_function_name() {
+    // Test implementation
+    assert(condition);
+}
+
+bool runComponentNameTests() {
+    // Test runner implementation
+    // Return true if all tests pass
+}
+
+} // namespace test
+} // namespace geruest
+
+#ifndef RUNNING_MAIN_TESTS
+int main() {
+    return geruest::test::runComponentNameTests() ? 0 : 1;
+}
+#endif
+```
+
+4. Update `unit_tests.cpp` to include the new test module
+5. Update `CMakeLists.txt` to build the new test executable
+
+### Test Best Practices
+- Use descriptive test function names
+- Include both positive and negative test cases
+- Test edge cases and error conditions  
+- Clean up any created files/resources
+- Use assertions to validate expected behavior
+- Keep tests isolated and independent
+
+## Troubleshooting
+
+### Common Issues
+1. **Include Path Errors**: Ensure relative paths are correct (`../component/header.hpp`)
+2. **Linking Errors**: Verify all required source files are included in CMakeLists.txt
+3. **Platform-Specific Issues**: Check that platform libraries (ws2_32, pthread) are linked
+4. **File Path Issues**: Use proper path separators for your platform
+
+### Debug Mode
+Build tests in debug mode for more detailed error information:
+```bash
+cmake .. -DCMAKE_BUILD_TYPE=Debug
+```
+
+## Contributing
+
+When adding new features to Geruest:
+1. Create corresponding unit tests
+2. Ensure existing tests still pass
+3. Update this README if new test modules are added
+4. Follow the established testing patterns and conventions

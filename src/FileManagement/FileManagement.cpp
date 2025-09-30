@@ -13,17 +13,22 @@ namespace geruest {
 
 bool FileManagement::createFolder(const std::string& path) {
     try {
+        // Use std::filesystem::path for cross-platform compatibility
+        std::filesystem::path fsPath(path);
+        
         // Check if parent folder exists
-        std::string parentFolder = path.substr(0, path.find_last_of('/'));
-        if (!std::filesystem::exists(parentFolder)) {
-            createFolder(parentFolder);
+        std::filesystem::path parentPath = fsPath.parent_path();
+        if (!parentPath.empty() && !std::filesystem::exists(parentPath)) {
+            createFolder(parentPath.string());
         }
 
-        // Create the folder
-        std::filesystem::create_directory(path);
-        return true;
+        // Create the folder if it doesn't exist
+        if (!std::filesystem::exists(fsPath)) {
+            return std::filesystem::create_directories(fsPath);
+        }
+        return true; // Already exists
     }
-    catch (std::filesystem::filesystem_error& e) {
+    catch (const std::filesystem::filesystem_error& e) {
         return false;
     }
 }
@@ -33,15 +38,27 @@ bool FileManagement::fileExists(const std::string& path) {
 }
 
 bool FileManagement::createFile(const std::string& path) {
-    // Check if parent folder exists
-    std::string parentFolder = path.substr(0, path.find_last_of('/'));
-    if (!std::filesystem::exists(parentFolder)) {
-        createFolder(parentFolder);
-    }
+    try {
+        // Use std::filesystem::path for cross-platform compatibility
+        std::filesystem::path fsPath(path);
+        
+        // Check if parent folder exists
+        std::filesystem::path parentPath = fsPath.parent_path();
+        if (!parentPath.empty() && !std::filesystem::exists(parentPath)) {
+            createFolder(parentPath.string());
+        }
 
-    // Create the file
-    std::ofstream file(path);
-    return file.is_open();
+        // Create the file
+        std::ofstream file(path);
+        bool success = file.is_open();
+        if (file.is_open()) {
+            file.close();
+        }
+        return success;
+    }
+    catch (const std::exception& e) {
+        return false;
+    }
 }
 
 bool FileManagement::saveFile(const std::string& pathReceived, const std::string& content) {

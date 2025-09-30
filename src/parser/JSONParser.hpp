@@ -13,7 +13,6 @@
 #include <string>
 #include <iostream>
 #include <map>
-#include <any>
 #include <cfloat>
 #include <climits>
 #include <utility>
@@ -28,7 +27,7 @@ class JSONParser {
 
 private:
     // Map to store the JSONParser data
-    std::map<std::string, std::any> data;
+    std::map<std::string, std::string> data;
     std::vector<JSONParser> arrayData;
 
     std::vector<std::string> keys;
@@ -50,19 +49,19 @@ private:
 
     /**
      * Read the number data from the JSONParser string
-     * @return The number data
+     * @return The number data as string
      */
-    std::any readNumber();
+    std::string readNumber();
 
-    std::map<std::string, std::any> readObject();
+    std::map<std::string, std::string> readObject();
 
-    std::vector<std::any> readArray();
+    std::vector<std::string> readArray();
 
     /**
      * Read the data from the JSONParser string
-     * @return The data
+     * @return The data as string
      */
-    std::any readData();
+    std::string readData();
 
     /**
      * Check if a character is a whitespace character
@@ -75,7 +74,7 @@ private:
 
     void parseJSON();
 
-    std::string anyToString(const std::any &val) const;
+    std::string stringToString(const std::string &val) const;
 
 public:
 
@@ -83,7 +82,7 @@ public:
 
     explicit JSONParser(const std::string &input);
 
-    explicit JSONParser(std::map<std::string, std::any> data);
+    explicit JSONParser(std::map<std::string, std::string> data);
 
     ~JSONParser() = default;
 

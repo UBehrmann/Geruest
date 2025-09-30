@@ -34,6 +34,99 @@
                 }
             ],
             "preLaunchTask": "Compile Example (MinGW)"
+        },
+        {
+            "name": "Run All Unit Tests (MSVC)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/unitTests/build/Release/Geruest_Unit_Tests.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/src/unitTests",
+            "environment": [],
+            "console": "integratedTerminal",
+            "preLaunchTask": "Build Unit Tests (MSVC)"
+        },
+        {
+            "name": "Run All Unit Tests (MinGW)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/unitTests/build/Geruest_Unit_Tests.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/src/unitTests",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "gdb.exe",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Build Unit Tests (MinGW)"
+        },
+        {
+            "name": "Debug JSONParser Tests (MSVC)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/unitTests/build/Release/JSONParser_Tests.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/src/unitTests",
+            "environment": [],
+            "console": "integratedTerminal",
+            "preLaunchTask": "Build Unit Tests (MSVC)"
+        },
+        {
+            "name": "Debug HTTPRequest Tests (MSVC)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/unitTests/build/Release/HTTPRequest_Tests.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/src/unitTests",
+            "environment": [],
+            "console": "integratedTerminal",
+            "preLaunchTask": "Build Unit Tests (MSVC)"
+        },
+        {
+            "name": "Debug HTTPResponse Tests (MSVC)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/unitTests/build/Release/HTTPResponse_Tests.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/src/unitTests",
+            "environment": [],
+            "console": "integratedTerminal",
+            "preLaunchTask": "Build Unit Tests (MSVC)"
+        },
+        {
+            "name": "Debug FileManagement Tests (MSVC)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/unitTests/build/Release/FileManagement_Tests.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/src/unitTests",
+            "environment": [],
+            "console": "integratedTerminal",
+            "preLaunchTask": "Build Unit Tests (MSVC)"
+        },
+        {
+            "name": "Debug ContentBuilder Tests (MSVC)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/unitTests/build/Release/ContentBuilder_Tests.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/src/unitTests",
+            "environment": [],
+            "console": "integratedTerminal",
+            "preLaunchTask": "Build Unit Tests (MSVC)"
         }
     ]
 }
