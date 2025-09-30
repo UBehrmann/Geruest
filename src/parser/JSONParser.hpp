@@ -58,6 +58,18 @@ private:
     std::vector<std::string> readArray();
 
     /**
+     * Read a nested object as a JSON string
+     * @return The nested object as a JSON string
+     */
+    std::string readNestedObject();
+
+    /**
+     * Read a nested array as a JSON string
+     * @return The nested array as a JSON string
+     */
+    std::string readNestedArray();
+
+    /**
      * Read the data from the JSONParser string
      * @return The data as string
      */

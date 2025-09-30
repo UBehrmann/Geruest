@@ -1,6 +1,5 @@
 {
-    "index" : {
-        "2" : "/index.js"
+    "index": {
+        "2": "otherNameIndex.js"
     }
-
 }

@@ -89,9 +89,10 @@
         {
             "label": "Create Build Directory",
             "type": "shell",
-            "command": "mkdir",
+            "command": "powershell",
             "args": [
-                "build"
+                "-Command",
+                "if (!(Test-Path 'build')) { mkdir build }"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
@@ -99,9 +100,10 @@
             "group": "build",
             "detail": "Create build directory if it doesn't exist",
             "windows": {
-                "command": "mkdir",
+                "command": "powershell",
                 "args": [
-                    "build"
+                    "-Command",
+                    "if (!(Test-Path 'build')) { mkdir build }"
                 ]
             },
             "linux": {
@@ -269,19 +271,21 @@
         {
             "label": "Create Example Build Directory",
             "type": "shell",
-            "command": "mkdir",
+            "command": "powershell",
             "args": [
-                "build"
+                "-Command",
+                "if (!(Test-Path 'build')) { mkdir build }"
             ],
             "options": {
                 "cwd": "${workspaceFolder}/exemple"
             },
             "group": "build",
-            "detail": "Create example build directory",
+            "detail": "Create example build directory if it doesn't exist",
             "windows": {
-                "command": "mkdir",
+                "command": "powershell",
                 "args": [
-                    "build"
+                    "-Command",
+                    "if (!(Test-Path 'build')) { mkdir build }"
                 ]
             },
             "linux": {
