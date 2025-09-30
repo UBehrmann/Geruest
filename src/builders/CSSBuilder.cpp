@@ -45,7 +45,12 @@ void CSSBuilder::builCSS() {
 
     // Build the file by including all the files
     for (const auto& key : jsonForFile.getKeys()) {
-        builtFile += loadFile(root + "/assets/css" + jsonForFile.getString(key)) + "\n\n";
+        std::string cssFile = jsonForFile.getString(key);
+        // Ensure the file path starts with '/'
+        if (!cssFile.empty() && cssFile[0] != '/') {
+            cssFile = "/" + cssFile;
+        }
+        builtFile += loadFile(root + "/assets/css" + cssFile) + "\n\n";
     }
 
     // Remove comments if enabled
