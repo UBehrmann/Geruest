@@ -80,6 +80,46 @@ std::vector<std::string> JSONParser::readArray() {
     return arr;
 }
 
+std::string JSONParser::readNestedObject() {
+    int braceCount = 0;
+    size_t start = jp;
+    
+    while (jp < basicString.length()) {
+        if (basicString[jp] == '{') {
+            braceCount++;
+        } else if (basicString[jp] == '}') {
+            braceCount--;
+            if (braceCount == 0) {
+                jp++; // Move past the closing brace
+                break;
+            }
+        }
+        jp++;
+    }
+    
+    return basicString.substr(start, jp - start);
+}
+
+std::string JSONParser::readNestedArray() {
+    int bracketCount = 0;
+    size_t start = jp;
+    
+    while (jp < basicString.length()) {
+        if (basicString[jp] == '[') {
+            bracketCount++;
+        } else if (basicString[jp] == ']') {
+            bracketCount--;
+            if (bracketCount == 0) {
+                jp++; // Move past the closing bracket
+                break;
+            }
+        }
+        jp++;
+    }
+    
+    return basicString.substr(start, jp - start);
+}
+
 std::string JSONParser::readData() {
     while (jp < basicString.length() && isWhiteSpace(basicString[jp])) {
         jp++;
@@ -101,6 +141,10 @@ std::string JSONParser::readData() {
     } else if (basicString.substr(jp, 4) == "null") {
         jp += 4;
         return "null";
+    } else if (c == '{') {
+        return readNestedObject();
+    } else if (c == '[') {
+        return readNestedArray();
     }
     return "";
 }

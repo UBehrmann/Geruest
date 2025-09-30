@@ -295,6 +295,9 @@ void test_nested_json_from_file() {
     std::string str = json->toString();
     std::string expected = getFile("JSONParser/nested.json");
 
+    std::cout << "Expected: " << expected << std::endl;
+    std::cout << "Got:      " << str << std::endl;
+
     // Remove all whitespaces
     str.erase(std::remove_if(str.begin(), str.end(), ::isspace), str.end());
     expected.erase(std::remove_if(expected.begin(), expected.end(), ::isspace), expected.end());
