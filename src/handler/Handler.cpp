@@ -351,41 +351,10 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
     std::string language = httpRequest->hasHeader("Accept-Language") ? httpRequest->getHeader("Accept-Language") : "";
 
     // TODO : Find better way to check for language, can't always add an 'or' statement for each new language
-    if (!startsWithLangPrefix(pathReceived)) {
-        if (pathReceived.size() == 1) {
-            // if the size of the pathReceived is only 1 character long
-            // then we can assume that the path is a language indicator for the index page
+    if (Extension == "jpg" || Extension == "jpeg" || Extension == "png" || Extension == "gif" ||
+               Extension == "svg" || Extension == "ico") {
+        // For image files, use the Referer header to determine the correct relative path
 
-            if (language.find("de") != std::string::npos) {
-                return serverData.getRoot() + "/html/de/index.html";
-            } else if (language.find("fr") != std::string::npos) {
-                return serverData.getRoot() + "/html/fr/index.html";
-            }
-
-            return serverData.getRoot() + "/html/en/index.html";
-        }
-
-        if (language.find("de") != std::string::npos) {
-            contentRoot["html"] = "/html/de";
-        } else if (language.find("fr") != std::string::npos) {
-            contentRoot["html"] = "/html/fr";
-        } else {
-            contentRoot["html"] = "/html/en";
-        }
-    } else if (pathReceived.size() == 4) {
-        // if the size of the pathReceived has a language indicator and is only 4 characters long
-        // then we can assume that the path is a language indicator for the index page
-
-        pathReceived += "/index";
-    } else if (Extension != "html" && Extension != "htm") {
-        // Remove the language prefix from the path
-        pathReceived = pathReceived.substr(3);
-    }
-
-    // For image files, use the Referer header to determine the correct relative path
-    if (Extension == "jpg" || Extension == "jpeg" || Extension == "png" || Extension == "gif" || Extension == "svg" ||
-        Extension == "ico") {
-            
         // Try to get the context from the Referer header
         if (httpRequest->hasHeader("Referer")) {
             std::string referer = httpRequest->getHeader("Referer");
@@ -429,6 +398,36 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
             size_t lastSlash = pathReceived.find_last_of('/');
             pathReceived = (lastSlash != std::string::npos) ? pathReceived.substr(lastSlash) : "/" + pathReceived;
         }
+    } else if (!startsWithLangPrefix(pathReceived)) {
+        if (pathReceived.size() == 1) {
+            // if the size of the pathReceived is only 1 character long
+            // then we can assume that the path is a language indicator for the index page
+
+            if (language.find("de") != std::string::npos) {
+                return serverData.getRoot() + "/html/de/index.html";
+            } else if (language.find("fr") != std::string::npos) {
+                return serverData.getRoot() + "/html/fr/index.html";
+            }
+
+            return serverData.getRoot() + "/html/en/index.html";
+        }
+
+        if (language.find("de") != std::string::npos) {
+            contentRoot["html"] = "/html/de";
+        } else if (language.find("fr") != std::string::npos) {
+            contentRoot["html"] = "/html/fr";
+        } else {
+            contentRoot["html"] = "/html/en";
+        }
+    } else if (pathReceived.size() == 4) {
+        // if the size of the pathReceived has a language indicator and is only 4 characters long
+        // then we can assume that the path is a language indicator for the index page
+
+        pathReceived += "/index";
+
+    } else if (Extension != "html" && Extension != "htm") {
+        // Remove the language prefix from the path
+        pathReceived = pathReceived.substr(3);
     }
 
     if (pathReceived.find('.') == std::string::npos) {
