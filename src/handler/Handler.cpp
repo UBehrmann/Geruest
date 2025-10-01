@@ -12,8 +12,8 @@
 #include <algorithm>
 #include <climits>
 
-#include "builders/ContentBuilder.hpp"
 #include "builders/CSSBuilder.hpp"
+#include "builders/ContentBuilder.hpp"
 #include "builders/HTMLBuilder.hpp"
 #include "builders/JSBuilder.hpp"
 #include "data/HTTPResponse.hpp"
@@ -40,7 +40,7 @@ Handler::~Handler() {
     //    logger.log("Client socket closed.");
 }
 
-bool Handler::readSocket(char *bufferToUse, size_t size) {
+bool Handler::readSocket(char* bufferToUse, size_t size) {
     // test if size is bigger than int
     if (size > INT_MAX) {
         sendToLoggerError("Size of buffer is too big.");
@@ -77,7 +77,7 @@ bool Handler::readSocket(char *bufferToUse, size_t size) {
     return false;
 }
 
-bool Handler::sendSocket(const char *bufferToSend, size_t size) const {
+bool Handler::sendSocket(const char* bufferToSend, size_t size) const {
     char bufferToSocket[BUFFER_SIZE];
 
     size_t startPos = 0;
@@ -97,19 +97,19 @@ bool Handler::sendSocket(const char *bufferToSend, size_t size) const {
     return true;
 }
 
-void Handler::sendToLogger(const std::string &message) const {
+void Handler::sendToLogger(const std::string& message) const {
     std::cout << "Log: " << message << " from " << IP << std::endl;
 }
-void Handler::sendToLoggerPages(const std::string &message) const {
+void Handler::sendToLoggerPages(const std::string& message) const {
     std::cout << "Page Log: " << message << " from " << IP << std::endl;
 }
-void Handler::sendToLoggerAPI(const std::string &message) const {
+void Handler::sendToLoggerAPI(const std::string& message) const {
     std::cout << "API Log: " << message << " from " << IP << std::endl;
 }
-void Handler::sendToLoggerUser(const std::string &message) const {
+void Handler::sendToLoggerUser(const std::string& message) const {
     std::cout << "User Log: " << message << " from " << IP << std::endl;
 }
-void Handler::sendToLoggerError(const std::string &message) const {
+void Handler::sendToLoggerError(const std::string& message) const {
     std::cerr << "Error Log: " << message << " from " << IP << std::endl;
 }
 
@@ -121,13 +121,13 @@ void Handler::run() {
         if (buffer == nullptr) {
             buffer = new char[BUFFER_SIZE];
         }
-        
+
         // Ensure bufferLength is valid before creating string
         if (bufferLength <= 0) {
             sendToLoggerError("Invalid buffer length in run loop.");
             break;
         }
-        
+
         std::string rawRequest(buffer, static_cast<size_t>(bufferLength));
         requestStream = std::istringstream(rawRequest);
 
@@ -157,7 +157,7 @@ void Handler::run() {
     }
 }
 
-void Handler::handleRequest(HTTPRequest *request) {
+void Handler::handleRequest(HTTPRequest* request) {
     if (request == nullptr) {
         sendToLoggerError("HTTPRequest is null.");
         std::string header = buildInternalServerErrorHeader();
@@ -168,7 +168,6 @@ void Handler::handleRequest(HTTPRequest *request) {
     // Try to find a matching route (exact or wildcard)
     auto routeMatch = serverData.findMatchingRoute(request->getPathString());
     if (routeMatch.first) {
-        
         // Call the route handler
         HTTPResponse response = routeMatch.second(*request);
 
@@ -204,13 +203,13 @@ void Handler::handleRequest(HTTPRequest *request) {
  * @param contentType
  * @param content
  */
-void Handler::sendResponse(const std::string &status, const std::string &contentType,
-                           const std::string &content) const {
+void Handler::sendResponse(const std::string& status, const std::string& contentType,
+                           const std::string& content) const {
     std::string response = buildHeader(status, contentType, std::to_string(content.size()));
 
     response += content;
 
-    sendSocket((char *)response.c_str(), response.size());
+    sendSocket((char*)response.c_str(), response.size());
 }
 
 /**
@@ -218,13 +217,13 @@ void Handler::sendResponse(const std::string &status, const std::string &content
  * @param contentType
  * @param contentPath
  */
-void Handler::sendFile(const std::string &contentType, const std::string &contentPath, HTTPRequest *httpRequest) const {
+void Handler::sendFile(const std::string& contentType, const std::string& contentPath, HTTPRequest* httpRequest) const {
     char bufferToSend[BUFFER_SIZE];
 
     // sendToLoggerPages("Sending file: " + contentPath);
 
     if (contentType == "text/html" || contentType == "text/javascript" || contentType == "text/css") {
-        ContentBuilder *contentBuilder = nullptr;
+        ContentBuilder* contentBuilder = nullptr;
 
         if (contentType == "text/html") {
             //			sendToLoggerPages("GET: " + path);
@@ -300,9 +299,9 @@ void Handler::sendFile(const std::string &contentType, const std::string &conten
         htmlResponse.setHeader("Content-Length", std::to_string(fileSize));
 
         std::string response = htmlResponse.toString();
-        
+
         // Send response
-        sendSocket((char *)response.c_str(), response.size());
+        sendSocket((char*)response.c_str(), response.size());
 
         while (!file.eof()) {
             file.read(bufferToSend, BUFFER_SIZE);
@@ -313,7 +312,7 @@ void Handler::sendFile(const std::string &contentType, const std::string &conten
     }
 }
 
-std::string Handler::getExtension(const std::string &path) {
+std::string Handler::getExtension(const std::string& path) {
     // Check if path is for a file or a page
     if (path.find('.') == std::string::npos) {
         return "html";
@@ -335,11 +334,11 @@ std::string Handler::getExtension(const std::string &path) {
  * @param str
  * @return true if it starts with a language prefix
  */
-bool startsWithLangPrefix(const std::string &str) {
+bool startsWithLangPrefix(const std::string& str) {
     return str.size() >= 4 && str[0] == '/' && std::isalpha(str[1]) && std::isalpha(str[2]) && str[3] == '/';
 }
 
-std::string Handler::buildPath(std::string &pathReceived, const std::string &Extension, HTTPRequest *httpRequest) {
+std::string Handler::buildPath(std::string& pathReceived, const std::string& Extension, HTTPRequest* httpRequest) {
     std::map<std::string, std::string> contentRoot = {
         {"html", "/html"},         {"htm", "/html"},           {"css", "/assets/css"},    {"js", "/assets/js"},
         {"jpg", "/assets/images"}, {"jpeg", "/assets/images"}, {"png", "/assets/images"}, {"gif", "/assets/images"},
@@ -383,6 +382,47 @@ std::string Handler::buildPath(std::string &pathReceived, const std::string &Ext
         pathReceived = pathReceived.substr(3);
     }
 
+    // For image files, use the Referer header to determine the correct relative path
+    if (Extension == "jpg" || Extension == "jpeg" || Extension == "png" || Extension == "gif" || Extension == "svg" ||
+        Extension == "ico") {
+        std::cout << "Original image path: " << pathReceived << std::endl;
+
+        // Try to get the context from the Referer header
+        if (httpRequest->hasHeader("Referer")) {
+            std::string referer = httpRequest->getHeader("Referer");
+
+            // Remove everything after the last '/' from referer to get base path
+            size_t lastSlashInReferer = referer.find_last_of('/');
+            if (lastSlashInReferer != std::string::npos) {
+                std::string refererBase = referer.substr(0, lastSlashInReferer + 1);  // Keep the trailing '/'
+
+                // Build the full request URL for comparison using the Host header
+                std::string host = httpRequest->hasHeader("Host") ? httpRequest->getHeader("Host") : "localhost";
+                std::string fullRequestUrl = "http://" + host + pathReceived;
+
+                // Remove the referer base from the request URL to get relative path
+                if (fullRequestUrl.find(refererBase) == 0) {
+                    std::string relativePath = fullRequestUrl.substr(refererBase.length());
+                    pathReceived = "/" + relativePath;
+                } else {
+                    // Fallback: extract just filename if pattern doesn't match
+                    size_t lastSlash = pathReceived.find_last_of('/');
+                    pathReceived =
+                        (lastSlash != std::string::npos) ? pathReceived.substr(lastSlash) : "/" + pathReceived;
+                }
+            } else {
+                // Fallback: extract just filename
+                size_t lastSlash = pathReceived.find_last_of('/');
+                pathReceived = (lastSlash != std::string::npos) ? pathReceived.substr(lastSlash) : "/" + pathReceived;
+            }
+        } else {
+            // Remove the language prefix from the path
+
+            size_t lastSlash = pathReceived.find_last_of('/');
+            pathReceived = (lastSlash != std::string::npos) ? pathReceived.substr(lastSlash) : "/" + pathReceived;
+        }
+    }
+
     if (pathReceived.find('.') == std::string::npos) {
         pathReceived += ".html";
     }
@@ -395,7 +435,7 @@ std::string Handler::buildPath(std::string &pathReceived, const std::string &Ext
  * @param extension
  * @return
  */
-std::string Handler::getContentType(const std::string &extension) {
+std::string Handler::getContentType(const std::string& extension) {
     std::map<std::string, std::string> contentTypes = {
         {"html", "text/html"},      {"htm", "text/html"},    {"css", "text/css"},          {"js", "text/javascript"},
         {"jpg", "image/jpeg"},      {"jpeg", "image/jpeg"},  {"png", "image/png"},         {"gif", "image/gif"},
