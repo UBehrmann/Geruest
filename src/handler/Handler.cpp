@@ -382,15 +382,14 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
                     std::string relativePath = fullRequestUrl.substr(refererBase.length());
                     pathReceived = "/" + relativePath;
                 } else {
-                    // Fallback: extract just filename if pattern doesn't match
-                    size_t lastSlash = pathReceived.find_last_of('/');
-                    pathReceived =
-                        (lastSlash != std::string::npos) ? pathReceived.substr(lastSlash) : "/" + pathReceived;
+                    // Fallback: if pattern doesn't match, return path as-is
+                    // This preserves the original path structure including language prefixes
+                    // pathReceived remains unchanged
                 }
             } else {
                 // Fallback: extract just filename
-                size_t lastSlash = pathReceived.find_last_of('/');
-                pathReceived = (lastSlash != std::string::npos) ? pathReceived.substr(lastSlash) : "/" + pathReceived;
+                // This preserves the original path structure including language prefixes
+                // pathReceived remains unchanged
             }
         } else {
             // Remove the language prefix from the path
