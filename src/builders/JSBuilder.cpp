@@ -50,7 +50,12 @@ void JSBuilder::builJS() {
 
     // Build the file by including all the files
     for (const auto& key : jsonForFile.getKeys()) {
-        builtFile += loadFile(root + "/assets/js" + jsonForFile.getString(key)) + "\n\n";
+        std::string jsFile = jsonForFile.getString(key);
+        // Ensure the file path starts with '/'
+        if (!jsFile.empty() && jsFile[0] != '/') {
+            jsFile = "/" + jsFile;
+        }
+        builtFile += loadFile(root + "/assets/js" + jsFile) + "\n\n";
     }
 
     // Remove comments if enabled

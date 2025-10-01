@@ -103,20 +103,30 @@ std::string JSONParser::readNestedObject() {
 std::string JSONParser::readNestedArray() {
     int bracketCount = 0;
     size_t start = jp;
-    
+    bool inString = false;
+    bool escape = false;
+
     while (jp < basicString.length()) {
-        if (basicString[jp] == '[') {
-            bracketCount++;
-        } else if (basicString[jp] == ']') {
-            bracketCount--;
-            if (bracketCount == 0) {
-                jp++; // Move past the closing bracket
-                break;
+        char c = basicString[jp];
+        if (escape) {
+            escape = false;
+        } else if (c == '\\') {
+            escape = true;
+        } else if (c == '"') {
+            inString = !inString;
+        } else if (!inString) {
+            if (c == '[') {
+                bracketCount++;
+            } else if (c == ']') {
+                bracketCount--;
+                if (bracketCount == 0) {
+                    jp++; // Move past the closing bracket
+                    break;
+                }
             }
         }
         jp++;
     }
-    
     return basicString.substr(start, jp - start);
 }
 
