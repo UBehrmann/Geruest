@@ -397,7 +397,16 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
 
                 // Build the full request URL for comparison using the Host header
                 std::string host = httpRequest->hasHeader("Host") ? httpRequest->getHeader("Host") : "localhost";
-                std::string fullRequestUrl = "http://" + host + pathReceived;
+                std::string scheme = "http";
+                if (httpRequest->hasHeader("X-Forwarded-Proto")) {
+                    scheme = httpRequest->getHeader("X-Forwarded-Proto");
+                    // Defensive: only allow "http" or "https"
+                    std::transform(scheme.begin(), scheme.end(), scheme.begin(), ::tolower);
+                    if (scheme != "http" && scheme != "https") {
+                        scheme = "http";
+                    }
+                }
+                std::string fullRequestUrl = scheme + "://" + host + pathReceived;
 
                 // Remove the referer base from the request URL to get relative path
                 if (fullRequestUrl.find(refererBase) == 0) {
