@@ -385,8 +385,7 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
     // For image files, use the Referer header to determine the correct relative path
     if (Extension == "jpg" || Extension == "jpeg" || Extension == "png" || Extension == "gif" || Extension == "svg" ||
         Extension == "ico") {
-        std::cout << "Original image path: " << pathReceived << std::endl;
-
+            
         // Try to get the context from the Referer header
         if (httpRequest->hasHeader("Referer")) {
             std::string referer = httpRequest->getHeader("Referer");
