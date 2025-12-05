@@ -18,6 +18,8 @@
 #include <ws2tcpip.h>
 #ifdef _MSC_VER
 #pragma comment(lib, "ws2_32.lib")
+// Define ssize_t for MSVC
+typedef SSIZE_T ssize_t;
 #endif
 #else
 #include <netinet/in.h>
