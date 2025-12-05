@@ -22,10 +22,16 @@
 #include <unistd.h>  // For close
 #endif
 
+#include <atomic>
+#include <condition_variable>
 #include <cstring>  // For memset
 #include <functional>
+#include <mutex>
+#include <queue>
 #include <string>
+#include <thread>
 #include <unordered_map>
+#include <vector>
 
 #include "data/HTTPRequest.hpp"
 #include "data/HTTPResponse.hpp"
@@ -54,6 +60,28 @@ class Geruest {
     void addRoute(const std::string& path, RouteHandler handler);
 
     void addRoot(const std::string& root);
+
+    /**
+     * @brief Sets the available languages for the server.
+     * @param languages Vector of language codes (e.g., {"en", "de", "fr"})
+     * @note The first language will be used as the default. If empty, no language routing.
+     * @note Must be called before init() or start()
+     */
+    void setAvailableLanguages(const std::vector<std::string>& languages);
+
+    /**
+     * @brief Sets the number of worker threads in the thread pool.
+     * @param count Number of worker threads (default: CPU cores * 2)
+     * @note Must be called before init() or start()
+     */
+    void setWorkerThreadCount(size_t count);
+
+    /**
+     * @brief Sets the maximum size of the connection queue.
+     * @param size Maximum number of pending connections (default: 500)
+     * @note Must be called before init() or start()
+     */
+    void setMaxQueueSize(size_t size);
 
     /*
      * Initializes the server, sets up the socket, binds it to the address and port,
@@ -89,9 +117,42 @@ class Geruest {
 
     ServerData serverData;
 
+    // Thread pool configuration
+    size_t _workerThreadCount = std::thread::hardware_concurrency() * 2;
+    size_t _maxQueueSize = 500;
+
+    // Thread pool components
+    std::vector<std::thread> _workerThreads;
+    std::queue<std::pair<
+#ifdef _WIN32
+        SOCKET,
+#else
+        int,
+#endif
+        std::string>>
+        _connectionQueue;
+    std::mutex _queueMutex;
+    std::condition_variable _queueCV;
+    std::atomic<bool> _workersRunning{false};
+
     void sendToLogger(const std::string& message) const;
 
     void sendToLoggerError(const std::string& message) const;
+
+    /**
+     * @brief Worker thread function that processes connections from the queue.
+     */
+    void workerThread();
+
+    /**
+     * @brief Starts the worker thread pool.
+     */
+    void startWorkers();
+
+    /**
+     * @brief Stops the worker thread pool and waits for all threads to finish.
+     */
+    void stopWorkers();
 
 #ifdef _WIN32
     void giveToHandler(SOCKET new_socket, std::string& IP);

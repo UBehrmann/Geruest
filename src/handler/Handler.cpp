@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <climits>
+#include <filesystem>
 
 #include "builders/CSSBuilder.hpp"
 #include "builders/ContentBuilder.hpp"
@@ -50,7 +51,7 @@ bool Handler::readSocket(char* bufferToUse, size_t size) {
 #ifdef _WIN32
     bufferLength = recv(clientSocket, bufferToUse, static_cast<int>(size), 0);
 #else
-    bufferLength = read(clientSocket, bufferToUse, static_cast<int>(size));
+    bufferLength = read(clientSocket, bufferToUse, size);
 #endif
 
     if (bufferLength == 0) {
@@ -86,11 +87,19 @@ bool Handler::sendSocket(const char* bufferToSend, size_t size) const {
     while (startPos < dataSize) {
         size_t chunkSize = std::min(static_cast<size_t>(BUFFER_SIZE), dataSize - startPos);
         std::memcpy(bufferToSocket, bufferToSend + startPos, chunkSize);
+        
+        ssize_t bytesSent;
 #ifdef _WIN32
-        send(clientSocket, bufferToSocket, static_cast<int>(chunkSize), 0);
+        bytesSent = send(clientSocket, bufferToSocket, static_cast<int>(chunkSize), 0);
 #else
-        write(clientSocket, bufferToSocket, static_cast<int>(chunkSize));
+        bytesSent = write(clientSocket, bufferToSocket, chunkSize);
 #endif
+        
+        if (bytesSent < 0) {
+            // Error sending data
+            return false;
+        }
+        
         startPos += chunkSize;
     }
 
@@ -161,7 +170,9 @@ void Handler::handleRequest(HTTPRequest* request) {
     if (request == nullptr) {
         sendToLoggerError("HTTPRequest is null.");
         std::string header = buildInternalServerErrorHeader();
-        sendSocket(header.c_str(), header.size());
+        if (!sendSocket(header.c_str(), header.size())) {
+            sendToLoggerError("Failed to send internal server error response");
+        }
         return;
     }
 
@@ -172,7 +183,9 @@ void Handler::handleRequest(HTTPRequest* request) {
         HTTPResponse response = routeMatch.second(*request);
 
         // Send the response
-        sendSocket(response.toString().c_str(), response.toString().size());
+        if (!sendSocket(response.toString().c_str(), response.toString().size())) {
+            sendToLoggerError("Failed to send route response for: " + request->getPathString());
+        }
 
         return;
 
@@ -193,7 +206,9 @@ void Handler::handleRequest(HTTPRequest* request) {
 
     std::string header = buildNotFoundHeader();
 
-    sendSocket(header.c_str(), header.size());
+    if (!sendSocket(header.c_str(), header.size())) {
+        sendToLoggerError("Failed to send 404 response");
+    }
 }
 
 // TODO : Redo with HTTPResponse
@@ -209,7 +224,9 @@ void Handler::sendResponse(const std::string& status, const std::string& content
 
     response += content;
 
-    sendSocket((char*)response.c_str(), response.size());
+    if (!sendSocket((char*)response.c_str(), response.size())) {
+        sendToLoggerError("Failed to send response: " + status);
+    }
 }
 
 /**
@@ -217,7 +234,7 @@ void Handler::sendResponse(const std::string& status, const std::string& content
  * @param contentType
  * @param contentPath
  */
-void Handler::sendFile(const std::string& contentType, const std::string& contentPath, HTTPRequest* httpRequest) const {
+void Handler::sendFile(const std::string& contentType, const std::string& contentPath, HTTPRequest* /*httpRequest*/) const {
     char bufferToSend[BUFFER_SIZE];
 
     // sendToLoggerPages("Sending file: " + contentPath);
@@ -233,17 +250,22 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
 
             if (access == 0) {
                 std::string header = buildAuthHeader();
-                sendSocket(header.c_str(), header.size());
+                if (!sendSocket(header.c_str(), header.size())) {
+                    sendToLoggerError("Failed to send auth header");
+                }
                 return;
             }
 
             if (access == -1) {
                 std::string header = buildForbiddenHeader();
-                sendSocket(header.c_str(), header.size());
+                if (!sendSocket(header.c_str(), header.size())) {
+                    sendToLoggerError("Failed to send forbidden header");
+                }
                 return;
             }
 
-            contentBuilder = new HtmlBuilder(contentPath, serverData.getRoot(), serverData.getRemoveComments());
+            contentBuilder = new HtmlBuilder(contentPath, serverData.getRoot(), serverData.getRemoveComments(),
+                                             serverData.getAvailableLanguages());
 
         } else if (contentType == "text/javascript") {
             contentBuilder = new JSBuilder(contentPath, serverData.getRoot(), serverData.getRemoveComments());
@@ -272,7 +294,9 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
 
         std::string bufferToSocket = htmlResponse.toString();
 
-        sendSocket(bufferToSocket.c_str(), bufferToSocket.size());
+        if (!sendSocket(bufferToSocket.c_str(), bufferToSocket.size())) {
+            sendToLoggerError("Failed to send file: " + contentPath);
+        }
 
         delete contentBuilder;
 
@@ -301,11 +325,18 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
         std::string response = htmlResponse.toString();
 
         // Send response
-        sendSocket((char*)response.c_str(), response.size());
+        if (!sendSocket((char*)response.c_str(), response.size())) {
+            sendToLoggerError("Failed to send binary file header: " + contentPath);
+            file.close();
+            return;
+        }
 
         while (!file.eof()) {
             file.read(bufferToSend, BUFFER_SIZE);
-            sendSocket(bufferToSend, static_cast<size_t>(file.gcount()));
+            if (!sendSocket(bufferToSend, static_cast<size_t>(file.gcount()))) {
+                sendToLoggerError("Failed to send binary file chunk: " + contentPath);
+                break;
+            }
         }
 
         file.close();
@@ -351,8 +382,8 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
     std::string language = httpRequest->hasHeader("Accept-Language") ? httpRequest->getHeader("Accept-Language") : "";
 
     // TODO : Find better way to check for language, can't always add an 'or' statement for each new language
-    if (Extension == "jpg" || Extension == "jpeg" || Extension == "png" || Extension == "gif" ||
-               Extension == "svg" || Extension == "ico") {
+    if (Extension == "jpg" || Extension == "jpeg" || Extension == "png" || Extension == "gif" || Extension == "svg" ||
+        Extension == "ico") {
         // For image files, use the Referer header to determine the correct relative path
 
         // Try to get the context from the Referer header
@@ -402,21 +433,52 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
             // if the size of the pathReceived is only 1 character long
             // then we can assume that the path is a language indicator for the index page
 
-            if (language.find("de") != std::string::npos) {
-                return serverData.getRoot() + "/html/de/index.html";
-            } else if (language.find("fr") != std::string::npos) {
-                return serverData.getRoot() + "/html/fr/index.html";
+            // Only use language routing if languages are configured
+            if (serverData.hasLanguages()) {
+                // Extract the preferred language from Accept-Language header
+                std::string preferredLang = serverData.getDefaultLanguage();
+
+                // Try to find a matching language from the Accept-Language header
+                for (const auto& lang : serverData.getAvailableLanguages()) {
+                    if (language.find(lang) != std::string::npos) {
+                        preferredLang = lang;
+                        break;
+                    }
+                }
+
+                // Try language-specific paths
+                std::string langPath = serverData.getRoot() + "/html/" + preferredLang + "/index.html";
+                if (std::filesystem::exists(langPath)) {
+                    return langPath;
+                }
             }
 
-            return serverData.getRoot() + "/html/en/index.html";
+            // Fallback to simple index.html if language-specific doesn't exist or no languages configured
+            return serverData.getRoot() + "/html/index.html";
         }
 
-        if (language.find("de") != std::string::npos) {
-            contentRoot["html"] = "/html/de";
-        } else if (language.find("fr") != std::string::npos) {
-            contentRoot["html"] = "/html/fr";
+        // Try language-specific directories first, then fallback to /html
+        if (serverData.hasLanguages()) {
+            // Extract the preferred language from Accept-Language header
+            std::string preferredLang = serverData.getDefaultLanguage();
+
+            // Try to find a matching language from the Accept-Language header
+            for (const auto& lang : serverData.getAvailableLanguages()) {
+                if (language.find(lang) != std::string::npos) {
+                    preferredLang = lang;
+                    break;
+                }
+            }
+
+            std::string langDir = serverData.getRoot() + "/html/" + preferredLang;
+            if (std::filesystem::exists(langDir)) {
+                contentRoot["html"] = "/html/" + preferredLang;
+            } else {
+                contentRoot["html"] = "/html";
+            }
         } else {
-            contentRoot["html"] = "/html/en";
+            // No languages configured, use simple /html
+            contentRoot["html"] = "/html";
         }
     } else if (pathReceived.size() == 4) {
         // if the size of the pathReceived has a language indicator and is only 4 characters long

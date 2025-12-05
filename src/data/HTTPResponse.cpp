@@ -68,6 +68,7 @@ std::string HTTPResponse::toString() const {
 std::string buildHeader(const std::string& status, const std::string& contentType, const std::string& size) {
     HTTPResponse response(status);
     response.setHeader("Content-Type", contentType);
+    response.setHeader("Content-Length", size);
     return response.toString();
 }
 

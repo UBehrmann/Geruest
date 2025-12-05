@@ -10,10 +10,14 @@
 
 #include "HTMLBuilder.hpp"
 
+#include <algorithm>
+#include <filesystem>
+
 namespace geruest {
 
-HtmlBuilder::HtmlBuilder(const std::string &inputPath, const std::string &inputServerRoot, bool removeCommentsFlag) 
-    : ContentBuilder(inputPath, inputServerRoot, removeCommentsFlag) {
+HtmlBuilder::HtmlBuilder(const std::string& inputPath, const std::string& inputServerRoot, bool removeCommentsFlag,
+                         const std::vector<std::string>& languages)
+    : ContentBuilder(inputPath, inputServerRoot, removeCommentsFlag, languages) {
     buildHtml();
 }
 
@@ -39,10 +43,17 @@ void HtmlBuilder::buildHtml() {
     // Get the template path
     std::string templatePath = path;
 
-    // Load template file, remove language redirection
-    templatePath.erase(langStart, langSize + 1);  // remove the language part
+    // Check if the file exists with the language directory
+    bool useLanguageSpecificFile = std::filesystem::exists(path);
 
-    builtFile = loadFile(templatePath);
+    if (useLanguageSpecificFile) {
+        // File exists with language directory, use it directly
+        builtFile = loadFile(path);
+    } else {
+        // Load template file, remove language redirection
+        templatePath.erase(langStart, langSize + 1);  // remove the language part
+        builtFile = loadFile(templatePath);
+    }
 
     // Remove comments if enabled
     if (removeComments) {
@@ -52,20 +63,35 @@ void HtmlBuilder::buildHtml() {
     // Check if template file was loaded
     if (builtFile.empty()) return;
 
-    // Remplace keywords with content
-    // TODO : find a better names for this function!
-    replaceCurlyBrackets();
+    // Only process templates and save if using template system (not language-specific files)
+    if (!useLanguageSpecificFile) {
+        // Check if the target language is supported before processing and saving
+        // Extract language from path: /root/html/XX/file.html
+        bool languageSupported =
+            availableLanguages.empty() ||
+            std::find(availableLanguages.begin(), availableLanguages.end(), language) != availableLanguages.end();
 
-    // Replace text with correct language
-    replaceTranslations(language);
+        if (!languageSupported) {
+            // Language not supported, don't save the file
+            // Just serve the base template without language-specific processing
+            return;
+        }
 
-    // Change references to the correct path
-    replaceReferences(language);
+        // Remplace keywords with content
+        // TODO : find a better names for this function!
+        replaceCurlyBrackets();
 
-    // Save the file
-    if (!FileManagement::saveFile(path, builtFile)) {
-        // Error saving file
-        builtFile = "";
+        // Replace text with correct language
+        replaceTranslations(language);
+
+        // Change references to the correct path
+        replaceReferences(language);
+
+        // Save the file
+        if (!FileManagement::saveFile(path, builtFile)) {
+            // Error saving file
+            builtFile = "";
+        }
     }
 }
 
@@ -79,7 +105,7 @@ void HtmlBuilder::replaceCurlyBrackets() {
         // Check if startPos is inside a <script>...</script> or <style>...</style> block
         bool insideScript = false;
         bool insideStyle = false;
-        
+
         scriptStart = builtFile.rfind("<script", startPos);
         if (scriptStart != std::string::npos) {
             scriptEnd = builtFile.find("</script>", scriptStart);
@@ -87,7 +113,7 @@ void HtmlBuilder::replaceCurlyBrackets() {
                 insideScript = true;
             }
         }
-        
+
         size_t styleStart = builtFile.rfind("<style", startPos);
         if (styleStart != std::string::npos) {
             size_t styleEnd = builtFile.find("</style>", styleStart);
@@ -95,9 +121,9 @@ void HtmlBuilder::replaceCurlyBrackets() {
                 insideStyle = true;
             }
         }
-        
+
         if (insideScript || insideStyle) {
-            endPos = startPos; // skip this '{', move to next
+            endPos = startPos;  // skip this '{', move to next
             continue;
         }
 
@@ -121,7 +147,7 @@ void HtmlBuilder::replaceCurlyBrackets() {
     }
 }
 
-void HtmlBuilder::replaceTranslations(const std::string &language) {
+void HtmlBuilder::replaceTranslations(const std::string& language) {
     size_t startPos = 0;
 
     while ((startPos = builtFile.find('[', startPos)) != std::string::npos) {
@@ -139,7 +165,7 @@ void HtmlBuilder::replaceTranslations(const std::string &language) {
         std::string toInsert;
 
         if (fs::exists(pathToJSON)) {
-            JSONParser *jsonParser = getJSONFromFile(pathToJSON);
+            JSONParser* jsonParser = getJSONFromFile(pathToJSON);
 
             // Get the right language
             JSONParser languageArray = jsonParser->getObject(language);
@@ -160,7 +186,7 @@ void HtmlBuilder::replaceTranslations(const std::string &language) {
     }
 }
 
-void HtmlBuilder::replaceReferences(const std::string &language) {
+void HtmlBuilder::replaceReferences(const std::string& language) {
     // Find if there are references in the file
     // href="/about_me"
     // change to href="/en/about_me"

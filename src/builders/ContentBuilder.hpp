@@ -14,13 +14,15 @@
 #include <sstream>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace geruest {
 
 class ContentBuilder {
 public:
 
-    ContentBuilder(const std::string &inputPath, const std::string &inputServerRoot, bool removeCommentsFlag = true);
+    ContentBuilder(const std::string &inputPath, const std::string &inputServerRoot, 
+                   bool removeCommentsFlag = true, const std::vector<std::string>& languages = {});
 
     [[nodiscard]] std::string sizeString() const;
 
@@ -40,6 +42,7 @@ protected:
     std::string path;
 
     const bool removeComments;
+    const std::vector<std::string> availableLanguages;
 
     /**
      * Remove comments from a string (CSS, JS, or HTML style)

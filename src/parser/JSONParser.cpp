@@ -9,7 +9,7 @@ JSONParser::JSONParser(const std::string &input) : basicString(input), jp(0) {
     parseJSON();
 }
 
-JSONParser::JSONParser(std::map<std::string, std::string> data) : data(std::move(data)) {}
+JSONParser::JSONParser(std::map<std::string, std::string> initialData) : data(std::move(initialData)) {}
 
 bool JSONParser::isWhiteSpace(char c) {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r';
@@ -315,53 +315,272 @@ JSONParser JSONParser::getObject(const std::string &key) {
     return JSONParser(data[key]);
 }
 
+// Helper function to parse array string into individual elements
+std::vector<std::string> JSONParser::parseArrayString(const std::string& arrayStr) {
+    std::vector<std::string> result;
+    
+    if (arrayStr.empty() || arrayStr[0] != '[') {
+        return result;
+    }
+    
+    size_t pos = 1; // Skip opening '['
+    bool inString = false;
+    bool escape = false;
+    int bracketDepth = 0;
+    int braceDepth = 0;
+    std::string current;
+    
+    while (pos < arrayStr.length()) {
+        char c = arrayStr[pos];
+        
+        if (escape) {
+            current += c;
+            escape = false;
+        } else if (c == '\\') {
+            escape = true;
+            current += c;
+        } else if (c == '"') {
+            inString = !inString;
+            current += c;
+        } else if (!inString) {
+            if (c == '[') {
+                bracketDepth++;
+                current += c;
+            } else if (c == ']') {
+                if (bracketDepth > 0) {
+                    bracketDepth--;
+                    current += c;
+                } else {
+                    // End of array
+                    if (!current.empty()) {
+                        // Trim whitespace
+                        size_t start = current.find_first_not_of(" \t\n\r");
+                        size_t end = current.find_last_not_of(" \t\n\r");
+                        if (start != std::string::npos) {
+                            result.push_back(current.substr(start, end - start + 1));
+                        }
+                    }
+                    break;
+                }
+            } else if (c == '{') {
+                braceDepth++;
+                current += c;
+            } else if (c == '}') {
+                braceDepth--;
+                current += c;
+            } else if (c == ',' && bracketDepth == 0 && braceDepth == 0) {
+                // Element separator
+                if (!current.empty()) {
+                    // Trim whitespace
+                    size_t start = current.find_first_not_of(" \t\n\r");
+                    size_t end = current.find_last_not_of(" \t\n\r");
+                    if (start != std::string::npos) {
+                        result.push_back(current.substr(start, end - start + 1));
+                    }
+                }
+                current.clear();
+            } else {
+                current += c;
+            }
+        } else {
+            current += c;
+        }
+        pos++;
+    }
+    
+    return result;
+}
+
+// Helper function to extract string value (remove quotes)
+std::string JSONParser::extractString(const std::string& str) {
+    if (str.length() >= 2 && str[0] == '"' && str[str.length()-1] == '"') {
+        return str.substr(1, str.length() - 2);
+    }
+    return str;
+}
+
 std::vector<std::string> JSONParser::getStringArray(const std::string &key) {
     std::vector<std::string> result;
+    
+    if (data.find(key) == data.end()) {
+        return result;
+    }
+    
+    std::vector<std::string> elements = parseArrayString(data[key]);
+    for (const auto& elem : elements) {
+        result.push_back(extractString(elem));
+    }
+    
     return result;
 }
 
 std::vector<short> JSONParser::getShortArray(const std::string &key) {
     std::vector<short> result;
+    
+    if (data.find(key) == data.end()) {
+        return result;
+    }
+    
+    std::vector<std::string> elements = parseArrayString(data[key]);
+    for (const auto& elem : elements) {
+        try {
+            result.push_back(static_cast<short>(std::stoi(elem)));
+        } catch (...) {
+            // Skip invalid elements
+        }
+    }
+    
     return result;
 }
 
 std::vector<int> JSONParser::getIntArray(const std::string &key) {
     std::vector<int> result;
+    
+    if (data.find(key) == data.end()) {
+        return result;
+    }
+    
+    std::vector<std::string> elements = parseArrayString(data[key]);
+    for (const auto& elem : elements) {
+        try {
+            result.push_back(std::stoi(elem));
+        } catch (...) {
+            // Skip invalid elements
+        }
+    }
+    
     return result;
 }
 
 std::vector<long> JSONParser::getLongArray(const std::string &key) {
     std::vector<long> result;
+    
+    if (data.find(key) == data.end()) {
+        return result;
+    }
+    
+    std::vector<std::string> elements = parseArrayString(data[key]);
+    for (const auto& elem : elements) {
+        try {
+            result.push_back(std::stol(elem));
+        } catch (...) {
+            // Skip invalid elements
+        }
+    }
+    
     return result;
 }
 
 std::vector<long long> JSONParser::getLongLongArray(const std::string &key) {
     std::vector<long long> result;
+    
+    if (data.find(key) == data.end()) {
+        return result;
+    }
+    
+    std::vector<std::string> elements = parseArrayString(data[key]);
+    for (const auto& elem : elements) {
+        try {
+            result.push_back(std::stoll(elem));
+        } catch (...) {
+            // Skip invalid elements
+        }
+    }
+    
     return result;
 }
 
 std::vector<bool> JSONParser::getBoolArray(const std::string &key) {
     std::vector<bool> result;
+    
+    if (data.find(key) == data.end()) {
+        return result;
+    }
+    
+    std::vector<std::string> elements = parseArrayString(data[key]);
+    for (const auto& elem : elements) {
+        std::string lower = elem;
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        result.push_back(lower == "true" || lower == "1");
+    }
+    
     return result;
 }
 
 std::vector<float> JSONParser::getFloatArray(const std::string &key) {
     std::vector<float> result;
+    
+    if (data.find(key) == data.end()) {
+        return result;
+    }
+    
+    std::vector<std::string> elements = parseArrayString(data[key]);
+    for (const auto& elem : elements) {
+        try {
+            result.push_back(std::stof(elem));
+        } catch (...) {
+            // Skip invalid elements
+        }
+    }
+    
     return result;
 }
 
 std::vector<double> JSONParser::getDoubleArray(const std::string &key) {
     std::vector<double> result;
+    
+    if (data.find(key) == data.end()) {
+        return result;
+    }
+    
+    std::vector<std::string> elements = parseArrayString(data[key]);
+    for (const auto& elem : elements) {
+        try {
+            result.push_back(std::stod(elem));
+        } catch (...) {
+            // Skip invalid elements
+        }
+    }
+    
     return result;
 }
 
 std::vector<long double> JSONParser::getLongDoubleArray(const std::string &key) {
     std::vector<long double> result;
+    
+    if (data.find(key) == data.end()) {
+        return result;
+    }
+    
+    std::vector<std::string> elements = parseArrayString(data[key]);
+    for (const auto& elem : elements) {
+        try {
+            result.push_back(std::stold(elem));
+        } catch (...) {
+            // Skip invalid elements
+        }
+    }
+    
     return result;
 }
 
 std::vector<JSONParser> JSONParser::getArrayOfJSON(const std::string &key) {
     std::vector<JSONParser> result;
+    
+    if (data.find(key) == data.end()) {
+        return result;
+    }
+    
+    std::vector<std::string> elements = parseArrayString(data[key]);
+    for (const auto& elem : elements) {
+        // Each element should be a JSON object or a valid JSON string
+        try {
+            result.push_back(JSONParser(elem));
+        } catch (...) {
+            // Skip invalid JSON elements
+        }
+    }
+    
     return result;
 }
 

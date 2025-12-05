@@ -18,6 +18,8 @@
 #include <ws2tcpip.h>
 #ifdef _MSC_VER
 #pragma comment(lib, "ws2_32.lib")
+// Define ssize_t for MSVC
+typedef SSIZE_T ssize_t;
 #endif
 #else
 #include <netinet/in.h>
@@ -61,7 +63,7 @@ private:
 	const std::string IP;
 
 	char *buffer;
-	int bufferLength = 0;
+	ssize_t bufferLength = 0;
 
 	bool readSocket() { return readSocket(buffer, BUFFER_SIZE); }
 

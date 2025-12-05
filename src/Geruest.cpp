@@ -21,10 +21,14 @@
 #include <thread>
 
 #include "data/HTTPResponse.hpp"
+#include "geruest/Version.hpp"
 
 namespace geruest {
 
 Geruest::Geruest() {
+    // Print version information
+    std::cout << "Geruest Framework v" << getVersion() << std::endl;
+    
 #ifdef _WIN32
     WSADATA wsaData;
     int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
@@ -36,6 +40,9 @@ Geruest::Geruest() {
 }
 
 Geruest::~Geruest() {
+    // Stop workers first
+    stopWorkers();
+
 #ifdef _WIN32
     if (server_fd != INVALID_SOCKET) {
         closesocket(server_fd);
@@ -50,13 +57,50 @@ Geruest::~Geruest() {
 }
 
 void Geruest::setPort(int _port) { port = _port; }
-void Geruest::setHostname(const std::string &hostname) { hostname_ = hostname; }
+void Geruest::setHostname(const std::string& hostname) { hostname_ = hostname; }
 
-void Geruest::addRoute(const std::string &path, RouteHandler routeHandler) {
+void Geruest::addRoute(const std::string& path, RouteHandler routeHandler) {
     serverData.addRoute(path, std::move(routeHandler));
 }
 
-void Geruest::addRoot(const std::string &root) { serverData.setRoot(root); }
+void Geruest::addRoot(const std::string& root) { serverData.setRoot(root); }
+
+void Geruest::setAvailableLanguages(const std::vector<std::string>& languages) {
+    serverData.setAvailableLanguages(languages);
+    if (!languages.empty()) {
+        sendToLogger("Available languages: " + std::to_string(languages.size()) + ", default: " + languages[0]);
+    } else {
+        sendToLogger("No languages configured - language routing disabled");
+    }
+}
+
+void Geruest::setWorkerThreadCount(size_t count) {
+    if (running || _workersRunning) {
+        sendToLoggerError("Cannot change worker thread count while server is running");
+        return;
+    }
+    if (count == 0) {
+        sendToLoggerError("Worker thread count must be at least 1, setting to 1");
+        _workerThreadCount = 1;
+        return;
+    }
+    _workerThreadCount = count;
+    sendToLogger("Worker thread count set to: " + std::to_string(_workerThreadCount));
+}
+
+void Geruest::setMaxQueueSize(size_t size) {
+    if (running || _workersRunning) {
+        sendToLoggerError("Cannot change queue size while server is running");
+        return;
+    }
+    if (size == 0) {
+        sendToLoggerError("Queue size must be at least 1, setting to 1");
+        _maxQueueSize = 1;
+        return;
+    }
+    _maxQueueSize = size;
+    sendToLogger("Max queue size set to: " + std::to_string(_maxQueueSize));
+}
 
 void Geruest::init() {
     this->server_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -74,7 +118,7 @@ void Geruest::init() {
     this->address.sin_addr.s_addr = INADDR_ANY;
     this->address.sin_port = htons((unsigned short)port);
 
-    if (bind(this->server_fd, (struct sockaddr *)&this->address, sizeof(this->address)) < 0) {
+    if (bind(this->server_fd, (struct sockaddr*)&this->address, sizeof(this->address)) < 0) {
 #ifdef _WIN32
         sendToLoggerError("Bind failed: " + std::to_string(WSAGetLastError()));
 #else
@@ -95,7 +139,7 @@ void Geruest::init() {
 // Setting timeout for accepting connections (e.g., 5 seconds)
 #ifdef _WIN32
     DWORD timeout = TIMEOUT_SEC * 1000;  // Convert to milliseconds
-    if (setsockopt(server_fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(timeout)) == SOCKET_ERROR) {
+    if (setsockopt(server_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout)) == SOCKET_ERROR) {
         sendToLoggerError("Failed to set receive timeout: " + std::to_string(WSAGetLastError()));
 #else
     struct timeval timeout;
@@ -103,7 +147,7 @@ void Geruest::init() {
     timeout.tv_usec = TIMEOUT_USEC;  // No additional microseconds
 
     // Set socket option for receive timeout
-    if (setsockopt(server_fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof timeout) < 0) {
+    if (setsockopt(server_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof timeout) < 0) {
         sendToLoggerError("Failed to set receive timeout");
 #endif
         exit(EXIT_FAILURE);
@@ -112,7 +156,7 @@ void Geruest::init() {
     int send_buffer_size = BUFFER_SIZE;
     int receive_buffer_size = BUFFER_SIZE;
 
-    if (setsockopt(server_fd, SOL_SOCKET, SO_SNDBUF, (const char *)&send_buffer_size, sizeof(send_buffer_size)) < 0) {
+    if (setsockopt(server_fd, SOL_SOCKET, SO_SNDBUF, (const char*)&send_buffer_size, sizeof(send_buffer_size)) < 0) {
 #ifdef _WIN32
         sendToLoggerError("Failed to set send buffer size: " + std::to_string(WSAGetLastError()));
 #else
@@ -121,7 +165,7 @@ void Geruest::init() {
         exit(EXIT_FAILURE);
     }
 
-    if (setsockopt(server_fd, SOL_SOCKET, SO_RCVBUF, (const char *)&receive_buffer_size, sizeof(receive_buffer_size)) <
+    if (setsockopt(server_fd, SOL_SOCKET, SO_RCVBUF, (const char*)&receive_buffer_size, sizeof(receive_buffer_size)) <
         0) {
 #ifdef _WIN32
         sendToLoggerError("Failed to set receive buffer size: " + std::to_string(WSAGetLastError()));
@@ -139,18 +183,23 @@ void Geruest::start() {
 
     running = true;
 
+    // Start worker threads
+    startWorkers();
+
     sendToLogger("Waiting for connections...");
+    sendToLogger("Worker threads: " + std::to_string(_workerThreadCount) +
+                 ", Max queue size: " + std::to_string(_maxQueueSize));
 
     while (running) {
         try {
 #ifdef _WIN32
-            SOCKET new_socket = accept(this->server_fd, (struct sockaddr *)&this->address, &addrlen);
+            SOCKET new_socket = accept(this->server_fd, (struct sockaddr*)&this->address, &addrlen);
 
             if (new_socket == INVALID_SOCKET) {
                 int error = WSAGetLastError();
                 if (error == WSAEWOULDBLOCK || error == WSAETIMEDOUT) {
 #else
-            int new_socket = accept(this->server_fd, (struct sockaddr *)&this->address, (socklen_t *)&addrlen);
+            int new_socket = accept(this->server_fd, (struct sockaddr*)&this->address, (socklen_t*)&addrlen);
 
             if (new_socket < 0) {
                 if (errno == EWOULDBLOCK || errno == EAGAIN) {
@@ -176,21 +225,39 @@ void Geruest::start() {
 #endif
             std::string client_ip_str(client_ip);
 
-            giveToHandler(new_socket, client_ip_str);
+            // Producer: Add connection to queue
+            {
+                std::lock_guard<std::mutex> lock(_queueMutex);
+                if (_connectionQueue.size() >= _maxQueueSize) {
+                    sendToLoggerError("Connection queue full (" + std::to_string(_maxQueueSize) +
+                                      "), rejecting connection from " + client_ip_str);
+#ifdef _WIN32
+                    closesocket(new_socket);
+#else
+                    close(new_socket);
+#endif
+                    continue;
+                }
+                _connectionQueue.push({new_socket, client_ip_str});
+            }
+            _queueCV.notify_one();  // Wake up a worker thread
 
-        } catch (const std::exception &e) {
+        } catch (const std::exception& e) {
             sendToLoggerError(std::string("Exception in server loop: ") + e.what());
             continue;
         }
     }
 
+    // Stop workers before exiting
+    stopWorkers();
+
     sendToLogger("Server stopped.");
 }
 
 #ifdef _WIN32
-void Geruest::giveToHandler(SOCKET new_socket, std::string &IP) {
+void Geruest::giveToHandler(SOCKET new_socket, std::string& IP) {
 #else
-void Geruest::giveToHandler(int new_socket, std::string &IP) {
+void Geruest::giveToHandler(int new_socket, std::string& IP) {
 #endif
     auto clientHandler = std::make_unique<Handler>(new_socket, IP, serverData);
     // sendToLogger("New connection");
@@ -198,7 +265,7 @@ void Geruest::giveToHandler(int new_socket, std::string &IP) {
     std::thread clientThread([handler = std::move(clientHandler)]() mutable {
         try {
             handler->run();
-        } catch (const std::exception &e) {
+        } catch (const std::exception& e) {
             handler->sendToLoggerError(std::string("Handler error: ") + e.what());
         } catch (...) {
             handler->sendToLoggerError("Handler encountered an unknown error");
@@ -216,8 +283,83 @@ void Geruest::stop() {
 
 bool Geruest::isRunning() { return running; }
 
-void Geruest::sendToLogger(const std::string &message) const { std::cout << message << std::endl; }
+void Geruest::startWorkers() {
+    _workersRunning = true;
+    _workerThreads.reserve(_workerThreadCount);
 
-void Geruest::sendToLoggerError(const std::string &message) const { std::cerr << "Error: " << message << std::endl; }
+    for (size_t i = 0; i < _workerThreadCount; ++i) {
+        _workerThreads.emplace_back(&Geruest::workerThread, this);
+    }
+
+    sendToLogger("Started " + std::to_string(_workerThreadCount) + " worker threads");
+}
+
+void Geruest::stopWorkers() {
+    if (!_workersRunning) {
+        return;
+    }
+
+    _workersRunning = false;
+    _queueCV.notify_all();  // Wake up all workers
+
+    // Wait for all workers to finish
+    for (auto& worker : _workerThreads) {
+        if (worker.joinable()) {
+            worker.join();
+        }
+    }
+    _workerThreads.clear();
+
+    // Clear any remaining connections in queue
+    std::lock_guard<std::mutex> lock(_queueMutex);
+    while (!_connectionQueue.empty()) {
+        auto connection = _connectionQueue.front();
+        _connectionQueue.pop();
+#ifdef _WIN32
+        closesocket(connection.first);
+#else
+        close(connection.first);
+#endif
+    }
+
+    sendToLogger("All worker threads stopped");
+}
+
+void Geruest::workerThread() {
+    while (_workersRunning) {
+#ifdef _WIN32
+        SOCKET clientSocket;
+#else
+        int clientSocket;
+#endif
+        std::string clientIP;
+
+        // Consumer: Get connection from queue
+        {
+            std::unique_lock<std::mutex> lock(_queueMutex);
+            _queueCV.wait(lock, [this] { return !_connectionQueue.empty() || !_workersRunning; });
+
+            if (!_workersRunning && _connectionQueue.empty()) {
+                break;
+            }
+
+            if (_connectionQueue.empty()) {
+                continue;
+            }
+
+            auto connection = _connectionQueue.front();
+            _connectionQueue.pop();
+            clientSocket = connection.first;
+            clientIP = connection.second;
+        }
+
+        // Process the connection
+        giveToHandler(clientSocket, clientIP);
+    }
+}
+
+void Geruest::sendToLogger(const std::string& message) const { std::cout << message << std::endl; }
+
+void Geruest::sendToLoggerError(const std::string& message) const { std::cerr << "Error: " << message << std::endl; }
 
 }  // namespace geruest
