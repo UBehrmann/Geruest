@@ -11,8 +11,10 @@
 
 namespace geruest {
 
-ContentBuilder::ContentBuilder(const std::string &inputPath, const std::string &inputServerRoot, bool removeCommentsFlag)
-    : root(std::move(inputServerRoot)), path(std::move(inputPath)), removeComments(removeCommentsFlag) {
+ContentBuilder::ContentBuilder(const std::string &inputPath, const std::string &inputServerRoot, 
+                               bool removeCommentsFlag, const std::vector<std::string>& languages)
+    : root(std::move(inputServerRoot)), path(std::move(inputPath)), removeComments(removeCommentsFlag), 
+      availableLanguages(languages) {
     builtFile = loadFile(path);
 }
 

@@ -24,7 +24,8 @@ namespace geruest {
 
 class HtmlBuilder : public ContentBuilder {
    public:
-    HtmlBuilder(const std::string &inputPath, const std::string &inputServerRoot, bool removeCommentsFlag = true);
+    HtmlBuilder(const std::string& inputPath, const std::string& inputServerRoot, bool removeCommentsFlag = true,
+                const std::vector<std::string>& languages = {});
 
    private:
     void buildHtml();
@@ -37,12 +38,12 @@ class HtmlBuilder : public ContentBuilder {
     /**
      * Replace keywords in the file that start with a '[' and end with a ']'
      */
-    void replaceTranslations(const std::string &language);
+    void replaceTranslations(const std::string& language);
 
     /**
      * Replace the references in the file, based on the language
      */
-    void replaceReferences(const std::string &language);
+    void replaceReferences(const std::string& language);
 };
 
 }  // namespace geruest

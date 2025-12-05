@@ -13,7 +13,7 @@
 #include <filesystem>
 #include "Geruest.hpp"
 
-#define PORT 80
+#define PORT 8080
 #define HOSTNAME "localhost"
 
 using namespace geruest;
@@ -38,6 +38,60 @@ int main(int argc, char* argv[]) {
     server->setPort(PORT);
     server->setHostname(HOSTNAME);
     
+    // ============================================================
+    // THREAD POOL CONFIGURATION (must be called before init/start)
+    // ============================================================
+    
+    // Get number of CPU cores
+    unsigned int cpuCores = std::thread::hardware_concurrency();
+    std::cout << "\n=== Thread Pool Configuration ===" << std::endl;
+    std::cout << "Detected CPU cores: " << cpuCores << std::endl;
+    
+    // Choose configuration profile
+    // Uncomment ONE of the following configurations:
+    
+    // PROFILE 1: Default/Conservative (recommended for general use)
+    server->setWorkerThreadCount(cpuCores * 2);  // CPU cores × 2
+    server->setMaxQueueSize(500);                // 500 pending connections
+    std::cout << "Profile: CONSERVATIVE (default)" << std::endl;
+    
+    // PROFILE 2: High-Traffic (for production servers with heavy load)
+    // server->setWorkerThreadCount(32);
+    // server->setMaxQueueSize(2000);
+    // std::cout << "Profile: HIGH-TRAFFIC" << std::endl;
+    
+    // PROFILE 3: Low-Resource (for embedded systems or development)
+    // server->setWorkerThreadCount(4);
+    // server->setMaxQueueSize(100);
+    // std::cout << "Profile: LOW-RESOURCE" << std::endl;
+    
+    // PROFILE 4: Testing (small pool to easily test queue overflow)
+    // server->setWorkerThreadCount(2);
+    // server->setMaxQueueSize(5);
+    // std::cout << "Profile: TESTING (small pool)" << std::endl;
+    
+    std::cout << "Worker threads: " << cpuCores * 2 << std::endl;
+    std::cout << "Max queue size: 500" << std::endl;
+    std::cout << "=================================\n" << std::endl;
+    
+    // ============================================================
+    // LANGUAGE CONFIGURATION (optional, must be called before init/start)
+    // ============================================================
+    
+    // Configure available languages - first language is the default
+    // If not set, no language-based routing is performed
+    std::vector<std::string> languages = {"en"};
+    server->setAvailableLanguages(languages);
+    
+    std::cout << "=== Language Configuration ===" << std::endl;
+    std::cout << "Available languages: en, de, fr" << std::endl;
+    std::cout << "Default language: en" << std::endl;
+    std::cout << "Language routing: ENABLED" << std::endl;
+    std::cout << "================================\n" << std::endl;
+    
+    // To disable language routing, pass an empty vector:
+    // server->setAvailableLanguages({});
+    
     // Get the absolute path to the website folder next to the executable
     std::filesystem::path executablePath = std::filesystem::canonical(std::filesystem::path(argv[0]).parent_path());
     std::filesystem::path websitePath = executablePath / "website";
@@ -48,7 +102,16 @@ int main(int argc, char* argv[]) {
 
     std::cout << "Starting Geruest server on port " << PORT << "..." << std::endl;
     std::cout << "Server will be accessible at http://" << HOSTNAME << ":" << PORT << std::endl;
-    std::cout << "Press Ctrl+C to stop the server." << std::endl;
+    std::cout << "\n=== Test Routes ===" << std::endl;
+    std::cout << "  GET  http://" << HOSTNAME << ":" << PORT << "/test" << std::endl;
+    std::cout << "  GET  http://" << HOSTNAME << ":" << PORT << "/api/get" << std::endl;
+    std::cout << "  POST http://" << HOSTNAME << ":" << PORT << "/api/post" << std::endl;
+    std::cout << "  Wildcard: http://" << HOSTNAME << ":" << PORT << "/api/anything" << std::endl;
+    std::cout << "  Static files from: ./website/" << std::endl;
+    std::cout << "\n=== Controls ===" << std::endl;
+    std::cout << "  Press Ctrl+C to stop the server gracefully" << std::endl;
+    std::cout << "  Workers will finish current requests before shutdown" << std::endl;
+    std::cout << "===================\n" << std::endl;
 
     server->init();
 

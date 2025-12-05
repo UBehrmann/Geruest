@@ -61,7 +61,7 @@ private:
 	const std::string IP;
 
 	char *buffer;
-	int bufferLength = 0;
+	ssize_t bufferLength = 0;
 
 	bool readSocket() { return readSocket(buffer, BUFFER_SIZE); }
 
