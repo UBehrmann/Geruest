@@ -70,6 +70,20 @@ private:
     std::string readNestedArray();
 
     /**
+     * Parse array string into individual elements
+     * @param arrayStr The array string to parse (e.g., "[1,2,3]")
+     * @return Vector of string elements
+     */
+    std::vector<std::string> parseArrayString(const std::string& arrayStr);
+
+    /**
+     * Extract string value by removing quotes
+     * @param str The string to extract from
+     * @return The extracted string without quotes
+     */
+    std::string extractString(const std::string& str);
+
+    /**
      * Read the data from the JSONParser string
      * @return The data as string
      */
@@ -94,7 +108,7 @@ public:
 
     explicit JSONParser(const std::string &input);
 
-    explicit JSONParser(std::map<std::string, std::string> data);
+    explicit JSONParser(std::map<std::string, std::string> initialData);
 
     ~JSONParser() = default;
 
