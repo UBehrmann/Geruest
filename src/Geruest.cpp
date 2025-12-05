@@ -21,10 +21,14 @@
 #include <thread>
 
 #include "data/HTTPResponse.hpp"
+#include "geruest/Version.hpp"
 
 namespace geruest {
 
 Geruest::Geruest() {
+    // Print version information
+    std::cout << "Geruest Framework v" << getVersion() << std::endl;
+    
 #ifdef _WIN32
     WSADATA wsaData;
     int result = WSAStartup(MAKEWORD(2, 2), &wsaData);

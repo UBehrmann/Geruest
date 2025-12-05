@@ -1,6 +1,15 @@
 cmake_minimum_required(VERSION 3.10)
-project(GeruestLibrary VERSION 0.0.1 LANGUAGES CXX)
 
+# Define the project name and version
+project(GeruestLibrary VERSION 0.5.3 LANGUAGES CXX)
+
+# Configure version header
+configure_file(
+    "${PROJECT_SOURCE_DIR}/src/Version.hpp.in"
+    "${PROJECT_BINARY_DIR}/include/geruest/Version.hpp"
+)
+
+# Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -40,6 +49,7 @@ add_library(Geruest STATIC
 # Public headers
 target_include_directories(Geruest PUBLIC
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
+    $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
 
@@ -65,6 +75,11 @@ install(TARGETS Geruest
 install(DIRECTORY src/
     DESTINATION include
     FILES_MATCHING PATTERN "*.hpp"
+)
+
+# Install generated version header
+install(FILES "${PROJECT_BINARY_DIR}/include/geruest/Version.hpp"
+    DESTINATION include/geruest
 )
 
 # Export the targets
