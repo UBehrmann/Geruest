@@ -33,15 +33,32 @@ void HtmlBuilder::buildHtml() {
 
     // Build the HTML file
 
-    auto rootSize = (unsigned)root.size();
-    unsigned langStart = rootSize + 6;
-    unsigned langSize = 2;
-
-    // Get language from path
-    std::string language = path.substr(langStart, langSize);
-
-    // Get the template path
+    // Extract language from path more robustly
+    // Path format: /root/html/LANG/file.html or /root/html/file.html
+    std::string language;
     std::string templatePath = path;
+    
+    // Find /html/ in the path
+    size_t htmlPos = path.find("/html/");
+    if (htmlPos != std::string::npos) {
+        size_t afterHtml = htmlPos + 6; // Position after "/html/"
+        size_t nextSlash = path.find('/', afterHtml);
+        
+        if (nextSlash != std::string::npos) {
+            // Extract potential language code
+            std::string potentialLang = path.substr(afterHtml, nextSlash - afterHtml);
+            
+            // Check if it's a 2-character language code
+            if (potentialLang.length() == 2 && std::isalpha(potentialLang[0]) && std::isalpha(potentialLang[1])) {
+                language = potentialLang;
+            }
+        }
+    }
+    
+    // If no language detected, use default language
+    if (language.empty() && !availableLanguages.empty()) {
+        language = availableLanguages[0];
+    }
 
     // Check if the file exists with the language directory
     bool useLanguageSpecificFile = std::filesystem::exists(path);
@@ -50,8 +67,15 @@ void HtmlBuilder::buildHtml() {
         // File exists with language directory, use it directly
         builtFile = loadFile(path);
     } else {
-        // Load template file, remove language redirection
-        templatePath.erase(langStart, langSize + 1);  // remove the language part
+        // Load template file - remove language part from path
+        if (!language.empty() && htmlPos != std::string::npos) {
+            // Remove /LANG/ from the path to get template path
+            size_t langStart = htmlPos + 6; // After "/html/"
+            size_t langEnd = path.find('/', langStart);
+            if (langEnd != std::string::npos) {
+                templatePath = path.substr(0, langStart) + path.substr(langEnd + 1);
+            }
+        }
         builtFile = loadFile(templatePath);
     }
 

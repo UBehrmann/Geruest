@@ -446,14 +446,11 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
                     }
                 }
 
-                // Try language-specific paths
-                std::string langPath = serverData.getRoot() + "/html/" + preferredLang + "/index.html";
-                if (std::filesystem::exists(langPath)) {
-                    return langPath;
-                }
+                // Always return language-specific path - HTMLBuilder will handle building if needed
+                return serverData.getRoot() + "/html/" + preferredLang + "/index.html";
             }
 
-            // Fallback to simple index.html if language-specific doesn't exist or no languages configured
+            // Fallback to simple index.html if no languages configured
             return serverData.getRoot() + "/html/index.html";
         }
 
@@ -470,12 +467,9 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
                 }
             }
 
-            std::string langDir = serverData.getRoot() + "/html/" + preferredLang;
-            if (std::filesystem::exists(langDir)) {
-                contentRoot["html"] = "/html/" + preferredLang;
-            } else {
-                contentRoot["html"] = "/html";
-            }
+            // Always use language-specific path when languages are configured
+            // HTMLBuilder will handle loading from template if language file doesn't exist
+            contentRoot["html"] = "/html/" + preferredLang;
         } else {
             // No languages configured, use simple /html
             contentRoot["html"] = "/html";
