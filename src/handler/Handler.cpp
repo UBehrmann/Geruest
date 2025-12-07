@@ -234,7 +234,7 @@ void Handler::sendResponse(const std::string& status, const std::string& content
  * @param contentType
  * @param contentPath
  */
-void Handler::sendFile(const std::string& contentType, const std::string& contentPath, HTTPRequest* /*httpRequest*/) const {
+void Handler::sendFile(const std::string& contentType, const std::string& contentPath, HTTPRequest* httpRequest) const {
     char bufferToSend[BUFFER_SIZE];
 
     // sendToLoggerPages("Sending file: " + contentPath);
@@ -245,23 +245,18 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
         if (contentType == "text/html") {
             //			sendToLoggerPages("GET: " + path);
 
-            int access = 1;  // hasAccess(requestStream.str(), httpRequest->getPathString(),
-            // serverData->getRoot());
-
-            if (access == 0) {
-                std::string header = buildAuthHeader();
-                if (!sendSocket(header.c_str(), header.size())) {
-                    sendToLoggerError("Failed to send auth header");
+            // Check Basic Authentication if required for this page
+            if (httpRequest && serverData.getBasicAuth().requiresAuth(httpRequest->getPathString())) {
+                std::string authHeader = httpRequest->getHeader("authorization");
+                
+                if (!serverData.getBasicAuth().authenticate(httpRequest->getPathString(), authHeader)) {
+                    // Authentication required but failed
+                    std::string header = buildAuthHeader();
+                    if (!sendSocket(header.c_str(), header.size())) {
+                        sendToLoggerError("Failed to send auth header");
+                    }
+                    return;
                 }
-                return;
-            }
-
-            if (access == -1) {
-                std::string header = buildForbiddenHeader();
-                if (!sendSocket(header.c_str(), header.size())) {
-                    sendToLoggerError("Failed to send forbidden header");
-                }
-                return;
             }
 
             contentBuilder = new HtmlBuilder(contentPath, serverData.getRoot(), serverData.getRemoveComments(),
@@ -352,13 +347,6 @@ std::string Handler::getExtension(const std::string& path) {
         return path.substr(path.find('.') + 1);
     }
 }
-
-// void Handler::removeSearchParameters() {
-//
-//	if (path.find('?') != std::string::npos) {
-//		path = path.substr(0, path.find('?'));
-//	}
-// }
 
 /**
  * Check if the path starts with a language prefix

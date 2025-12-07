@@ -19,6 +19,7 @@
 
 #include "HTTPRequest.hpp"
 #include "HTTPResponse.hpp"
+#include "../auth/BasicAuth.hpp"
 
 namespace geruest {
 
@@ -33,6 +34,7 @@ class ServerData {
     bool _removeComments = true;
     std::vector<std::string> _availableLanguages;
     std::string _defaultLanguage;
+    BasicAuth _basicAuth;
 
     /**
      * Check if a path matches a wildcard pattern
@@ -193,6 +195,18 @@ class ServerData {
      * @return true if at least one language is configured
      */
     bool hasLanguages() const { return !_availableLanguages.empty(); }
+
+    /**
+     * Get Basic Authentication manager
+     * @return Reference to BasicAuth instance
+     */
+    BasicAuth& getBasicAuth() { return _basicAuth; }
+    
+    /**
+     * Get Basic Authentication manager (const)
+     * @return Const reference to BasicAuth instance
+     */
+    const BasicAuth& getBasicAuth() const { return _basicAuth; }
 };
 
 }  // namespace geruest

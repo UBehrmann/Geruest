@@ -91,6 +91,12 @@ int main(int argc, char* argv[]) {
     
     // To disable language routing, pass an empty vector:
     // server->setAvailableLanguages({});
+
+    // Add basic auth
+    server->setBasicAuthEnabled(true);
+
+    server->addBasicAuthUser("admin", "secret123");
+    server->addProtectedPage("/devices/devices");
     
     // Get the absolute path to the website folder next to the executable
     std::filesystem::path executablePath = std::filesystem::canonical(std::filesystem::path(argv[0]).parent_path());

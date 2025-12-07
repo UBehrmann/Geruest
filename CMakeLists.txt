@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 
 # Define the project name and version
-project(GeruestLibrary VERSION 0.5.4 LANGUAGES CXX)
+project(GeruestLibrary VERSION 0.5.5 LANGUAGES CXX)
 
 # Configure version header
 configure_file(
@@ -35,6 +35,7 @@ find_package(Threads REQUIRED)
 # Create the static library
 add_library(Geruest STATIC
     src/Geruest.cpp
+    src/auth/BasicAuth.cpp
     src/builders/ContentBuilder.cpp
     src/builders/CSSBuilder.cpp
     src/builders/HTMLBuilder.cpp
