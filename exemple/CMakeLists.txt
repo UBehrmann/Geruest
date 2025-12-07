@@ -16,6 +16,7 @@ find_package(Threads REQUIRED)
 # Build the Geruest library first
 add_library(Geruest STATIC
     ../src/Geruest.cpp
+    ../src/auth/BasicAuth.cpp
     ../src/builders/ContentBuilder.cpp
     ../src/builders/CSSBuilder.cpp
     ../src/builders/HTMLBuilder.cpp

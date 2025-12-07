@@ -22,6 +22,7 @@ endif()
 # Collect all source files from the main Geruest library
 set(GERUEST_SOURCES
     ../Geruest.cpp
+    ../auth/BasicAuth.cpp
     ../data/HTTPRequest.cpp
     ../data/HTTPResponse.cpp
     ../parser/JSONParser.cpp

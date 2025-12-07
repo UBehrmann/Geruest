@@ -99,7 +99,59 @@ void Geruest::setMaxQueueSize(size_t size) {
         return;
     }
     _maxQueueSize = size;
-    sendToLogger("Max queue size set to: " + std::to_string(_maxQueueSize));
+    sendToLogger("Maximum queue size set to: " + std::to_string(_maxQueueSize));
+}
+
+// ========== Basic Authentication Implementation ==========
+
+void Geruest::setBasicAuthEnabled(bool enabled) {
+    serverData.getBasicAuth().setEnabled(enabled);
+    sendToLogger(std::string("Basic Authentication ") + (enabled ? "enabled" : "disabled"));
+}
+
+void Geruest::addBasicAuthUser(const std::string& username, const std::string& password) {
+    serverData.getBasicAuth().addUser(username, password);
+    sendToLogger("Added Basic Auth user: " + username + " (password hashed with SHA-256)");
+}
+
+void Geruest::addBasicAuthUserHashed(const std::string& username, const std::string& hashedPassword) {
+    serverData.getBasicAuth().addUserHashed(username, hashedPassword);
+    sendToLogger("Added Basic Auth user: " + username + " (using pre-hashed password)");
+}
+
+std::string Geruest::hashPassword(const std::string& password) {
+    return BasicAuth::hashPassword(password);
+}
+
+bool Geruest::removeBasicAuthUser(const std::string& username) {
+    bool removed = serverData.getBasicAuth().removeUser(username);
+    if (removed) {
+        sendToLogger("Removed Basic Auth user: " + username);
+    }
+    return removed;
+}
+
+void Geruest::addProtectedPage(const std::string& path) {
+    serverData.getBasicAuth().addProtectedPage(path);
+    sendToLogger("Added protected page: " + path);
+}
+
+bool Geruest::removeProtectedPage(const std::string& path) {
+    bool removed = serverData.getBasicAuth().removeProtectedPage(path);
+    if (removed) {
+        sendToLogger("Removed protected page: " + path);
+    }
+    return removed;
+}
+
+void Geruest::clearBasicAuthUsers() {
+    serverData.getBasicAuth().clearUsers();
+    sendToLogger("Cleared all Basic Auth users");
+}
+
+void Geruest::clearProtectedPages() {
+    serverData.getBasicAuth().clearProtectedPages();
+    sendToLogger("Cleared all protected pages");
 }
 
 void Geruest::init() {

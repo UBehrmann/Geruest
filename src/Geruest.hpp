@@ -83,6 +83,70 @@ class Geruest {
      */
     void setMaxQueueSize(size_t size);
 
+    // ========== Basic Authentication Methods ==========
+    
+    /**
+     * @brief Enable or disable Basic Authentication globally
+     * @param enabled true to enable authentication, false to disable
+     * @note When disabled, all pages are accessible without credentials
+     */
+    void setBasicAuthEnabled(bool enabled);
+    
+    /**
+     * @brief Add a user with credentials for Basic Authentication
+     * @param username The username
+     * @param password The password (will be hashed with SHA-256 before storage)
+     * @note Authentication must be enabled and users must be added for protection to work
+     */
+    void addBasicAuthUser(const std::string& username, const std::string& password);
+    
+    /**
+     * @brief Add a user with pre-hashed password for Basic Authentication
+     * @param username The username
+     * @param hashedPassword SHA-256 hash of the password (64 hex characters)
+     * @note Use this when you want to store pre-computed password hashes
+     */
+    void addBasicAuthUserHashed(const std::string& username, const std::string& hashedPassword);
+    
+    /**
+     * @brief Generate SHA-256 hash from a plain text password
+     * @param password Plain text password
+     * @return SHA-256 hash as hexadecimal string (64 characters)
+     * @note Useful for generating hashes to store in configuration files
+     */
+    static std::string hashPassword(const std::string& password);
+    
+    /**
+     * @brief Remove a user from Basic Authentication
+     * @param username The username to remove
+     * @return true if user was removed, false if not found
+     */
+    bool removeBasicAuthUser(const std::string& username);
+    
+    /**
+     * @brief Add a page to the protected pages list (requires authentication)
+     * @param path The path to protect (e.g., "/admin", "/api/admin")
+     * @note Page will only be protected if authentication is enabled and users exist
+     */
+    void addProtectedPage(const std::string& path);
+    
+    /**
+     * @brief Remove a page from protected pages list
+     * @param path The path to unprotect
+     * @return true if page was removed, false if not found
+     */
+    bool removeProtectedPage(const std::string& path);
+    
+    /**
+     * @brief Clear all Basic Authentication users
+     */
+    void clearBasicAuthUsers();
+    
+    /**
+     * @brief Clear all protected pages
+     */
+    void clearProtectedPages();
+
     /*
      * Initializes the server, sets up the socket, binds it to the address and port,
      * and prepares it to listen for incoming connections.
