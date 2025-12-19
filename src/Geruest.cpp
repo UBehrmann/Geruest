@@ -74,6 +74,11 @@ void Geruest::setAvailableLanguages(const std::vector<std::string>& languages) {
     }
 }
 
+void Geruest::setMergeAssets(bool enabled) {
+    serverData.setMergeAssets(enabled);
+    sendToLogger(std::string("Asset merging ") + (enabled ? "enabled" : "disabled"));
+}
+
 void Geruest::setWorkerThreadCount(size_t count) {
     if (running || _workersRunning) {
         sendToLoggerError("Cannot change worker thread count while server is running");

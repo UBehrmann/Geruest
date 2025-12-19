@@ -16,6 +16,10 @@ Geruest (German for "scaffold") is a lightweight C++ web framework designed to s
 - Static file serving
 - Routing
   - simple add route function `addRoute(path, callback);`
+- **Asset Merging** (NEW)
+  - Automatically scan HTML templates for CSS/JS includes
+  - Merge multiple files into single bundled files per page
+  - Reduces HTTP requests and eliminates manual JSON mapping
 - Security
   - Logic bomb for bots?
   - Rate limiting
@@ -57,10 +61,7 @@ git clone https://github.com/UBehrmann/Geruest.git && cd Geruest && mkdir build 
 
 ## 📚 Documentation
 
-- **[Quick Start Guide](./doc/QUICK_START.md)** - Get up and running in minutes
-- **[Build & Install Scripts](./doc/BUILD_SCRIPTS.md)** - Copy-paste build commands
-- **[Detailed Build Instructions](./doc/BUILD_INSTRUCTIONS.md)** - Complete build information
-- **[Installation Guide](./doc/INSTALLATION_INSTRUCTIONS.md)** - Advanced installation options
+
 
 ## Folder Structure
 

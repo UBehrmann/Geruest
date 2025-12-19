@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subfolder Test - Asset Merger Test</title>
+    <link rel="icon" type="image/png" sizes="16x16" href="favicon/favicon-16x16.svg">
+    
+    <!-- CSS files from subfoldertest subfolder - will be merged when mergeAssets=true -->
+    <link rel="stylesheet" href="/assets/css/subfoldertest/subfoldertest-base.css">
+    <link rel="stylesheet" href="/assets/css/subfoldertest/subfoldertest-theme.css">
+    
+    <!-- JS files from subfoldertest subfolder - will be merged when mergeAssets=true -->
+    <script src="/assets/js/subfoldertest/subfoldertest-utils.js"></script>
+    <script src="/assets/js/subfoldertest/subfoldertest-manager.js"></script>
+</head>
+<body>
+    <div class="device-header">
+        <h1>🔧 Device Management Dashboard</h1>
+        <p>Testing asset merger with subfolder CSS/JS files</p>
+    </div>
+    
+    <div class="device-container">
+        <h2>📱 My Devices</h2>
+        <div id="device-list" class="device-grid">
+            <!-- Devices will be rendered here by DeviceManager -->
+        </div>
+    </div>
+    
+    <div class="device-container">
+        <h2>🧪 Asset Merger Test Results</h2>
+        <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3>📋 Test Scenario</h3>
+            <ul>
+                <li><strong>Page Location:</strong> <code>/html/subfoldertest/subfoldertest.html</code></li>
+                <li><strong>CSS Files:</strong> <code>/assets/css/subfoldertest/subfoldertest-base.css</code>, <code>subfoldertest-theme.css</code></li>
+                <li><strong>JS Files:</strong> <code>/assets/js/subfoldertest/subfoldertest-utils.js</code>, <code>subfoldertest-manager.js</code></li>
+                <li><strong>Expected Merge:</strong> Single <code>subfoldertest.css</code> and <code>subfoldertest.js</code> in subfolder</li>
+            </ul>
+            
+            <h3>✅ Success Indicators</h3>
+            <ul>
+                <li>Device cards have gradient header and hover effects (CSS loaded)</li>
+                <li>Browser console shows "DeviceUtils loaded" and "DeviceManager initialized" (JS loaded)</li>
+                <li>Sample devices are displayed in grid layout</li>
+                <li>Merged files are at <code>/assets/css/subfoldertest/subfoldertest.css</code> and <code>/assets/js/subfoldertest/subfoldertest.js</code></li>
+            </ul>
+        </div>
+    </div>
+    
+    <div class="device-container">
+        <h2>🖼️ Image Path Resolution Tests</h2>
+        <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <p>Testing image resolution from subfolder context:</p>
+            
+            <div style="display: flex; align-items: center; margin: 15px 0; padding: 15px; background: #f1f3f4; border-radius: 4px; border-left: 4px solid #4caf50;">
+                <img src="favicon/favicon-16x16.svg" alt="Favicon Test" width="32" height="32" style="margin-right: 15px; border: 2px solid #ddd; border-radius: 4px;">
+                <div style="flex: 1;">
+                    <strong>Deep Path Test:</strong><br>
+                    <strong>Request:</strong> <code>favicon/favicon-16x16.svg</code><br>
+                    <strong>Expected Resolution:</strong> <code>/assets/images/favicon/favicon-16x16.svg</code>
+                </div>
+            </div>
+
+            <div style="display: flex; align-items: center; margin: 15px 0; padding: 15px; background: #f1f3f4; border-radius: 4px; border-left: 4px solid #4caf50;">
+                <img src="icons/languages.svg" alt="Languages" width="80" height="80" style="margin-right: 15px; border: 2px solid #ddd; border-radius: 4px;">
+                <div style="flex: 1;">
+                    <strong>Icon Path Test:</strong><br>
+                    <strong>Request:</strong> <code>icons/languages.svg</code><br>
+                    <strong>Expected Resolution:</strong> <code>/assets/images/icons/languages.svg</code>
+                </div>
+            </div>
+            
+            <h3>📍 Context Information</h3>
+            <ul>
+                <li><strong>Page URL:</strong> <code>/html/subfoldertest/subfoldertest</code> (or <code>/en/subfoldertest/subfoldertest</code> with language)</li>
+                <li><strong>Referer Header:</strong> Used to calculate correct base path</li>
+                <li><strong>Image Base:</strong> <code>/assets/images/</code> + relative path from page</li>
+            </ul>
+        </div>
+    </div>
+    
+    <div class="device-container">
+        <h2>🔗 Navigation</h2>
+        <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <p>
+                <a href="/" style="display: inline-block; margin: 5px 10px 5px 0; padding: 8px 16px; background: #2196f3; color: white; text-decoration: none; border-radius: 4px;">← Back to Index</a>
+                <a href="/subfoldertest/subsubfoldertest/subsubfoldertest" style="display: inline-block; margin: 5px 10px 5px 0; padding: 8px 16px; background: #3f51b5; color: white; text-decoration: none; border-radius: 4px;">🗂️ Sub-Subfolder Test (Nested)</a>
+            </p>
+        </div>
+    </div>
+    
+    <script>
+        // Initialize some sample devices to demonstrate functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            deviceManager.addDevice({ name: 'iPhone 15 Pro', type: 'phone', status: 'online' });
+            deviceManager.addDevice({ name: 'MacBook Pro', type: 'laptop', status: 'online' });
+            deviceManager.addDevice({ name: 'iPad Air', type: 'tablet', status: 'offline' });
+            deviceManager.addDevice({ name: 'Apple Watch', type: 'watch', status: 'online' });
+            deviceManager.renderDevices();
+        });
+    </script>
+</body>
+</html>

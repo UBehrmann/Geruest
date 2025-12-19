@@ -9,6 +9,7 @@
  */
 
 #include "HTMLBuilder.hpp"
+#include "AssetMerger.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -16,8 +17,8 @@
 namespace geruest {
 
 HtmlBuilder::HtmlBuilder(const std::string& inputPath, const std::string& inputServerRoot, bool removeCommentsFlag,
-                         const std::vector<std::string>& languages)
-    : ContentBuilder(inputPath, inputServerRoot, removeCommentsFlag, languages) {
+                         const std::vector<std::string>& languages, bool mergeAssets)
+    : ContentBuilder(inputPath, inputServerRoot, removeCommentsFlag, languages), _mergeAssets(mergeAssets) {
     buildHtml();
 }
 
@@ -108,7 +109,13 @@ void HtmlBuilder::buildHtml() {
         // Replace text with correct language
         replaceTranslations(language);
 
-        // Change references to the correct path
+        // Process CSS/JS asset merging if enabled (BEFORE replaceReferences to get original paths)
+        if (_mergeAssets) {
+            std::string pageName = getPageNameFromPath(path);
+            processAssetMerging(pageName);
+        }
+
+        // Change references to the correct path (AFTER asset merging to include merged files)
         replaceReferences(language);
 
         // Save the file
@@ -212,14 +219,29 @@ void HtmlBuilder::replaceTranslations(const std::string& language) {
 
 void HtmlBuilder::replaceReferences(const std::string& language) {
     // Find if there are references in the file
-    // href="/about_me"
-    // change to href="/en/about_me"
+    // href="/about_me" -> href="/en/about_me"
+    // But skip CSS/JS files and /assets/ paths as they should not have language prefix
 
+    // Process href="/" attributes
     size_t pos = 0;
-    const std::string prefix = "href=\"/";
+    const std::string hrefPrefix = "href=\"/";
 
-    while ((pos = builtFile.find(prefix, pos)) != std::string::npos) {
-        size_t start = pos + prefix.length();  // position after href="/
+    while ((pos = builtFile.find(hrefPrefix, pos)) != std::string::npos) {
+        size_t start = pos + hrefPrefix.length();  // position after href="/
+
+        // Find the closing quote to get the full href value
+        size_t endQuote = builtFile.find('"', start);
+        if (endQuote != std::string::npos) {
+            std::string href = builtFile.substr(start, endQuote - start);
+            
+            // Skip if it's a CSS file, /assets/ path, or already has language prefix
+            if (href.find(".css") != std::string::npos || 
+                href.compare(0, 7, "assets/") == 0 ||
+                href.compare(0, language.length() + 1, language + "/") == 0) {
+                pos = endQuote;
+                continue;
+            }
+        }
 
         // Skip if it already starts with the language
         if (builtFile.compare(start, language.length() + 1, language + "/") != 0) {
@@ -228,6 +250,76 @@ void HtmlBuilder::replaceReferences(const std::string& language) {
         } else {
             pos = start + language.length() + 1;  // Already has /lang/, skip
         }
+    }
+    
+    // Process src="/" attributes (for scripts, images, etc.)
+    pos = 0;
+    const std::string srcPrefix = "src=\"/";
+
+    while ((pos = builtFile.find(srcPrefix, pos)) != std::string::npos) {
+        size_t start = pos + srcPrefix.length();  // position after src="/
+
+        // Find the closing quote to get the full src value
+        size_t endQuote = builtFile.find('"', start);
+        if (endQuote != std::string::npos) {
+            std::string src = builtFile.substr(start, endQuote - start);
+            
+            // Skip if it's a JS file, /assets/ path, or already has language prefix
+            if (src.find(".js") != std::string::npos || 
+                src.compare(0, 7, "assets/") == 0 ||
+                src.compare(0, language.length() + 1, language + "/") == 0) {
+                pos = endQuote;
+                continue;
+            }
+        }
+
+        // Skip if it already starts with the language
+        if (builtFile.compare(start, language.length() + 1, language + "/") != 0) {
+            builtFile.insert(start, language + "/");
+            pos = start + language.length() + 1;  // Move past inserted /lang/
+        } else {
+            pos = start + language.length() + 1;  // Already has /lang/, skip
+        }
+    }
+}
+
+std::string HtmlBuilder::getPageNameFromPath(const std::string& filePath) {
+    // Extract the filename without extension from the path
+    // e.g., "/root/html/en/about.html" -> "about"
+    
+    size_t lastSlash = filePath.find_last_of('/');
+    std::string filename = (lastSlash != std::string::npos) ? filePath.substr(lastSlash + 1) : filePath;
+    
+    size_t lastDot = filename.find_last_of('.');
+    if (lastDot != std::string::npos) {
+        filename = filename.substr(0, lastDot);
+    }
+    
+    return filename;
+}
+
+void HtmlBuilder::processAssetMerging(const std::string& pageName) {
+    // Create AssetMerger and process the HTML
+    AssetMerger merger(root, removeComments);
+    MergeResult result = merger.processHtml(builtFile, pageName);
+    
+    // Update the HTML content with merged asset references
+    builtFile = result.modifiedHtml;
+    
+    // Save merged CSS file if there are multiple CSS files to merge
+    if (result.hasCss && !result.mergedCss.empty()) {
+        std::string cssPath = result.cssSubdir.empty() ?
+            root + "/assets/css/" + pageName + ".css" :
+            root + "/assets/css/" + result.cssSubdir + "/" + pageName + ".css";
+        FileManagement::saveFile(cssPath, result.mergedCss);
+    }
+    
+    // Save merged JS file if there are multiple JS files to merge
+    if (result.hasJs && !result.mergedJs.empty()) {
+        std::string jsPath = result.jsSubdir.empty() ?
+            root + "/assets/js/" + pageName + ".js" :
+            root + "/assets/js/" + result.jsSubdir + "/" + pageName + ".js";
+        FileManagement::saveFile(jsPath, result.mergedJs);
     }
 }
 

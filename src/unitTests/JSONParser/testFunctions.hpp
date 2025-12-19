@@ -259,6 +259,8 @@ void test_json_from_file() {
     assert(json->getString("serverName") == "HTTPS");
     assert(json->getString("certPath") == "/home/ub/Desktop/cert");
     assert(json->getString("logPath") == "/home/ub/Desktop/logs");
+    
+    delete json;
 }
 
 inline std::string getFile(const std::string &filePath) {
@@ -286,6 +288,8 @@ void test_toString_json() {
     expected.erase(std::remove_if(expected.begin(), expected.end(), ::isspace), expected.end());
 
     assert(str == expected);
+    
+    delete json;
 }
 
 // test with nested json file
@@ -305,6 +309,8 @@ void test_nested_json_from_file() {
     expected.erase(std::remove_if(expected.begin(), expected.end(), ::isspace), expected.end());
 
     assert(str == expected);
+    
+    delete json;
 }
 
 // test with double nested json file
@@ -319,6 +325,8 @@ void test_double_nested_json_from_file() {
     expected.erase(std::remove_if(expected.begin(), expected.end(), ::isspace), expected.end());
 
     assert(str == expected);
+    
+    delete json;
 }
 
 // Test save to file
@@ -335,6 +343,8 @@ void test_save_to_file() {
     str2.erase(std::remove_if(str2.begin(), str2.end(), ::isspace), str2.end());
 
     assert(str1 == str2);
+    
+    delete json;
 }
 
 // Test setting values
@@ -416,6 +426,8 @@ void test_json_array_from_file() {
     expected.erase(std::remove_if(expected.begin(), expected.end(), ::isspace), expected.end());
 
     assert(str == expected);
+    
+    delete json;
 }
 
 // Test json array with only one element
@@ -430,6 +442,8 @@ void test_json_array_with_one_element() {
     expected.erase(std::remove_if(expected.begin(), expected.end(), ::isspace), expected.end());
 
     assert(str == expected);
+    
+    delete json;
 }
 
 // Test adding an array of json to a json object
@@ -452,6 +466,9 @@ void test_adding_json_array_to_json() {
     assert(jsonArray2[0].getString("logPath") == "/home/ub/Desktop/logs");
 
     assert(jsonArray2[1].getString("key") == "value");
+    
+    delete json1;
+    delete json2;
 }
 
 // adding a json array to a json object in a json array
@@ -476,6 +493,9 @@ void test_adding_json_array_to_json_array() {
     expected.erase(std::remove_if(expected.begin(), expected.end(), ::isspace), expected.end());
 
     assert(str == expected);
+    
+    delete json;
+    delete jsonToAdd;
 }
 
 void test_functions_file(){
@@ -489,6 +509,8 @@ void test_functions_file(){
     expected.erase(std::remove_if(expected.begin(), expected.end(), ::isspace), expected.end());
 
     assert(str == expected);
+    
+    delete json;
 }
 
 // Test adding elements to a JSON array and using arrayToString

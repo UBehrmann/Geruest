@@ -135,7 +135,17 @@ std::string geruest::ContentBuilder::removeCommentsFromString(const std::string&
         while ((start = result.find("<!--", start)) != std::string::npos) {
             size_t end = result.find("-->", start + 4);
             if (end == std::string::npos) break;
-            result.erase(start, end - start + 3);
+            
+            size_t eraseEnd = end + 3;
+            // Also remove trailing newline if present
+            if (eraseEnd < result.size() && result[eraseEnd] == '\n') {
+                eraseEnd++;
+            } else if (eraseEnd < result.size() - 1 && 
+                      result[eraseEnd] == '\r' && result[eraseEnd + 1] == '\n') {
+                eraseEnd += 2;
+            }
+            
+            result.erase(start, eraseEnd - start);
         }
     }
 

@@ -25,9 +25,11 @@ namespace geruest {
 class HtmlBuilder : public ContentBuilder {
    public:
     HtmlBuilder(const std::string& inputPath, const std::string& inputServerRoot, bool removeCommentsFlag = true,
-                const std::vector<std::string>& languages = {});
+                const std::vector<std::string>& languages = {}, bool mergeAssets = false);
 
    private:
+    bool _mergeAssets;
+
     void buildHtml();
 
     /**
@@ -44,6 +46,19 @@ class HtmlBuilder : public ContentBuilder {
      * Replace the references in the file, based on the language
      */
     void replaceReferences(const std::string& language);
+
+    /**
+     * Process CSS and JS asset merging using AssetMerger
+     * @param pageName The name of the page (for merged file naming)
+     */
+    void processAssetMerging(const std::string& pageName);
+
+    /**
+     * Extract the page name from the file path
+     * @param filePath The full file path
+     * @return The page name without extension
+     */
+    static std::string getPageNameFromPath(const std::string& filePath);
 };
 
 }  // namespace geruest

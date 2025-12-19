@@ -70,6 +70,30 @@ class Geruest {
     void setAvailableLanguages(const std::vector<std::string>& languages);
 
     /**
+     * @brief Enable or disable automatic CSS/JS asset merging per page.
+     * 
+     * When enabled (true), the HTMLBuilder scans each HTML template for:
+     * - <link rel="stylesheet" href="..."> tags
+     * - <script src="..."></script> tags
+     * 
+     * It then:
+     * 1. Extracts all referenced CSS and JS files
+     * 2. Merges them into single files (page_name.css, page_name.js)
+     * 3. Replaces the original tags with single includes
+     * 
+     * When disabled (false), assets are served individually as specified in HTML.
+     * 
+     * Benefits of merging:
+     * - Reduces network requests per page (1 CSS + 1 JS instead of many)
+     * - Automatically updates when HTML templates change
+     * - No manual configuration files needed
+     * 
+     * @param enabled true to merge assets, false to serve individually (default: false)
+     * @note Must be called before init() or start()
+     */
+    void setMergeAssets(bool enabled);
+
+    /**
      * @brief Sets the number of worker threads in the thread pool.
      * @param count Number of worker threads (default: CPU cores * 2)
      * @note Must be called before init() or start()

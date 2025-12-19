@@ -5,8 +5,9 @@
  * @author Urs Behrmann
  *
  * @brief This class is used to build the JavaScript files.
- * It looks for the page name in the map and includes the files that are associated with it.
- * If the page name is not found, it returns the JS files associated with the path.
+ * 
+ * When mergeAssets=false: Serves individual JS files as-is.
+ * When mergeAssets=true: Serves pre-generated merged JS files created by HTMLBuilder.
  */
 
 #ifndef JSBUILDER_HPP
@@ -15,22 +16,18 @@
 #include "ContentBuilder.hpp"
 #include <string>
 #include <vector>
-#include "parser/JSONParser.hpp"
 
 namespace geruest {
 
 class JSBuilder : public ContentBuilder {
 public:
 
-    JSBuilder(const std::string &inputPath, const std::string &inputServerRoot, bool removeCommentsFlag = true);
+    JSBuilder(const std::string &inputPath, const std::string &inputServerRoot, 
+              bool removeCommentsFlag = true, bool mergeAssets = false);
 
 private:
 
-    JSONParser* json;
-
-    std::string pageName;
-
-    static std::string getFileNameWithoutExtension(const std::string& path);
+    bool _mergeAssets;
 
     void builJS();
 };

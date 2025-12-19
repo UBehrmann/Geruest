@@ -31,7 +31,8 @@ class ServerData {
     std::unordered_map<std::string, RouteHandler> _routes;
     std::unordered_map<std::string, RouteHandler> _wildcardRoutes;
     std::string _root;
-    bool _removeComments = true;
+    bool _removeComments = true;    // Remove comments from built files
+    bool _mergeAssets = false;      // Automatic CSS/JS merging per page
     std::vector<std::string> _availableLanguages;
     std::string _defaultLanguage;
     BasicAuth _basicAuth;
@@ -156,6 +157,21 @@ class ServerData {
     void setRemoveComments(bool value) { _removeComments = value; }
 
     void keepComments() { _removeComments = false; }
+
+    /**
+     * Enable/disable automatic CSS/JS asset merging per page
+     * When enabled, HTMLBuilder will scan HTML for <link> and <script> tags,
+     * merge all referenced CSS/JS files into single files (page_name.css/js),
+     * and replace the original tags with single includes.
+     * @param value true to enable merging, false to disable (default: false)
+     */
+    void setMergeAssets(bool value) { _mergeAssets = value; }
+
+    /**
+     * Check if automatic asset merging is enabled
+     * @return true if asset merging is enabled
+     */
+    bool getMergeAssets() const { return _mergeAssets; }
 
     /**
      * Set available languages for the server

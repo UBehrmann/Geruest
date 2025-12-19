@@ -13,6 +13,7 @@
 #include <climits>
 #include <filesystem>
 
+#include "builders/AssetMerger.hpp"
 #include "builders/CSSBuilder.hpp"
 #include "builders/ContentBuilder.hpp"
 #include "builders/HTMLBuilder.hpp"
@@ -260,12 +261,14 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
             }
 
             contentBuilder = new HtmlBuilder(contentPath, serverData.getRoot(), serverData.getRemoveComments(),
-                                             serverData.getAvailableLanguages());
+                                             serverData.getAvailableLanguages(), serverData.getMergeAssets());
 
         } else if (contentType == "text/javascript") {
-            contentBuilder = new JSBuilder(contentPath, serverData.getRoot(), serverData.getRemoveComments());
+            contentBuilder = new JSBuilder(contentPath, serverData.getRoot(), serverData.getRemoveComments(),
+                                           serverData.getMergeAssets());
         } else if (contentType == "text/css") {
-            contentBuilder = new CSSBuilder(contentPath, serverData.getRoot(), serverData.getRemoveComments());
+            contentBuilder = new CSSBuilder(contentPath, serverData.getRoot(), serverData.getRemoveComments(),
+                                            serverData.getMergeAssets());
         }
 
         // Check if builder was created

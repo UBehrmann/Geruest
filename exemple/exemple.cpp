@@ -92,6 +92,35 @@ int main(int argc, char* argv[]) {
     // To disable language routing, pass an empty vector:
     // server->setAvailableLanguages({});
 
+    // ============================================================
+    // ASSET MERGING CONFIGURATION (optional, must be called before init/start)
+    // ============================================================
+    
+    // Enable automatic CSS/JS merging per page
+    // When enabled, HTMLBuilder scans each page for <link> and <script> tags
+    // and merges all local CSS/JS files into single bundled files.
+    // This reduces the number of HTTP requests per page and eliminates the
+    // need for manual JSON file mappings.
+    //
+    // Default: false (serves individual files as-is)
+    //
+    // Benefits when enabled:
+    // - Single merged CSS file per page (e.g., index.css contains all CSS)
+    // - Single merged JS file per page (e.g., index.js contains all JS)
+    // - Automatic IIFE wrapping for JS to prevent scope pollution
+    // - No manual configuration files needed
+    // - Automatically updates when HTML templates change
+    
+    server->setMergeAssets(true);  // ENABLED for testing
+    
+    std::cout << "=== Asset Merging Configuration ===" << std::endl;
+    std::cout << "Asset merging: ENABLED" << std::endl;
+    std::cout << "  ✓ CSS files will be merged per page" << std::endl;
+    std::cout << "  ✓ JS files will be merged per page" << std::endl;
+    std::cout << "  ✓ Merged files saved to /assets/css/ and /assets/js/" << std::endl;
+    std::cout << "  ✓ HTML automatically updated with merged includes" << std::endl;
+    std::cout << "===================================\n" << std::endl;
+
     // Add basic auth
     server->setBasicAuthEnabled(true);
 

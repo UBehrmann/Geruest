@@ -27,6 +27,7 @@ set(GERUEST_SOURCES
     ../data/HTTPResponse.cpp
     ../parser/JSONParser.cpp
     ../FileManagement/FileManagement.cpp
+    ../builders/AssetMerger.cpp
     ../builders/ContentBuilder.cpp
     ../builders/HTMLBuilder.cpp
     ../builders/CSSBuilder.cpp
@@ -63,6 +64,7 @@ target_link_libraries(FileManagement_Tests ${PLATFORM_LIBS})
 
 add_executable(ContentBuilder_Tests 
     ContentBuilder/ContentBuilder_tests.cpp 
+    ../builders/AssetMerger.cpp
     ../builders/ContentBuilder.cpp
     ../builders/HTMLBuilder.cpp
     ../builders/CSSBuilder.cpp
