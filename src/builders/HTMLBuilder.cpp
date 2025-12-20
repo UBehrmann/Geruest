@@ -267,8 +267,15 @@ void HtmlBuilder::replaceReferences(const std::string& language) {
         if (endQuote != std::string::npos) {
             std::string src = builtFile.substr(start, endQuote - start);
             
-            // Skip if it's a JS file, /assets/ path, or already has language prefix
+            // Skip if it's a JS file, image file, /assets/ path, or already has language prefix
             if (src.find(".js") != std::string::npos || 
+                src.find(".png") != std::string::npos ||
+                src.find(".jpg") != std::string::npos ||
+                src.find(".jpeg") != std::string::npos ||
+                src.find(".gif") != std::string::npos ||
+                src.find(".svg") != std::string::npos ||
+                src.find(".webp") != std::string::npos ||
+                src.find(".ico") != std::string::npos ||
                 src.compare(0, 7, "assets/") == 0 ||
                 src.compare(0, language.length() + 1, language + "/") == 0) {
                 pos = endQuote;
@@ -327,11 +334,12 @@ void HtmlBuilder::processAssetMerging(const std::string& pageName) {
 }
 
 void HtmlBuilder::ensureAbsoluteAssetPaths() {
-    // Ensure all CSS href and JS src attributes have leading slashes
+    // Ensure all CSS href, JS src, and image src attributes have leading slashes
     // This makes them absolute paths that work from any page depth
     
     std::regex cssRegex(R"(href\s*=\s*["'](?!/)([^"':]+\.css)["'])");
     std::regex jsRegex(R"(src\s*=\s*["'](?!/)([^"':]+\.js)["'])");
+    std::regex imgRegex(R"(src\s*=\s*["'](?!/)([^"':]+\.(?:png|jpg|jpeg|gif|svg|webp|ico))["'])");
     
     // Process CSS paths: href="base.css" -> href="/base.css"
     std::string result;
@@ -354,6 +362,21 @@ void HtmlBuilder::ensureAbsoluteAssetPaths() {
     searchStart = builtFile.cbegin();
     
     while (std::regex_search(searchStart, builtFile.cend(), match, jsRegex)) {
+        result += match.prefix();
+        
+        // Add leading slash to the path
+        std::string relativePath = match[1].str();
+        result += "src=\"/" + relativePath + "\"";
+        searchStart = match.suffix().first;
+    }
+    result += std::string(searchStart, builtFile.cend());
+    builtFile = result;
+    
+    // Process image paths: src="icon.svg" -> src="/icon.svg"
+    result.clear();
+    searchStart = builtFile.cbegin();
+    
+    while (std::regex_search(searchStart, builtFile.cend(), match, imgRegex)) {
         result += match.prefix();
         
         // Add leading slash to the path

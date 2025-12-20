@@ -375,7 +375,13 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
     // TODO : Find better way to check for language, can't always add an 'or' statement for each new language
     if (Extension == "jpg" || Extension == "jpeg" || Extension == "png" || Extension == "gif" || Extension == "svg" ||
         Extension == "ico") {
-        // For image files, use the Referer header to determine the correct relative path
+        // For image files with /assets/ prefix, use path as-is (already normalized)
+        if (pathReceived.find("/assets/") == 0) {
+            // Assets are stored without language prefix, use direct path
+            return serverData.getRoot() + pathReceived;
+        }
+        
+        // For other image files, use the Referer header to determine the correct relative path
 
         // Try to get the context from the Referer header
         if (httpRequest->hasHeader("Referer")) {
