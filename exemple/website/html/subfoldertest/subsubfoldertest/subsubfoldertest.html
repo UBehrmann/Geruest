@@ -10,9 +10,15 @@
     <link rel="stylesheet" href="/assets/css/subfoldertest/subsubfoldertest/subsubfoldertest-base.css">
     <link rel="stylesheet" href="/assets/css/subfoldertest/subsubfoldertest/subsubfoldertest-theme.css">
     
+    <!-- Testing cross-directory reference: loading root-level CSS from nested page -->
+    <link rel="stylesheet" href="/assets/css/base.css">
+    
     <!-- JS files from nested subfolder - will be merged when mergeAssets=true -->
     <script src="/assets/js/subfoldertest/subsubfoldertest/subsubfoldertest-utils.js"></script>
     <script src="/assets/js/subfoldertest/subsubfoldertest/subsubfoldertest-manager.js"></script>
+    
+    <!-- Testing cross-directory reference: loading root-level JS from nested page -->
+    <script src="/assets/js/utils.js"></script>
 </head>
 <body>
     <div class="nested-header">
