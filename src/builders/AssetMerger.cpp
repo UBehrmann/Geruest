@@ -306,9 +306,9 @@ MergeResult AssetMerger::processHtml(const std::string& htmlContent, const std::
         }
     }
     
-    // Determine if we should merge
-    bool shouldMergeCss = localCssFiles.size() > 1;
-    bool shouldMergeJs = localJsFiles.size() > 1;
+    // Determine if we should merge (always merge if there's at least 1 file)
+    bool shouldMergeCss = localCssFiles.size() >= 1;
+    bool shouldMergeJs = localJsFiles.size() >= 1;
     
     // Build new HTML, replacing asset tags as we go
     std::string newHtml;
@@ -389,7 +389,9 @@ MergeResult AssetMerger::processHtml(const std::string& htmlContent, const std::
             
             // First CSS tag: insert merged CSS link, skip all others
             if (!mergedCssInserted) {
-                std::string cssHref = "/" + pageName + ".css";
+                std::string cssHref = result.cssSubdir.empty() ? 
+                    "/" + pageName + ".css" : 
+                    "/" + result.cssSubdir + "/" + pageName + ".css";
                 std::string mergedCssLink = "<link rel=\"stylesheet\" href=\"" + cssHref + "\">";
                 newHtml += mergedCssLink;
                 mergedCssInserted = true;
@@ -411,7 +413,9 @@ MergeResult AssetMerger::processHtml(const std::string& htmlContent, const std::
             
             // First JS tag: insert merged JS script, skip all others
             if (!mergedJsInserted) {
-                std::string jsHref = "/" + pageName + ".js";
+                std::string jsHref = result.jsSubdir.empty() ? 
+                    "/" + pageName + ".js" : 
+                    "/" + result.jsSubdir + "/" + pageName + ".js";
                 std::string mergedJsScript = "<script src=\"" + jsHref + "\"></script>";
                 newHtml += mergedJsScript;
                 mergedJsInserted = true;
