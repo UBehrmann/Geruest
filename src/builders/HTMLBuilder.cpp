@@ -109,13 +109,17 @@ void HtmlBuilder::buildHtml() {
         // Replace text with correct language
         replaceTranslations(language);
 
-        // Process CSS/JS asset merging if enabled (BEFORE replaceReferences to get original paths)
+        // Process CSS/JS asset merging if enabled (BEFORE normalizing paths)
         if (_mergeAssets) {
             std::string pageName = getPageNameFromPath(path);
             processAssetMerging(pageName);
         }
 
-        // Change references to the correct path (AFTER asset merging to include merged files)
+        // Normalize asset paths (strip /assets/css/ and /assets/js/ prefixes)
+        // This ensures paths work correctly whether merging is enabled or disabled
+        normalizeAssetPaths();
+
+        // Change references to the correct path (AFTER asset processing)
         replaceReferences(language);
 
         // Save the file
@@ -321,6 +325,46 @@ void HtmlBuilder::processAssetMerging(const std::string& pageName) {
             root + "/assets/js/" + result.jsSubdir + "/" + pageName + ".js";
         FileManagement::saveFile(jsPath, result.mergedJs);
     }
+}
+
+void HtmlBuilder::normalizeAssetPaths() {
+    // Remove /assets/css/ and /assets/js/ prefixes from asset references
+    // Preserves subdirectory structure and keeps leading slash
+    // Example: /assets/css/subfoldertest/file.css -> /subfoldertest/file.css
+    
+    std::regex cssRegex(R"(href\s*=\s*["']/assets/css/([^"']+)["'])");
+    std::regex jsRegex(R"(src\s*=\s*["']/assets/js/([^"']+)["'])");
+    
+    // Replace CSS paths: href="/assets/css/subfoldertest/file.css" -> href="/subfoldertest/file.css"
+    std::string result;
+    std::smatch match;
+    std::string::const_iterator searchStart(builtFile.cbegin());
+    
+    while (std::regex_search(searchStart, builtFile.cend(), match, cssRegex)) {
+        result += match.prefix();
+        
+        // Keep the full path after /assets/css/ with leading slash
+        std::string relativePath = match[1].str();
+        result += "href=\"/" + relativePath + "\"";
+        searchStart = match.suffix().first;
+    }
+    result += std::string(searchStart, builtFile.cend());
+    builtFile = result;
+    
+    // Replace JS paths: src="/assets/js/subfoldertest/file.js" -> src="/subfoldertest/file.js"
+    result.clear();
+    searchStart = builtFile.cbegin();
+    
+    while (std::regex_search(searchStart, builtFile.cend(), match, jsRegex)) {
+        result += match.prefix();
+        
+        // Keep the full path after /assets/js/ with leading slash
+        std::string relativePath = match[1].str();
+        result += "src=\"/" + relativePath + "\"";
+        searchStart = match.suffix().first;
+    }
+    result += std::string(searchStart, builtFile.cend());
+    builtFile = result;
 }
 
 }  // namespace geruest

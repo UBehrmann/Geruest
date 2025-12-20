@@ -48,6 +48,12 @@ class HtmlBuilder : public ContentBuilder {
     void replaceReferences(const std::string& language);
 
     /**
+     * Normalize asset paths by removing /assets/css/ and /assets/js/ prefixes
+     * This ensures paths work correctly whether asset merging is enabled or disabled
+     */
+    void normalizeAssetPaths();
+
+    /**
      * Process CSS and JS asset merging using AssetMerger
      * @param pageName The name of the page (for merged file naming)
      */
