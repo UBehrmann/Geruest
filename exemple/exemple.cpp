@@ -111,7 +111,7 @@ int main(int argc, char* argv[]) {
     // - No manual configuration files needed
     // - Automatically updates when HTML templates change
     
-    server->setMergeAssets(true);  // ENABLED for testing
+    server->setMergeAssets(false);  // ENABLED for testing
     
     std::cout << "=== Asset Merging Configuration ===" << std::endl;
     std::cout << "Asset merging: ENABLED" << std::endl;

@@ -61,6 +61,18 @@ git clone https://github.com/UBehrmann/Geruest.git && cd Geruest && mkdir build 
 
 ## 📚 Documentation
 
+### Comprehensive Guides
+
+- **[Asset Merging Feature](doc/ASSET_MERGING.md)** - Complete guide to automatic CSS/JS consolidation
+  - How to enable/disable asset merging
+  - Path normalization and browser compatibility
+  - Subdirectory support and cross-directory references
+  - Best practices and troubleshooting
+
+- **[Installation Instructions](doc/INSTALLATION_INSTRUCTIONS.md)** - Detailed setup guide for Windows, Linux, and macOS
+
+### Quick Documentation
+
 
 
 ## Folder Structure

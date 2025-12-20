@@ -273,15 +273,11 @@ MergeResult AssetMerger::processHtml(const std::string& htmlContent, const std::
                 
                 // Extract subdirectory from first CSS file (full nested path)
                 if (result.cssSubdir.empty()) {
-                    // href format: /assets/css/subdir/subdir2/file.css
-                    // Extract everything between /css/ and the filename
-                    size_t cssPos = ref.href.find("/css/");
-                    if (cssPos != std::string::npos) {
-                        size_t afterCss = cssPos + 5; // length of "/css/"
-                        size_t lastSlash = ref.href.find_last_of('/');
-                        if (lastSlash != std::string::npos && lastSlash > afterCss) {
-                            result.cssSubdir = ref.href.substr(afterCss, lastSlash - afterCss);
-                        }
+                    // href format: "subdir/subdir2/file.css" or "file.css"
+                    // Extract everything before the filename
+                    size_t lastSlash = ref.href.find_last_of('/');
+                    if (lastSlash != std::string::npos) {
+                        result.cssSubdir = ref.href.substr(0, lastSlash);
                     }
                 }
             }
@@ -299,15 +295,11 @@ MergeResult AssetMerger::processHtml(const std::string& htmlContent, const std::
                 
                 // Extract subdirectory from first JS file (full nested path)
                 if (result.jsSubdir.empty()) {
-                    // href format: /assets/js/subdir/subdir2/file.js
-                    // Extract everything between /js/ and the filename
-                    size_t jsPos = ref.href.find("/js/");
-                    if (jsPos != std::string::npos) {
-                        size_t afterJs = jsPos + 4; // length of "/js/"
-                        size_t lastSlash = ref.href.find_last_of('/');
-                        if (lastSlash != std::string::npos && lastSlash > afterJs) {
-                            result.jsSubdir = ref.href.substr(afterJs, lastSlash - afterJs);
-                        }
+                    // href format: "subdir/subdir2/file.js" or "file.js"
+                    // Extract everything before the filename
+                    size_t lastSlash = ref.href.find_last_of('/');
+                    if (lastSlash != std::string::npos) {
+                        result.jsSubdir = ref.href.substr(0, lastSlash);
                     }
                 }
             }
@@ -397,7 +389,7 @@ MergeResult AssetMerger::processHtml(const std::string& htmlContent, const std::
             
             // First CSS tag: insert merged CSS link, skip all others
             if (!mergedCssInserted) {
-                std::string cssHref = pageName + ".css";
+                std::string cssHref = "/" + pageName + ".css";
                 std::string mergedCssLink = "<link rel=\"stylesheet\" href=\"" + cssHref + "\">";
                 newHtml += mergedCssLink;
                 mergedCssInserted = true;
@@ -419,7 +411,7 @@ MergeResult AssetMerger::processHtml(const std::string& htmlContent, const std::
             
             // First JS tag: insert merged JS script, skip all others
             if (!mergedJsInserted) {
-                std::string jsHref = pageName + ".js";
+                std::string jsHref = "/" + pageName + ".js";
                 std::string mergedJsScript = "<script src=\"" + jsHref + "\"></script>";
                 newHtml += mergedJsScript;
                 mergedJsInserted = true;

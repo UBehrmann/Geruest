@@ -109,17 +109,16 @@ void HtmlBuilder::buildHtml() {
         // Replace text with correct language
         replaceTranslations(language);
 
-        // Process CSS/JS asset merging if enabled (BEFORE normalizing paths)
+        // Process CSS/JS asset merging if enabled
         if (_mergeAssets) {
             std::string pageName = getPageNameFromPath(path);
             processAssetMerging(pageName);
+        } else {
+            // When merging is disabled, ensure all asset paths have leading slashes
+            ensureAbsoluteAssetPaths();
         }
 
-        // Normalize asset paths (strip /assets/css/ and /assets/js/ prefixes)
-        // This ensures paths work correctly whether merging is enabled or disabled
-        normalizeAssetPaths();
-
-        // Change references to the correct path (AFTER asset processing)
+        // Change references to the correct path
         replaceReferences(language);
 
         // Save the file
@@ -327,15 +326,14 @@ void HtmlBuilder::processAssetMerging(const std::string& pageName) {
     }
 }
 
-void HtmlBuilder::normalizeAssetPaths() {
-    // Remove /assets/css/ and /assets/js/ prefixes from asset references
-    // Preserves subdirectory structure and keeps leading slash
-    // Example: /assets/css/subfoldertest/file.css -> /subfoldertest/file.css
+void HtmlBuilder::ensureAbsoluteAssetPaths() {
+    // Ensure all CSS href and JS src attributes have leading slashes
+    // This makes them absolute paths that work from any page depth
     
-    std::regex cssRegex(R"(href\s*=\s*["']/assets/css/([^"']+)["'])");
-    std::regex jsRegex(R"(src\s*=\s*["']/assets/js/([^"']+)["'])");
+    std::regex cssRegex(R"(href\s*=\s*["'](?!/)([^"':]+\.css)["'])");
+    std::regex jsRegex(R"(src\s*=\s*["'](?!/)([^"':]+\.js)["'])");
     
-    // Replace CSS paths: href="/assets/css/subfoldertest/file.css" -> href="/subfoldertest/file.css"
+    // Process CSS paths: href="base.css" -> href="/base.css"
     std::string result;
     std::smatch match;
     std::string::const_iterator searchStart(builtFile.cbegin());
@@ -343,7 +341,7 @@ void HtmlBuilder::normalizeAssetPaths() {
     while (std::regex_search(searchStart, builtFile.cend(), match, cssRegex)) {
         result += match.prefix();
         
-        // Keep the full path after /assets/css/ with leading slash
+        // Add leading slash to the path
         std::string relativePath = match[1].str();
         result += "href=\"/" + relativePath + "\"";
         searchStart = match.suffix().first;
@@ -351,14 +349,14 @@ void HtmlBuilder::normalizeAssetPaths() {
     result += std::string(searchStart, builtFile.cend());
     builtFile = result;
     
-    // Replace JS paths: src="/assets/js/subfoldertest/file.js" -> src="/subfoldertest/file.js"
+    // Process JS paths: src="utils.js" -> src="/utils.js"
     result.clear();
     searchStart = builtFile.cbegin();
     
     while (std::regex_search(searchStart, builtFile.cend(), match, jsRegex)) {
         result += match.prefix();
         
-        // Keep the full path after /assets/js/ with leading slash
+        // Add leading slash to the path
         std::string relativePath = match[1].str();
         result += "src=\"/" + relativePath + "\"";
         searchStart = match.suffix().first;
