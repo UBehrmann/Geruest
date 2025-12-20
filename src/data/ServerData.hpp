@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -102,12 +103,11 @@ class ServerData {
     ServerData(const std::unordered_map<std::string, RouteHandler>& routes, std::string root)
         : _routes(routes), _root(std::move(root)) {}
 
-    std::unordered_map<std::string, RouteHandler>& getRoutes() {
+    std::unordered_map<std::string, RouteHandler> getRoutes() {
         // For backward compatibility, merge both maps
-        // Note: This creates a temporary merged map which may impact performance
+        // Note: Returns a new map each time for thread safety
         // Consider deprecating this method in favor of the new findMatchingRoute
-        static std::unordered_map<std::string, RouteHandler> merged;
-        merged.clear();
+        std::unordered_map<std::string, RouteHandler> merged;
         merged.insert(_routes.begin(), _routes.end());
         merged.insert(_wildcardRoutes.begin(), _wildcardRoutes.end());
         return merged;
@@ -131,23 +131,23 @@ class ServerData {
     /**
      * Find a matching route for the given path, supporting wildcard patterns
      * @param path The requested path
-     * @return Pair of <found, RouteHandler>. found is true if a match was found
+     * @return std::optional<RouteHandler> containing the handler if found, std::nullopt otherwise
      */
-    std::pair<bool, RouteHandler> findMatchingRoute(const std::string& path) const {
+    std::optional<RouteHandler> findMatchingRoute(const std::string& path) const {
         // First try exact match for performance (O(1) lookup)
         auto exactMatch = _routes.find(path);
         if (exactMatch != _routes.end()) {
-            return {true, exactMatch->second};
+            return exactMatch->second;
         }
 
         // If no exact match, try wildcard patterns (O(n) lookup)
         for (const auto& route : _wildcardRoutes) {
             if (matchesWildcardPattern(route.first, path)) {
-                return {true, route.second};
+                return route.second;
             }
         }
 
-        return {false, RouteHandler{}};
+        return std::nullopt;
     }
 
     std::string getRoot() const { return _root; }

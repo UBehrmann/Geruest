@@ -178,10 +178,10 @@ void Handler::handleRequest(HTTPRequest* request) {
     }
 
     // Try to find a matching route (exact or wildcard)
-    auto routeMatch = serverData.findMatchingRoute(request->getPathString());
-    if (routeMatch.first) {
-        // Call the route handler
-        HTTPResponse response = routeMatch.second(*request);
+    auto routeHandler = serverData.findMatchingRoute(request->getPathString());
+    if (routeHandler) {
+        // Call the route handler  
+        HTTPResponse response = (*routeHandler)(*request);
 
         // Send the response
         if (!sendSocket(response.toString().c_str(), response.toString().size())) {
