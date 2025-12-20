@@ -1,3 +1,6 @@
+/**
+ * Main application logic and event handlers
+ */
 
 function showResult(data) {
     const resultDiv = document.getElementById('result');
@@ -6,7 +9,7 @@ function showResult(data) {
 
 async function sendRequest(method, url, body = null) {
     try {
-        console.log(`${method} ${url}${body ? ` with body: ${body}` : ''}`);
+        log(`${method} ${url}${body ? ` with body: ${body}` : ''}`, 'request');
         const options = {
             method,
             headers: { 'Content-Type': 'application/json' },
@@ -22,8 +25,10 @@ async function sendRequest(method, url, body = null) {
         // Show both status and response
         const statusInfo = `Status: ${response.status} ${response.statusText}\nURL: ${url}\n\n`;
         showResult(statusInfo + (typeof data === 'string' ? data : JSON.stringify(data, null, 2)));
+        showNotification(`${method} request completed`, 'success');
     } catch (err) {
         showResult('Error: ' + err);
+        showNotification('Request failed', 'error');
     }
 }
 

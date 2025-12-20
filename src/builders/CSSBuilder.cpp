@@ -5,56 +5,27 @@
  * @author Urs Behrmann
  *
  * @brief This class is used to build the CSS files.
+ * 
+ * When mergeAssets=false: Serves individual CSS files as-is.
+ * When mergeAssets=true: Serves pre-generated merged CSS files created by HTMLBuilder.
  */
 
 #include "CSSBuilder.hpp"
+#include <filesystem>
 
 namespace geruest {
 
-CSSBuilder::CSSBuilder(const std::string &inputPath, const std::string &inputServerRoot, bool removeCommentsFlag) 
-    : ContentBuilder(inputPath, inputServerRoot, removeCommentsFlag) {
-    json = getJSONFromFile(inputServerRoot + "/files_maps/css_file_map.json");
-    pageName = getFileNameWithoutExtension(path);
+CSSBuilder::CSSBuilder(const std::string &inputPath, const std::string &inputServerRoot, 
+                       bool removeCommentsFlag, bool mergeAssets) 
+    : ContentBuilder(inputPath, inputServerRoot, removeCommentsFlag), 
+      _mergeAssets(mergeAssets) {
     builCSS();
 }
 
-std::string CSSBuilder::getFileNameWithoutExtension(const std::string& path) {
-    // Find the last position of the slash or backslash
-    size_t lastSlashPos = path.find_last_of('/');
-
-    // Get the file name from the path
-    std::string fileName = (lastSlashPos == std::string::npos) ? path : path.substr(lastSlashPos + 1);
-
-    // Find the last position of the dot
-    size_t lastDotPos = fileName.find_last_of('.');
-    // Remove the extension from the file name
-    if (lastDotPos != std::string::npos) {
-        fileName = fileName.substr(0, lastDotPos);
-    }
-
-    return fileName;
-}
-
 void CSSBuilder::builCSS() {
-    JSONParser jsonForFile = json->getObject(pageName);
-
-    // If there are no files to include, return
-    if(jsonForFile.getKeys().empty()) return;
-
-    builtFile = "";
-
-    // Build the file by including all the files
-    for (const auto& key : jsonForFile.getKeys()) {
-        std::string cssFile = jsonForFile.getString(key);
-        // Ensure the file path starts with '/'
-        if (!cssFile.empty() && cssFile[0] != '/') {
-            cssFile = "/" + cssFile;
-        }
-        builtFile += loadFile(root + "/assets/css" + cssFile) + "\n\n";
-    }
-
-    // Remove comments if enabled
-    if (removeComments) {
+    // File is already loaded by ContentBuilder base class via loadFile(path)
+    // Just handle comment removal if enabled
+    if (removeComments && !builtFile.empty()) {
         builtFile = removeCommentsFromString(builtFile, FILETYPE_CSS);
     }
 }

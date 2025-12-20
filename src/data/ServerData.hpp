@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -31,7 +32,8 @@ class ServerData {
     std::unordered_map<std::string, RouteHandler> _routes;
     std::unordered_map<std::string, RouteHandler> _wildcardRoutes;
     std::string _root;
-    bool _removeComments = true;
+    bool _removeComments = true;    // Remove comments from built files
+    bool _mergeAssets = false;      // Automatic CSS/JS merging per page
     std::vector<std::string> _availableLanguages;
     std::string _defaultLanguage;
     BasicAuth _basicAuth;
@@ -101,12 +103,11 @@ class ServerData {
     ServerData(const std::unordered_map<std::string, RouteHandler>& routes, std::string root)
         : _routes(routes), _root(std::move(root)) {}
 
-    std::unordered_map<std::string, RouteHandler>& getRoutes() {
+    std::unordered_map<std::string, RouteHandler> getRoutes() {
         // For backward compatibility, merge both maps
-        // Note: This creates a temporary merged map which may impact performance
+        // Note: Returns a new map each time for thread safety
         // Consider deprecating this method in favor of the new findMatchingRoute
-        static std::unordered_map<std::string, RouteHandler> merged;
-        merged.clear();
+        std::unordered_map<std::string, RouteHandler> merged;
         merged.insert(_routes.begin(), _routes.end());
         merged.insert(_wildcardRoutes.begin(), _wildcardRoutes.end());
         return merged;
@@ -130,23 +131,23 @@ class ServerData {
     /**
      * Find a matching route for the given path, supporting wildcard patterns
      * @param path The requested path
-     * @return Pair of <found, RouteHandler>. found is true if a match was found
+     * @return std::optional<RouteHandler> containing the handler if found, std::nullopt otherwise
      */
-    std::pair<bool, RouteHandler> findMatchingRoute(const std::string& path) const {
+    std::optional<RouteHandler> findMatchingRoute(const std::string& path) const {
         // First try exact match for performance (O(1) lookup)
         auto exactMatch = _routes.find(path);
         if (exactMatch != _routes.end()) {
-            return {true, exactMatch->second};
+            return exactMatch->second;
         }
 
         // If no exact match, try wildcard patterns (O(n) lookup)
         for (const auto& route : _wildcardRoutes) {
             if (matchesWildcardPattern(route.first, path)) {
-                return {true, route.second};
+                return route.second;
             }
         }
 
-        return {false, RouteHandler{}};
+        return std::nullopt;
     }
 
     std::string getRoot() const { return _root; }
@@ -156,6 +157,21 @@ class ServerData {
     void setRemoveComments(bool value) { _removeComments = value; }
 
     void keepComments() { _removeComments = false; }
+
+    /**
+     * Enable/disable automatic CSS/JS asset merging per page
+     * When enabled, HTMLBuilder will scan HTML for <link> and <script> tags,
+     * merge all referenced CSS/JS files into single files (page_name.css/js),
+     * and replace the original tags with single includes.
+     * @param value true to enable merging, false to disable (default: false)
+     */
+    void setMergeAssets(bool value) { _mergeAssets = value; }
+
+    /**
+     * Check if automatic asset merging is enabled
+     * @return true if asset merging is enabled
+     */
+    bool getMergeAssets() const { return _mergeAssets; }
 
     /**
      * Set available languages for the server

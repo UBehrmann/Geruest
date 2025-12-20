@@ -13,6 +13,7 @@
 #include <climits>
 #include <filesystem>
 
+#include "builders/AssetMerger.hpp"
 #include "builders/CSSBuilder.hpp"
 #include "builders/ContentBuilder.hpp"
 #include "builders/HTMLBuilder.hpp"
@@ -177,10 +178,10 @@ void Handler::handleRequest(HTTPRequest* request) {
     }
 
     // Try to find a matching route (exact or wildcard)
-    auto routeMatch = serverData.findMatchingRoute(request->getPathString());
-    if (routeMatch.first) {
-        // Call the route handler
-        HTTPResponse response = routeMatch.second(*request);
+    auto routeHandler = serverData.findMatchingRoute(request->getPathString());
+    if (routeHandler) {
+        // Call the route handler  
+        HTTPResponse response = (*routeHandler)(*request);
 
         // Send the response
         if (!sendSocket(response.toString().c_str(), response.toString().size())) {
@@ -260,12 +261,14 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
             }
 
             contentBuilder = new HtmlBuilder(contentPath, serverData.getRoot(), serverData.getRemoveComments(),
-                                             serverData.getAvailableLanguages());
+                                             serverData.getAvailableLanguages(), serverData.getMergeAssets());
 
         } else if (contentType == "text/javascript") {
-            contentBuilder = new JSBuilder(contentPath, serverData.getRoot(), serverData.getRemoveComments());
+            contentBuilder = new JSBuilder(contentPath, serverData.getRoot(), serverData.getRemoveComments(),
+                                           serverData.getMergeAssets());
         } else if (contentType == "text/css") {
-            contentBuilder = new CSSBuilder(contentPath, serverData.getRoot(), serverData.getRemoveComments());
+            contentBuilder = new CSSBuilder(contentPath, serverData.getRoot(), serverData.getRemoveComments(),
+                                            serverData.getMergeAssets());
         }
 
         // Check if builder was created
@@ -372,7 +375,13 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
     // TODO : Find better way to check for language, can't always add an 'or' statement for each new language
     if (Extension == "jpg" || Extension == "jpeg" || Extension == "png" || Extension == "gif" || Extension == "svg" ||
         Extension == "ico") {
-        // For image files, use the Referer header to determine the correct relative path
+        // For image files with /assets/ prefix, use path as-is (already normalized)
+        if (pathReceived.find("/assets/") == 0) {
+            // Assets are stored without language prefix, use direct path
+            return serverData.getRoot() + pathReceived;
+        }
+        
+        // For other image files, use the Referer header to determine the correct relative path
 
         // Try to get the context from the Referer header
         if (httpRequest->hasHeader("Referer")) {

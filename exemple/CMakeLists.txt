@@ -17,6 +17,7 @@ find_package(Threads REQUIRED)
 add_library(Geruest STATIC
     ../src/Geruest.cpp
     ../src/auth/BasicAuth.cpp
+    ../src/builders/AssetMerger.cpp
     ../src/builders/ContentBuilder.cpp
     ../src/builders/CSSBuilder.cpp
     ../src/builders/HTMLBuilder.cpp

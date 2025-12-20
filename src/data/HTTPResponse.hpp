@@ -106,6 +106,8 @@ public:
 [[maybe_unused]] HTTPResponse responseBadRequest(const HTTPRequest* request = nullptr);
 // 401 Unauthorized
 [[maybe_unused]] HTTPResponse responseAuthRequired(const HTTPRequest* request = nullptr);
+// 401 Unauthorized with Basic Auth challenge
+[[maybe_unused]] HTTPResponse responseUnauthorizedBasicAuth(const std::string& realm = "Restricted Area", const HTTPRequest* request = nullptr);
 // 403 Forbidden
 [[maybe_unused]] HTTPResponse responseForbidden(const HTTPRequest* request = nullptr);
 // 404 Not Found

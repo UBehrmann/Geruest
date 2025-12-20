@@ -5,61 +5,27 @@
  * @author Urs Behrmann
  *
  * @brief This class is used to build the JavaScript files.
- * It looks for the page name in the map and includes the files that are associated with it.
- * If the page name is not found, it returns the JS files associated with the path.
+ * 
+ * When mergeAssets=false: Serves individual JS files as-is.
+ * When mergeAssets=true: Serves pre-generated merged JS files created by HTMLBuilder.
  */
 
 #include "JSBuilder.hpp"
+#include <filesystem>
 
 namespace geruest {
 
-JSBuilder::JSBuilder(const std::string &inputPath, const std::string &inputServerRoot, bool removeCommentsFlag) 
-    : ContentBuilder(inputPath, inputServerRoot, removeCommentsFlag) {
-    json = getJSONFromFile(inputServerRoot + "/files_maps/js_file_map.json");
-    pageName = getFileNameWithoutExtension(path);
+JSBuilder::JSBuilder(const std::string &inputPath, const std::string &inputServerRoot, 
+                     bool removeCommentsFlag, bool mergeAssets) 
+    : ContentBuilder(inputPath, inputServerRoot, removeCommentsFlag), 
+      _mergeAssets(mergeAssets) {
     builJS();
 }
 
-std::string JSBuilder::getFileNameWithoutExtension(const std::string& path) {
-    // Find the last position of the slash or backslash
-    size_t lastSlashPos = path.find_last_of('/');
-
-    // Get the file name from the path
-    std::string fileName = (lastSlashPos == std::string::npos) ? path : path.substr(lastSlashPos + 1);
-
-    // Find the last position of the dot
-    size_t lastDotPos = fileName.find_last_of('.');
-    // Remove the extension from the file name
-    if (lastDotPos != std::string::npos) {
-        fileName = fileName.substr(0, lastDotPos);
-    }
-
-    return fileName;
-}
-
 void JSBuilder::builJS() {
-	if(json == nullptr) {
-		  return;
-	 }
-    JSONParser jsonForFile = json->getObject(pageName);
-
-    // If there are no files to include, return
-    if(jsonForFile.getKeys().empty()) return;
-
-    builtFile = "";
-
-    // Build the file by including all the files
-    for (const auto& key : jsonForFile.getKeys()) {
-        std::string jsFile = jsonForFile.getString(key);
-        // Ensure the file path starts with '/'
-        if (!jsFile.empty() && jsFile[0] != '/') {
-            jsFile = "/" + jsFile;
-        }
-        builtFile += loadFile(root + "/assets/js" + jsFile) + "\n\n";
-    }
-
-    // Remove comments if enabled
-    if (removeComments) {
+    // File is already loaded by ContentBuilder base class via loadFile(path)
+    // Just handle comment removal if enabled
+    if (removeComments && !builtFile.empty()) {
         builtFile = removeCommentsFromString(builtFile, FILETYPE_JS);
     }
 }

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sub-Subfolder Test - Nested Asset Merger Test</title>
+    <link rel="icon" type="image/png" sizes="16x16" href="favicon/favicon-16x16.svg">
+    
+    <!-- CSS files from nested subfolder - will be merged when mergeAssets=true -->
+    <link rel="stylesheet" href="subfoldertest/subsubfoldertest/subsubfoldertest-base.css">
+    <link rel="stylesheet" href="subfoldertest/subsubfoldertest/subsubfoldertest-theme.css">
+    
+    <!-- Testing cross-directory reference: loading root-level CSS from nested page -->
+    <link rel="stylesheet" href="base.css">
+    
+    <!-- JS files from nested subfolder - will be merged when mergeAssets=true -->
+    <script src="subfoldertest/subsubfoldertest/subsubfoldertest-utils.js"></script>
+    <script src="subfoldertest/subsubfoldertest/subsubfoldertest-manager.js"></script>
+    
+    <!-- Testing cross-directory reference: loading root-level JS from nested page -->
+    <script src="utils.js"></script>
+</head>
+<body>
+    <div class="nested-header">
+        <h1>🗂️ Sub-Subfolder Test</h1>
+        <p>Testing asset merger with deeply nested directory structure</p>
+        <div>
+            <span class="nested-badge">Level 3 Nesting</span>
+            <span class="nested-badge">CSS + JS Merging</span>
+        </div>
+    </div>
+    
+    <div class="nested-container">
+        <div id="path-info"></div>
+        
+        <div class="nested-card">
+            <h2 class="nested-title">📋 Test Scenario</h2>
+            <ul>
+                <li><strong>Page Location:</strong> <code>/html/subfoldertest/subsubfoldertest/subsubfoldertest.html</code></li>
+                <li><strong>CSS Files:</strong> <code>/assets/css/subfoldertest/subsubfoldertest/subsubfoldertest-base.css</code>, <code>subsubfoldertest-theme.css</code></li>
+                <li><strong>JS Files:</strong> <code>/assets/js/subfoldertest/subsubfoldertest/subsubfoldertest-utils.js</code>, <code>subsubfoldertest-manager.js</code></li>
+                <li><strong>Expected Merge:</strong> Single <code>subsubfoldertest.css</code> and <code>subsubfoldertest.js</code> in nested subfolder</li>
+                <li><strong>Merged File Paths:</strong> 
+                    <ul>
+                        <li><code>/assets/css/subfoldertest/subsubfoldertest/subsubfoldertest.css</code></li>
+                        <li><code>/assets/js/subfoldertest/subsubfoldertest/subsubfoldertest.js</code></li>
+                    </ul>
+                </li>
+            </ul>
+        </div>
+        
+        <div id="test-results"></div>
+        
+        <div class="nested-card">
+            <h2 class="nested-title">🎯 What This Tests</h2>
+            <ul>
+                <li>Asset merger handles multi-level directory nesting (subfoldertest/subsubfoldertest/)</li>
+                <li>Relative paths work correctly from deeply nested pages (../../)</li>
+                <li>CSS/JS files are merged and served from the correct nested location</li>
+                <li>Language routing doesn't interfere with nested asset paths</li>
+            </ul>
+        </div>
+        
+        <div class="nested-card">
+            <h2 class="nested-title">🔗 Navigation</h2>
+            <p>
+                <a href="/" style="display: inline-block; margin: 5px; padding: 8px 16px; background: #2196f3; color: white; text-decoration: none; border-radius: 4px;">← Back to Index</a>
+                <a href="/subfoldertest/subfoldertest" style="display: inline-block; margin: 5px; padding: 8px 16px; background: #9c27b0; color: white; text-decoration: none; border-radius: 4px;">↑ Parent (SubfolderTest)</a>
+            </p>
+        </div>
+    </div>
+    
+    <script>
+        // Initialize and display information
+        document.addEventListener('DOMContentLoaded', function() {
+            nestedManager.displayPathInfo();
+            nestedManager.showTestResults();
+        });
+    </script>
+</body>
+</html>

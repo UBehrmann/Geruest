@@ -176,7 +176,15 @@ HTTPResponse responseBadRequest(const HTTPRequest* request) {
 }
 
 HTTPResponse responseAuthRequired(const HTTPRequest* request) {
-    return buildResponse("401 Unauthorized", "400 Bad Request", request);
+    return buildResponse("401 Unauthorized", "401 Unauthorized", request);
+}
+
+HTTPResponse responseUnauthorizedBasicAuth(const std::string& realm, const HTTPRequest* request) {
+    HTTPResponse response("401 Unauthorized");
+    addDefaultHeaders(&response, request);
+    response.setHeader("WWW-Authenticate", "Basic realm=\"" + realm + "\"");
+    response.setBody("401 Unauthorized - Authentication Required");
+    return response;
 }
 
 HTTPResponse responseForbidden(const HTTPRequest* request) {

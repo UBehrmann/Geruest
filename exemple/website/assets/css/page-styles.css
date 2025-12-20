@@ -1,0 +1,137 @@
+/**
+ * Component styles - buttons, forms, and UI elements
+ */
+
+h1 {
+    color: #333;
+    text-align: center;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 20px;
+    border-radius: 10px;
+    margin-bottom: 30px;
+}
+
+h2 {
+    color: #444;
+    border-bottom: 2px solid #667eea;
+    padding-bottom: 5px;
+    margin-top: 30px;
+}
+
+h3 {
+    color: #555;
+    margin-top: 20px;
+    margin-bottom: 10px;
+}
+
+button {
+    background: #667eea;
+    color: white;
+    padding: 8px 15px;
+    margin: 3px;
+    border-radius: 4px;
+    font-size: 14px;
+    transition: background-color 0.2s;
+}
+
+button:hover {
+    background: #5a6fd8;
+}
+
+button:active {
+    background: #4c63d2;
+}
+
+.exact-routes button {
+    background: #28a745;
+}
+
+.exact-routes button:hover {
+    background: #218838;
+}
+
+.wildcard-routes button {
+    background: #fd7e14;
+}
+
+.wildcard-routes button:hover {
+    background: #e8690b;
+}
+
+.no-match-routes button {
+    background: #dc3545;
+}
+
+.no-match-routes button:hover {
+    background: #c82333;
+}
+
+#requestBody {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-family: monospace;
+    margin: 10px 0;
+}
+
+#result {
+    margin-top: 20px;
+    border: 1px solid #ddd;
+    padding: 15px;
+    min-height: 100px;
+    background: #fff;
+    white-space: pre-wrap;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    border-radius: 4px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.description {
+    font-style: italic;
+    color: #666;
+    margin-bottom: 15px;
+}
+
+.route-pattern {
+    font-family: monospace;
+    background: #f8f9fa;
+    padding: 2px 6px;
+    border-radius: 3px;
+    color: #495057;
+}
+
+.notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 15px 20px;
+    border-radius: 4px;
+    background: #28a745;
+    color: white;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+    animation: slideIn 0.3s ease-out;
+    z-index: 1000;
+}
+
+.notification.error {
+    background: #dc3545;
+}
+
+.notification.success {
+    background: #28a745;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}

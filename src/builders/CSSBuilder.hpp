@@ -5,6 +5,9 @@
  * @author Urs Behrmann
  *
  * @brief This class is used to build the CSS files.
+ * 
+ * When mergeAssets=false: Serves individual CSS files as-is.
+ * When mergeAssets=true: Serves pre-generated merged CSS files created by HTMLBuilder.
  */
 
 #ifndef CSSBUILDER_HPP
@@ -13,21 +16,18 @@
 #include "ContentBuilder.hpp"
 #include <string>
 #include <vector>
-#include "parser/JSONParser.hpp"
 
 namespace geruest {
 
 class CSSBuilder : public ContentBuilder {
  public:
 
-  CSSBuilder(const std::string &inputPath, const std::string &inputServerRoot, bool removeCommentsFlag = true);
+  CSSBuilder(const std::string &inputPath, const std::string &inputServerRoot, 
+             bool removeCommentsFlag = true, bool mergeAssets = false);
 
  private:
 
-  JSONParser* json;
-  std::string pageName;
-
-  static std::string getFileNameWithoutExtension(const std::string& path);
+  bool _mergeAssets;
 
   void builCSS();
 
