@@ -1,14 +1,21 @@
 cmake_minimum_required(VERSION 3.28)
-project(Geruest_Unit_Tests)
+project(Geruest_Unit_Tests VERSION 0.6.2)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Configure version header (same as main project)
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/../Version.hpp.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/geruest/Version.hpp"
+)
 
 # Enable testing
 enable_testing()
 
 # Include directories
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/..)
+include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)
 
 # Platform-specific settings
 if(WIN32)
