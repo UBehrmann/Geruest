@@ -24,12 +24,22 @@ std::string JSONParser::readKey() {
     }
     jp++;
     std::string key;
-    while (jp < basicString.length() && basicString[jp] != '"') {
-        key += basicString[jp];
-        jp++;
-    }
-    if (jp < basicString.length()) {
-        jp++;
+    bool escape = false;
+    while (jp < basicString.length()) {
+        if (escape) {
+            key += basicString[jp];
+            escape = false;
+            jp++;
+        } else if (basicString[jp] == '\\') {
+            escape = true;
+            jp++;
+        } else if (basicString[jp] == '"') {
+            jp++;
+            break;
+        } else {
+            key += basicString[jp];
+            jp++;
+        }
     }
     return key;
 }
@@ -43,12 +53,22 @@ std::string JSONParser::readString() {
     }
     jp++;
     std::string value;
-    while (jp < basicString.length() && basicString[jp] != '"') {
-        value += basicString[jp];
-        jp++;
-    }
-    if (jp < basicString.length()) {
-        jp++;
+    bool escape = false;
+    while (jp < basicString.length()) {
+        if (escape) {
+            value += basicString[jp];
+            escape = false;
+            jp++;
+        } else if (basicString[jp] == '\\') {
+            escape = true;
+            jp++;
+        } else if (basicString[jp] == '"') {
+            jp++;
+            break;
+        } else {
+            value += basicString[jp];
+            jp++;
+        }
     }
     return value;
 }
@@ -83,15 +103,26 @@ std::vector<std::string> JSONParser::readArray() {
 std::string JSONParser::readNestedObject() {
     int braceCount = 0;
     size_t start = jp;
+    bool inString = false;
+    bool escape = false;
     
     while (jp < basicString.length()) {
-        if (basicString[jp] == '{') {
-            braceCount++;
-        } else if (basicString[jp] == '}') {
-            braceCount--;
-            if (braceCount == 0) {
-                jp++; // Move past the closing brace
-                break;
+        char c = basicString[jp];
+        if (escape) {
+            escape = false;
+        } else if (c == '\\') {
+            escape = true;
+        } else if (c == '"') {
+            inString = !inString;
+        } else if (!inString) {
+            if (c == '{') {
+                braceCount++;
+            } else if (c == '}') {
+                braceCount--;
+                if (braceCount == 0) {
+                    jp++; // Move past the closing brace
+                    break;
+                }
             }
         }
         jp++;
