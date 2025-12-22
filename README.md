@@ -45,7 +45,7 @@ Geruest (German for "scaffold") is a lightweight C++ web framework designed to s
 - Threads
 - A compatible C++ compiler (e.g., GCC, Clang, MSVC)
 
-## 🚀 Quick Start
+## Quick Start
 
 **One-command installation:**
 
@@ -59,19 +59,38 @@ git clone https://github.com/UBehrmann/Geruest.git; cd Geruest; mkdir build; cd 
 git clone https://github.com/UBehrmann/Geruest.git && cd Geruest && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build . && sudo cmake --install .
 ```
 
-## 📚 Documentation
+## Documentation
 
-### Comprehensive Guides
+**→ [Complete Documentation Index](doc/README.md)**
 
-- **[Asset Merging Feature](doc/ASSET_MERGING.md)** - Complete guide to automatic CSS/JS consolidation
-  - How to enable/disable asset merging
-  - Path normalization and browser compatibility
-  - Subdirectory support and cross-directory references
-  - Best practices and troubleshooting
+### Getting Started
 
-- **[Installation Instructions](doc/INSTALLATION_INSTRUCTIONS.md)** - Detailed setup guide for Windows, Linux, and macOS
+- **[Getting Started Guide](doc/GETTING_STARTED.md)** - Installation, requirements, and your first server
+- **[Usage Guide](doc/USAGE_GUIDE.md)** - Local development, Docker deployment, production setup
 
-### Quick Documentation
+### Core Features
+
+- **[Features Overview](doc/FEATURES.md)** - All features with examples
+  - Routing (exact and wildcard patterns)
+  - Static file serving
+  - Thread pool configuration
+  - Multi-language support
+  - Graceful shutdown
+- **[Data Classes Reference](doc/DATA_CLASSES.md)** - HTTPRequest, HTTPResponse, JSONParser API
+
+### Template System
+
+- **[HTML Injections](doc/HTML_INJECTIONS.md)** - Reusable component system
+- **[Translations](doc/TRANSLATIONS.md)** - Multi-language translation injection
+- **[Asset Merging](doc/ASSET_MERGING.md)** - Automatic CSS/JS bundling per page
+
+### Security
+
+- **[Basic Authentication](doc/BASIC_AUTH.md)** - HTTP Basic Auth for protected pages
+
+### Contributing
+
+- **[Contributing Guide](doc/CONTRIBUTING.md)** - Development setup, code style, testing guidelines
 
 
 
@@ -99,54 +118,70 @@ git clone https://github.com/UBehrmann/Geruest.git && cd Geruest && mkdir build 
 
 ## How to use the framework
 
-1. Include the Geruest header file in your C++ project.
-2. Create an instance of the Geruest class.
-3. Configure the server settings such as port and hostname.
-4. Define routes using the `addRoute` method, specifying the path and the callback function to handle requests.
-5. Start the server to listen for incoming requests.
+**See the [Getting Started Guide](doc/GETTING_STARTED.md) for detailed instructions.**
 
-### Example
+### Quick Example
 
 ```cpp
-#include "Geruest.hpp"
+#include <Geruest.hpp>
 
 int main() {
-    Geruest server;
+    geruest::Geruest server;
 
     // Configure server settings
     server.setPort(8080);
     server.setHostname("localhost");
-    server.addRoot("/path/to/your/website"); // Set the root directory for static files
+    server.addRoot("/path/to/your/website");
 
     // Define a simple route
-    server.addRoute("/hello", [](const Request& req, Response& res) {
-        res.setContentType("text/html");
-        res.send("<h1>Welcome to Geruest!</h1>");
+    server.addRoute("/hello", [](const geruest::HTTPRequest& req) {
+        geruest::HTTPResponse response("200 OK");
+        response.setHeader("Content-Type", "text/html");
+        response.setBody("<h1>Welcome to Geruest!</h1>");
+        return response;
     });
 
     // Start the server
+    server.init();
     server.start();
 
     return 0;
 }
 ```
 
+**For more examples, see:**
+- [Getting Started Guide](doc/GETTING_STARTED.md)
+- [Features Documentation](doc/FEATURES.md)
+- [Example Application](exemple/exemple.cpp)
+
 ## Installation
 
-Clone the Geruest repository and include it in your C++ project:
+**See the [Getting Started Guide](doc/GETTING_STARTED.md) for comprehensive installation instructions.**
+
+### Quick Install
+
+### Quick Install
+
+Clone the Geruest repository:
 
 ```bash
 git clone https://github.com/UBehrmann/Geruest.git
+cd Geruest
 ```
 
-Ensure you have a compatible C++ compiler and standard library.
+**Build instructions for your platform:**
+- [Linux Installation](doc/GETTING_STARTED.md#linux)
+- [Windows (MSVC) Installation](doc/GETTING_STARTED.md#windows-msvc)
+- [Windows (MinGW) Installation](doc/GETTING_STARTED.md#windows-mingw)
 
 We build the library for both Linux and Windows:
 - `.a` file for Linux
 - `.a` file for Windows using MinGW  
 - `.lib` file for Windows using MSVC 
 
-### CMakeLists example
+### Using Geruest in Your Project
+
+**See [Getting Started - CMakeLists.txt](doc/GETTING_STARTED.md#cmakeliststxt-for-your-project) for a complete example.**
 
 ```cmake
 cmake_minimum_required(VERSION 3.10)
