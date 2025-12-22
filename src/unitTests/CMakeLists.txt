@@ -103,3 +103,8 @@ add_custom_target(run_tests
     DEPENDS Geruest_Unit_Tests JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests
     COMMENT "Running all unit tests"
 )
+
+# Copy test data files to build directory
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/JSONParser/
+     DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/JSONParser
+     FILES_MATCHING PATTERN "*.json")

@@ -227,7 +227,7 @@ public:
  * @return unique_ptr to JSONParser, nullptr if file couldn't be opened
  * @note Memory is automatically freed when unique_ptr goes out of scope
  */
-inline std::unique_ptr<JSONParser> getJSONFromFileSave(const std::string &filePath) {
+inline std::unique_ptr<JSONParser> getJSONFromFileSafe(const std::string &filePath) {
     std::ifstream file(filePath);
     if (!file.is_open()) {
         return nullptr;
