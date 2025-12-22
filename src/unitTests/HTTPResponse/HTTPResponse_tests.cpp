@@ -64,13 +64,15 @@ void test_http_response_complete_response() {
     response.setBody("{\"status\":\"success\"}");
     
     std::string responseStr = response.toString();
+    std::string body = "{\"status\":\"success\"}";
+    std::string expectedLength = "Content-Length: " + std::to_string(body.length());
     
     // Should have proper HTTP response format
     assert(responseStr.find("HTTP/1.1 200 OK") != std::string::npos);
     assert(responseStr.find("Content-Type: application/json") != std::string::npos);
     assert(responseStr.find("Server: Geruest/1.0") != std::string::npos);
-    assert(responseStr.find("Content-Length: 19") != std::string::npos);
-    assert(responseStr.find("{\"status\":\"success\"}") != std::string::npos);
+    assert(responseStr.find(expectedLength) != std::string::npos);
+    assert(responseStr.find(body) != std::string::npos);
     
     // Should have proper HTTP structure (headers followed by blank line, then body)
     assert(responseStr.find("\r\n\r\n") != std::string::npos);

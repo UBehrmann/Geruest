@@ -8,6 +8,7 @@
  */
 
  #include <iostream>
+#include <memory>
 #include <string>
 #include <csignal>
 #include <filesystem>
@@ -18,18 +19,21 @@
 
 using namespace geruest;
 
-Geruest* server;
+// Use unique_ptr for automatic memory management
+std::unique_ptr<Geruest> server;
 
 void signalHandler(int signum) {
     std::cout << "Interrupt signal (" << signum << ") received.\n";
-    server->stop();
+    if (server) {
+        server->stop();
+    }
 }
 
 void addRoutes(Geruest* serverToAddRoutes);
 
 int main(int argc, char* argv[]) {
 
-    server = new Geruest();
+    server = std::make_unique<Geruest>();
 
     // Set the signal handler for graceful shutdown
     std::signal(SIGINT, signalHandler);
@@ -133,7 +137,7 @@ int main(int argc, char* argv[]) {
     
     server->addRoot(websitePath.string());
 
-    addRoutes(server);
+    addRoutes(server.get());
 
     std::cout << "Starting Geruest server on port " << PORT << "..." << std::endl;
     std::cout << "Server will be accessible at http://" << HOSTNAME << ":" << PORT << std::endl;
@@ -152,8 +156,7 @@ int main(int argc, char* argv[]) {
 
     server->start();
 
-    // Clean up
-    delete server;
+    // server is automatically cleaned up by unique_ptr
     
     return EXIT_SUCCESS;
 }

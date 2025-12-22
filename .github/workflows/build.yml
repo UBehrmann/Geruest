@@ -24,6 +24,22 @@ jobs:
           cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
           cmake --build . --config Release
 
+      - name: Build Unit Tests
+        run: |
+          cd src/unitTests
+          mkdir -p build && cd build
+          cmake .. -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
+          cmake --build .
+
+      - name: Run Unit Tests
+        run: |
+          cd src/unitTests/build
+          ./JSONParser_Tests
+          ./HTTPRequest_Tests
+          ./HTTPResponse_Tests
+          ./FileManagement_Tests
+          ./ContentBuilder_Tests
+
   build-windows-mingw:
     runs-on: windows-latest
     
@@ -43,6 +59,24 @@ jobs:
           cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
           cmake --build . --config Release
 
+      - name: Build Unit Tests
+        shell: msys2 {0}
+        run: |
+          cd src/unitTests
+          mkdir -p build && cd build
+          cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
+          cmake --build .
+
+      - name: Run Unit Tests
+        shell: msys2 {0}
+        run: |
+          cd src/unitTests/build
+          ./JSONParser_Tests.exe
+          ./HTTPRequest_Tests.exe
+          ./HTTPResponse_Tests.exe
+          ./FileManagement_Tests.exe
+          ./ContentBuilder_Tests.exe
+
   build-windows-msvc:
     runs-on: windows-latest
 
@@ -54,3 +88,20 @@ jobs:
           mkdir build && cd build
           cmake .. -DCMAKE_GENERATOR_PLATFORM=x64 -A x64 -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
           cmake --build . --config Release
+
+      - name: Build Unit Tests
+        run: |
+          cd src/unitTests
+          mkdir build
+          cd build
+          cmake .. -A x64 -DCMAKE_BUILD_TYPE=Release
+          cmake --build . --config Release
+
+      - name: Run Unit Tests
+        run: |
+          cd src/unitTests/build/Release
+          ./JSONParser_Tests.exe
+          ./HTTPRequest_Tests.exe
+          ./HTTPResponse_Tests.exe
+          ./FileManagement_Tests.exe
+          ./ContentBuilder_Tests.exe

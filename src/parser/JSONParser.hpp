@@ -13,6 +13,7 @@
 #include <string>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <cfloat>
 #include <climits>
 #include <utility>
@@ -220,6 +221,32 @@ public:
     bool hasKey(const std::string &key) const;
 };
 
+/**
+ * @brief Load JSON from file (safe version with automatic memory management)
+ * @param filePath Path to the JSON file
+ * @return unique_ptr to JSONParser, nullptr if file couldn't be opened
+ * @note Memory is automatically freed when unique_ptr goes out of scope
+ */
+inline std::unique_ptr<JSONParser> getJSONFromFileSafe(const std::string &filePath) {
+    std::ifstream file(filePath);
+    if (!file.is_open()) {
+        return nullptr;
+    }
+
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    std::string content = buffer.str();
+
+    return std::make_unique<JSONParser>(content);
+}
+
+/**
+ * @brief Load JSON from file (unsafe version with manual memory management)
+ * @param filePath Path to the JSON file
+ * @return Raw pointer to JSONParser, nullptr if file couldn't be opened
+ * @warning Caller is responsible for calling delete on the returned pointer
+ * @deprecated Prefer getJSONFromFile() which returns unique_ptr for automatic cleanup
+ */
 inline JSONParser* getJSONFromFile(const std::string &filePath) {
     std::ifstream file(filePath);
     if (!file.is_open()) {

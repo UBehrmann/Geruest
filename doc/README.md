@@ -1,0 +1,83 @@
+# Geruest Documentation
+
+Welcome to the Geruest documentation! This guide will help you get started with the framework and understand all its features.
+
+## Quick Navigation
+
+### Getting Started
+
+- [**Getting Started**](GETTING_STARTED.md) - Prerequisites, installation, and your first server
+- [**Usage Guide**](USAGE_GUIDE.md) - Local development, Docker deployment, Windows/Linux setup
+
+### Core Features
+
+- [**Features Overview**](FEATURES.md) - Complete feature documentation with examples
+- [**Data Classes**](DATA_CLASSES.md) - HTTPRequest, HTTPResponse, JSONParser API reference
+
+### Template System
+
+- [**HTML Injections**](HTML_INJECTIONS.md) - Component inclusion system
+- [**Translations**](TRANSLATIONS.md) - Multi-language support and injection
+- [**Asset Merging**](ASSET_MERGING.md) - Automatic CSS/JS bundling
+
+### Security
+
+- [**Basic Authentication**](BASIC_AUTH.md) - HTTP Basic Auth for protected pages
+
+### Contributing
+
+- [**Contributing Guide**](CONTRIBUTING.md) - Development setup, code style, testing
+
+---
+
+## Quick Start
+
+```cpp
+#include <Geruest.hpp>
+
+int main() {
+    geruest::Geruest server;
+    
+    server.setPort(8080);
+    server.setHostname("localhost");
+    server.addRoot("./website");
+    
+    server.addRoute("/hello", [](const geruest::HTTPRequest& req) {
+        geruest::HTTPResponse response("200 OK");
+        response.setHeader("Content-Type", "text/plain");
+        response.setBody("Hello, World!");
+        return response;
+    });
+    
+    server.init();
+    server.start();
+    
+    return 0;
+}
+```
+
+## Feature Summary
+
+| Feature | Description | Documentation |
+|---------|-------------|---------------|
+| **Routing** | Exact and wildcard route patterns | [Features](FEATURES.md#routing-system) |
+| **Static Files** | Automatic file serving | [Features](FEATURES.md#static-file-serving) |
+| **Thread Pool** | Configurable concurrent workers | [Features](FEATURES.md#thread-pool) |
+| **Languages** | Multi-language URL routing | [Translations](TRANSLATIONS.md) |
+| **Asset Merging** | CSS/JS bundling per page | [Asset Merging](ASSET_MERGING.md) |
+| **Components** | Reusable HTML includes | [HTML Injections](HTML_INJECTIONS.md) |
+| **Translations** | JSON-based i18n | [Translations](TRANSLATIONS.md) |
+| **Basic Auth** | HTTP authentication | [Basic Auth](BASIC_AUTH.md) |
+| **JSON Parser** | Built-in JSON handling | [Data Classes](DATA_CLASSES.md#jsonparser) |
+
+## Requirements
+
+- **C++17** compatible compiler
+- **CMake** 3.10+
+- No external dependencies
+
+See [Getting Started](GETTING_STARTED.md) for detailed requirements.
+
+## License
+
+See [LICENSE](../LICENSE) in the repository root.

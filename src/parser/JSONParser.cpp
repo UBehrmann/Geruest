@@ -24,12 +24,22 @@ std::string JSONParser::readKey() {
     }
     jp++;
     std::string key;
-    while (jp < basicString.length() && basicString[jp] != '"') {
-        key += basicString[jp];
-        jp++;
-    }
-    if (jp < basicString.length()) {
-        jp++;
+    bool escape = false;
+    while (jp < basicString.length()) {
+        if (escape) {
+            key += basicString[jp];
+            escape = false;
+            jp++;
+        } else if (basicString[jp] == '\\') {
+            escape = true;
+            jp++;
+        } else if (basicString[jp] == '"') {
+            jp++;
+            break;
+        } else {
+            key += basicString[jp];
+            jp++;
+        }
     }
     return key;
 }
@@ -43,12 +53,22 @@ std::string JSONParser::readString() {
     }
     jp++;
     std::string value;
-    while (jp < basicString.length() && basicString[jp] != '"') {
-        value += basicString[jp];
-        jp++;
-    }
-    if (jp < basicString.length()) {
-        jp++;
+    bool escape = false;
+    while (jp < basicString.length()) {
+        if (escape) {
+            value += basicString[jp];
+            escape = false;
+            jp++;
+        } else if (basicString[jp] == '\\') {
+            escape = true;
+            jp++;
+        } else if (basicString[jp] == '"') {
+            jp++;
+            break;
+        } else {
+            value += basicString[jp];
+            jp++;
+        }
     }
     return value;
 }
@@ -83,15 +103,26 @@ std::vector<std::string> JSONParser::readArray() {
 std::string JSONParser::readNestedObject() {
     int braceCount = 0;
     size_t start = jp;
+    bool inString = false;
+    bool escape = false;
     
     while (jp < basicString.length()) {
-        if (basicString[jp] == '{') {
-            braceCount++;
-        } else if (basicString[jp] == '}') {
-            braceCount--;
-            if (braceCount == 0) {
-                jp++; // Move past the closing brace
-                break;
+        char c = basicString[jp];
+        if (escape) {
+            escape = false;
+        } else if (c == '\\') {
+            escape = true;
+        } else if (c == '"') {
+            inString = !inString;
+        } else if (!inString) {
+            if (c == '{') {
+                braceCount++;
+            } else if (c == '}') {
+                braceCount--;
+                if (braceCount == 0) {
+                    jp++; // Move past the closing brace
+                    break;
+                }
             }
         }
         jp++;
@@ -161,6 +192,54 @@ std::string JSONParser::readData() {
 
 void JSONParser::parseArray() {
     arrayData.clear();
+    jp = 0;
+    
+    // Skip whitespace
+    while (jp < basicString.length() && isWhiteSpace(basicString[jp])) {
+        jp++;
+    }
+    
+    // Must start with '['
+    if (jp >= basicString.length() || basicString[jp] != '[') {
+        return;
+    }
+    jp++;
+    
+    // Parse array elements
+    while (jp < basicString.length()) {
+        // Skip whitespace
+        while (jp < basicString.length() && isWhiteSpace(basicString[jp])) {
+            jp++;
+        }
+        
+        // Check for end of array
+        if (jp < basicString.length() && basicString[jp] == ']') {
+            jp++;
+            break;
+        }
+        
+        // Read the element (should be an object)
+        std::string element = readData();
+        
+        // If it's an object, parse it and add to arrayData
+        if (!element.empty()) {
+            JSONParser parser(element);
+            arrayData.push_back(parser);
+        }
+        
+        // Skip whitespace
+        while (jp < basicString.length() && isWhiteSpace(basicString[jp])) {
+            jp++;
+        }
+        
+        // Check for comma or end of array
+        if (jp < basicString.length() && basicString[jp] == ',') {
+            jp++;
+        } else if (jp < basicString.length() && basicString[jp] == ']') {
+            jp++;
+            break;
+        }
+    }
 }
 
 void JSONParser::parseJSON() {
@@ -168,9 +247,19 @@ void JSONParser::parseJSON() {
     keys.clear();
     jp = 0;
     
+    // Skip leading whitespace
     while (jp < basicString.length() && isWhiteSpace(basicString[jp])) {
         jp++;
     }
+    
+    // Check if this is an array or object
+    if (jp < basicString.length() && basicString[jp] == '[') {
+        // This is an array, parse it
+        parseArray();
+        return;
+    }
+    
+    // This should be an object
     if (jp >= basicString.length() || basicString[jp] != '{') {
         return;
     }

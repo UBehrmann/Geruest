@@ -30,6 +30,7 @@ typedef SSIZE_T ssize_t;
 #include <cstring>  // For memset
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string>
 
@@ -62,10 +63,10 @@ private:
 
 	const std::string IP;
 
-	char *buffer;
+	std::unique_ptr<char[]> buffer;
 	ssize_t bufferLength = 0;
 
-	bool readSocket() { return readSocket(buffer, BUFFER_SIZE); }
+	bool readSocket() { return readSocket(buffer.get(), BUFFER_SIZE); }
 
 	bool readSocket(char *bufferToUse, size_t size);
 
