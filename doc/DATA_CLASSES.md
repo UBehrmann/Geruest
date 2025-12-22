@@ -539,7 +539,7 @@ server.addRoute("/api/users", [](const HTTPRequest& req) {
 //     "languages": ["en", "de", "fr"]
 // }
 
-JSONParser* config = getJSONFromFile("config.json");
+auto config = getJSONFromFileSafe("config.json");
 if (config) {
     int port = config->getInt("port");
     std::string hostname = config->getString("hostname");
@@ -550,7 +550,7 @@ if (config) {
     server.setHostname(hostname);
     server.setAvailableLanguages(languages);
     
-    delete config;  // Don't forget to free memory!
+    // Automatic cleanup when unique_ptr goes out of scope
 }
 ```
 

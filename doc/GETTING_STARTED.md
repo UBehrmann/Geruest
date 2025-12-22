@@ -238,10 +238,12 @@ your_project/
 #include <csignal>
 #include <filesystem>
 #include <iostream>
+#include <memory>
 
 using namespace geruest;
 
-Geruest* server = nullptr;
+// Use unique_ptr for automatic memory management
+std::unique_ptr<Geruest> server;
 
 // Graceful shutdown handler
 void signalHandler(int signum) {
@@ -250,7 +252,7 @@ void signalHandler(int signum) {
 }
 
 int main(int argc, char* argv[]) {
-    server = new Geruest();
+    server = std::make_unique<Geruest>();
     
     // Set up signal handlers for graceful shutdown
     std::signal(SIGINT, signalHandler);
@@ -299,8 +301,7 @@ int main(int argc, char* argv[]) {
     server->init();
     server->start();
     
-    // Cleanup
-    delete server;
+    // Automatic cleanup when unique_ptr goes out of scope
     return 0;
 }
 ```

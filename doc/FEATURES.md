@@ -462,7 +462,7 @@ Properly shut down the server when receiving signals.
 ```cpp
 #include <csignal>
 
-Geruest* server = nullptr;
+std::unique_ptr<Geruest> server;
 
 void signalHandler(int signum) {
     std::cout << "Interrupt signal (" << signum << ") received.\n";
@@ -472,7 +472,7 @@ void signalHandler(int signum) {
 }
 
 int main() {
-    server = new Geruest();
+    server = std::make_unique<Geruest>();
     
     // Register signal handlers
     std::signal(SIGINT, signalHandler);   // Ctrl+C
@@ -482,7 +482,7 @@ int main() {
     server->init();
     server->start();  // Blocks until stop() is called
     
-    delete server;
+    // Automatic cleanup when unique_ptr goes out of scope
     return 0;
 }
 ```

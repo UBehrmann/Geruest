@@ -183,14 +183,14 @@ server.addBasicAuthUserHashed("admin",
 
 using namespace geruest;
 
-Geruest* server = nullptr;
+std::unique_ptr<Geruest> server;
 
 void signalHandler(int signum) {
     if (server) server->stop();
 }
 
 int main() {
-    server = new Geruest();
+    server = std::make_unique<Geruest>();
     
     std::signal(SIGINT, signalHandler);
     std::signal(SIGTERM, signalHandler);
@@ -228,7 +228,7 @@ int main() {
     server->init();
     server->start();
     
-    delete server;
+    // Automatic cleanup when unique_ptr goes out of scope
     return 0;
 }
 ```
