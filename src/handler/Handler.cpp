@@ -27,8 +27,7 @@ Handler::Handler(SOCKET socket, std::string clientIP, ServerData serverDataArg)
 #else
 Handler::Handler(int socket, std::string clientIP, ServerData serverDataArg)
 #endif
-    : clientSocket(socket), serverData(serverDataArg), IP(std::move(clientIP)) {
-    buffer = new char[BUFFER_SIZE];
+    : clientSocket(socket), serverData(serverDataArg), IP(std::move(clientIP)), buffer(std::make_unique<char[]>(BUFFER_SIZE)) {
 }
 
 Handler::~Handler() {
@@ -37,7 +36,6 @@ Handler::~Handler() {
 #else
     close(clientSocket);
 #endif
-    delete[] buffer;
 
     //    logger.log("Client socket closed.");
 }
@@ -128,8 +126,8 @@ void Handler::run() {
     // Message count is used to prevent infinite loops
     while (++messageCount < 100 && readSocket()) {
         // Check if the buffer exists
-        if (buffer == nullptr) {
-            buffer = new char[BUFFER_SIZE];
+        if (!buffer) {
+            buffer = std::make_unique<char[]>(BUFFER_SIZE);
         }
 
         // Ensure bufferLength is valid before creating string
@@ -138,7 +136,7 @@ void Handler::run() {
             break;
         }
 
-        std::string rawRequest(buffer, static_cast<size_t>(bufferLength));
+        std::string rawRequest(buffer.get(), static_cast<size_t>(bufferLength));
         requestStream = std::istringstream(rawRequest);
 
         HTTPRequest hTTPRequest(rawRequest, IP, serverData.getRoot());
@@ -154,7 +152,7 @@ void Handler::run() {
             }
 
             // Append the new data to the existing buffer
-            std::string newData(buffer, static_cast<size_t>(bufferLength));
+            std::string newData(buffer.get(), static_cast<size_t>(bufferLength));
             requestStream.str(requestStream.str() + newData);
 
             hTTPRequest = HTTPRequest(requestStream.str(), IP, serverData.getRoot());
@@ -163,7 +161,7 @@ void Handler::run() {
         handleRequest(&hTTPRequest);
 
         // Clear the buffer, so we don't send the same data again
-        memset(buffer, 0, BUFFER_SIZE);
+        memset(buffer.get(), 0, BUFFER_SIZE);
     }
 }
 
@@ -241,7 +239,7 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
     // sendToLoggerPages("Sending file: " + contentPath);
 
     if (contentType == "text/html" || contentType == "text/javascript" || contentType == "text/css") {
-        ContentBuilder* contentBuilder = nullptr;
+        std::unique_ptr<ContentBuilder> contentBuilder;
 
         if (contentType == "text/html") {
             //			sendToLoggerPages("GET: " + path);
@@ -260,14 +258,14 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
                 }
             }
 
-            contentBuilder = new HtmlBuilder(contentPath, serverData.getRoot(), serverData.getRemoveComments(),
+            contentBuilder = std::make_unique<HtmlBuilder>(contentPath, serverData.getRoot(), serverData.getRemoveComments(),
                                              serverData.getAvailableLanguages(), serverData.getMergeAssets());
 
         } else if (contentType == "text/javascript") {
-            contentBuilder = new JSBuilder(contentPath, serverData.getRoot(), serverData.getRemoveComments(),
+            contentBuilder = std::make_unique<JSBuilder>(contentPath, serverData.getRoot(), serverData.getRemoveComments(),
                                            serverData.getMergeAssets());
         } else if (contentType == "text/css") {
-            contentBuilder = new CSSBuilder(contentPath, serverData.getRoot(), serverData.getRemoveComments(),
+            contentBuilder = std::make_unique<CSSBuilder>(contentPath, serverData.getRoot(), serverData.getRemoveComments(),
                                             serverData.getMergeAssets());
         }
 
@@ -296,7 +294,6 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
             sendToLoggerError("Failed to send file: " + contentPath);
         }
 
-        delete contentBuilder;
 
     } else {
         // Open file

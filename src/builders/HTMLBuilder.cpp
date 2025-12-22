@@ -199,7 +199,7 @@ void HtmlBuilder::replaceTranslations(const std::string& language) {
         std::string toInsert;
 
         if (fs::exists(pathToJSON)) {
-            JSONParser* jsonParser = getJSONFromFile(pathToJSON);
+            auto jsonParser = getJSONFromFile(pathToJSON);
 
             // Get the right language
             JSONParser languageArray = jsonParser->getObject(language);
@@ -208,8 +208,6 @@ void HtmlBuilder::replaceTranslations(const std::string& language) {
             if (languageArray.getKeys().empty()) {
                 languageArray = jsonParser->getObject("en");
             }
-
-            delete jsonParser;
 
             // Get the element
             toInsert = languageArray.getString(element);

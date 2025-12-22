@@ -473,8 +473,8 @@ void test_adding_json_array_to_json() {
 
 // adding a json array to a json object in a json array
 void test_adding_json_array_to_json_array() {
-    JSONParser *json = geruest::getJSONFromFile("JSONParser/devices.json");
-    JSONParser *jsonToAdd = geruest::getJSONFromFile("JSONParser/arrayToAdd.json");
+    JSONParser* json = geruest::getJSONFromFile("JSONParser/devices.json");
+    JSONParser* jsonToAdd = geruest::getJSONFromFile("JSONParser/arrayToAdd.json");
 
     std::vector<JSONParser> jsonArray = json->getJSONArray();
 
