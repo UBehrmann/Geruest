@@ -95,7 +95,7 @@ void HTTPRequest::parsePathAndParams(const std::string& pathWithQuery) {
         queryString = pathWithQuery.substr(questionMarkPos + 1);
     }
 
-    _path = pathWithQuery;  // Store full path with query string
+    _path = pathOnly;  // Store only the path part without query string
     _pathParts = splitString(pathOnly, '/');  // Split only the path part
 
     if (!queryString.empty()) {
