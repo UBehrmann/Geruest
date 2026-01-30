@@ -47,15 +47,15 @@ int main(int argc, char* argv[]) {
     // ============================================================
     
     // Configure log level to control verbosity
-    // Levels: None < Error < Warning < Info (default) < Debug
+    // Levels: None < Error (framework default) < Warning < Info < Debug
     
     // Recommended for production/Docker to filter out timeout spam:
     server->setLogLevel(LogLevel::Warning);
     
     // Other options:
     // server->setLogLevel(LogLevel::None);     // Silent mode
-    // server->setLogLevel(LogLevel::Error);    // Only errors
-    // server->setLogLevel(LogLevel::Info);     // Default - all normal logs
+    // server->setLogLevel(LogLevel::Error);    // Only errors (default if not set)
+    // server->setLogLevel(LogLevel::Info);     // All normal logs (info and above)
     // server->setLogLevel(LogLevel::Debug);    // Verbose debugging
     
     std::cout << "\n=== Log Level Configuration ===" << std::endl;
