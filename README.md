@@ -1,5 +1,8 @@
 # Geruest
 
+![Geruest Framework](imgs/geruest_image_ai.png)
+*Image generated with OpenAI ChatGPT. Looking to commission a better logo/image - if you're a designer interested in contributing, please reach out!*
+
 ## Description
 
 Geruest (German for "scaffold") is a lightweight C++ web framework designed to simplify the creation of web applications. It provides a straightforward API for routing, serving static files, and handling requests, making it easy to build and deploy web services.
