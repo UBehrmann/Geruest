@@ -30,9 +30,9 @@ sudo apt-get install -y build-essential cmake git
 git clone https://github.com/yourusername/Geruest.git
 cd Geruest
 mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Debug
+cmake .. -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=$HOME/.local
 make -j$(nproc)
-make install
+sudo make install
 
 # Build example
 cd ../exemple

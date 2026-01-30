@@ -159,6 +159,29 @@ void Geruest::clearProtectedPages() {
     sendToLogger("Cleared all protected pages");
 }
 
+// ========== Logging Configuration Implementation ==========
+
+void Geruest::setLogLevel(LogLevel level) {
+    serverData.setLogLevel(level);
+    
+    // Only log the change if we're at INFO level or higher
+    if (serverData.shouldLog(LogLevel::INFO)) {
+        std::string levelStr;
+        switch (level) {
+            case LogLevel::NONE: levelStr = "NONE"; break;
+            case LogLevel::ERROR: levelStr = "ERROR"; break;
+            case LogLevel::WARN: levelStr = "WARN"; break;
+            case LogLevel::INFO: levelStr = "INFO"; break;
+            case LogLevel::DEBUG: levelStr = "DEBUG"; break;
+        }
+        sendToLogger("Log level set to: " + levelStr);
+    }
+}
+
+LogLevel Geruest::getLogLevel() const {
+    return serverData.getLogLevel();
+}
+
 void Geruest::init() {
     this->server_fd = socket(AF_INET, SOCK_STREAM, 0);
 #ifdef _WIN32
@@ -319,13 +342,13 @@ void Geruest::giveToHandler(int new_socket, std::string& IP) {
     auto clientHandler = std::make_unique<Handler>(new_socket, IP, serverData);
     // sendToLogger("New connection");
 
-    std::thread clientThread([handler = std::move(clientHandler)]() mutable {
+    std::thread clientThread([handler = std::move(clientHandler), this]() mutable {
         try {
             handler->run();
         } catch (const std::exception& e) {
-            handler->sendToLoggerError(std::string("Handler error: ") + e.what());
+            sendToLoggerError(std::string("Handler error: ") + e.what());
         } catch (...) {
-            handler->sendToLoggerError("Handler encountered an unknown error");
+            sendToLoggerError("Handler encountered an unknown error");
         }
     });
 
@@ -378,7 +401,7 @@ void Geruest::stopWorkers() {
         close(connection.first);
 #endif
     }
-
+    
     sendToLogger("All worker threads stopped");
 }
 
@@ -415,8 +438,16 @@ void Geruest::workerThread() {
     }
 }
 
-void Geruest::sendToLogger(const std::string& message) const { std::cout << message << std::endl; }
+void Geruest::sendToLogger(const std::string& message) const {
+    if (serverData.shouldLog(LogLevel::INFO)) {
+        std::cout << message << std::endl;
+    }
+}
 
-void Geruest::sendToLoggerError(const std::string& message) const { std::cerr << "Error: " << message << std::endl; }
+void Geruest::sendToLoggerError(const std::string& message) const {
+    if (serverData.shouldLog(LogLevel::ERROR)) {
+        std::cerr << "Error: " << message << std::endl;
+    }
+}
 
 }  // namespace geruest

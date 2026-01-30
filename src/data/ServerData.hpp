@@ -24,6 +24,22 @@
 
 namespace geruest {
 
+/**
+ * Log level enumeration for filtering log output
+ * NONE: No logging
+ * ERROR: Only errors
+ * WARN: Errors and warnings
+ * INFO: Errors, warnings, and informational messages
+ * DEBUG: All messages including debug information
+ */
+enum class LogLevel {
+    NONE = 0,
+    ERROR = 1,
+    WARN = 2,
+    INFO = 3,
+    DEBUG = 4
+};
+
 using RouteHandler = std::function<HTTPResponse(const HTTPRequest&)>;
 
 // class with the server data
@@ -37,6 +53,7 @@ class ServerData {
     std::vector<std::string> _availableLanguages;
     std::string _defaultLanguage;
     BasicAuth _basicAuth;
+    LogLevel _logLevel = LogLevel::INFO;  // Default log level
 
     /**
      * Check if a path matches a wildcard pattern
@@ -223,6 +240,27 @@ class ServerData {
      * @return Const reference to BasicAuth instance
      */
     const BasicAuth& getBasicAuth() const { return _basicAuth; }
+
+    /**
+     * Set the log level for filtering log output
+     * @param level LogLevel enum value (NONE, ERROR, WARN, INFO, DEBUG)
+     */
+    void setLogLevel(LogLevel level) { _logLevel = level; }
+
+    /**
+     * Get the current log level
+     * @return Current LogLevel
+     */
+    LogLevel getLogLevel() const { return _logLevel; }
+
+    /**
+     * Check if a message at the given level should be logged
+     * @param level The level of the message to check
+     * @return true if the message should be logged based on current log level
+     */
+    bool shouldLog(LogLevel level) const {
+        return static_cast<int>(level) <= static_cast<int>(_logLevel);
+    }
 };
 
 }  // namespace geruest

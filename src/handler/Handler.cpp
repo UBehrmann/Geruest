@@ -63,13 +63,13 @@ bool Handler::readSocket(char* bufferToUse, size_t size) {
 #else
         if (errno == EWOULDBLOCK || errno == EAGAIN) {
 #endif
-            sendToLogger("Timeout for receiving data.");
+            sendToLogger("Timeout for receiving data.", LogLevel::WARN);
             idling++;
             if (idling > 2) {
                 std::cout << "Client is idling too long. Closing connection." << std::endl;
             }
         }
-        sendToLogger("Error reading from socket.");
+        sendToLogger("Error reading from socket.", LogLevel::WARN);
     } else {
         return true;
     }
@@ -105,20 +105,30 @@ bool Handler::sendSocket(const char* bufferToSend, size_t size) const {
     return true;
 }
 
-void Handler::sendToLogger(const std::string& message) const {
-    std::cout << "Log: " << message << " from " << IP << std::endl;
+void Handler::sendToLogger(const std::string& message, LogLevel level) const {
+    if (serverData.shouldLog(level)) {
+        std::cout << "Log: " << message << " from " << IP << std::endl;
+    }
 }
 void Handler::sendToLoggerPages(const std::string& message) const {
-    std::cout << "Page Log: " << message << " from " << IP << std::endl;
+    if (serverData.shouldLog(LogLevel::INFO)) {
+        std::cout << "Page Log: " << message << " from " << IP << std::endl;
+    }
 }
 void Handler::sendToLoggerAPI(const std::string& message) const {
-    std::cout << "API Log: " << message << " from " << IP << std::endl;
+    if (serverData.shouldLog(LogLevel::INFO)) {
+        std::cout << "API Log: " << message << " from " << IP << std::endl;
+    }
 }
 void Handler::sendToLoggerUser(const std::string& message) const {
-    std::cout << "User Log: " << message << " from " << IP << std::endl;
+    if (serverData.shouldLog(LogLevel::INFO)) {
+        std::cout << "User Log: " << message << " from " << IP << std::endl;
+    }
 }
 void Handler::sendToLoggerError(const std::string& message) const {
-    std::cerr << "Error Log: " << message << " from " << IP << std::endl;
+    if (serverData.shouldLog(LogLevel::ERROR)) {
+        std::cerr << "Error Log: " << message << " from " << IP << std::endl;
+    }
 }
 
 void Handler::run() {
