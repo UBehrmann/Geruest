@@ -243,7 +243,7 @@ class ServerData {
 
     /**
      * Set the log level for filtering log output
-     * @param level LogLevel enum value (NONE, ERROR, WARN, INFO, DEBUG)
+     * @param level LogLevel enum value (None, Error, Warning, Info, Debug)
      */
     void setLogLevel(LogLevel level) { _logLevel = level; }
 
