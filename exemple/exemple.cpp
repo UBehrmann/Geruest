@@ -135,9 +135,11 @@ int main(int argc, char* argv[]) {
     // Benefits when enabled:
     // - Single merged CSS file per page (e.g., index.css contains all CSS)
     // - Single merged JS file per page (e.g., index.js contains all JS)
-    // - Automatic IIFE wrapping for JS to prevent scope pollution
     // - No manual configuration files needed
     // - Automatically updates when HTML templates change
+    //
+    // WARNING: JavaScript files are concatenated directly without scope isolation.
+    // Ensure your JS files handle variable/function naming to avoid conflicts.
     
     server->setMergeAssets(true);  // ENABLED for testing
     

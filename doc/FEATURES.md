@@ -266,7 +266,13 @@ server.setMergeAssets(true);  // Must be called before init()
 - Reduces HTTP requests (6 → 2 in example above)
 - Automatic - no configuration files needed
 - Files are regenerated when HTML templates change
-- JavaScript is wrapped in IIFE to prevent scope pollution
+
+### Important Notes
+
+⚠️ **JavaScript Scope Warning**: JavaScript files are directly concatenated without scope isolation. Ensure your code manages variable and function naming to prevent conflicts between merged files. Consider using:
+- Module patterns (ES6 modules, namespaces)
+- Unique prefixes for global variables
+- Immediate execution patterns if needed per-file
 
 See [ASSET_MERGING.md](ASSET_MERGING.md) for detailed documentation.
 
