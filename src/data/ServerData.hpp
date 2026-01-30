@@ -53,7 +53,7 @@ class ServerData {
     std::vector<std::string> _availableLanguages;
     std::string _defaultLanguage;
     BasicAuth _basicAuth;
-    LogLevel _logLevel = LogLevel::INFO;  // Default log level
+    LogLevel _logLevel = LogLevel::ERROR;  // Default log level
 
     /**
      * Check if a path matches a wildcard pattern
