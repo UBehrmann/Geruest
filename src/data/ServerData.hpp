@@ -26,18 +26,18 @@ namespace geruest {
 
 /**
  * Log level enumeration for filtering log output
- * NONE: No logging
- * ERROR: Only errors
- * WARN: Errors and warnings
- * INFO: Errors, warnings, and informational messages
- * DEBUG: All messages including debug information
+ * None: No logging
+ * Error: Only errors
+ * Warning: Errors and warnings
+ * Info: Errors, warnings, and informational messages
+ * Debug: All messages including debug information
  */
 enum class LogLevel {
-    NONE = 0,
-    ERROR = 1,
-    WARN = 2,
-    INFO = 3,
-    DEBUG = 4
+    None = 0,
+    Error = 1,
+    Warning = 2,
+    Info = 3,
+    Debug = 4
 };
 
 using RouteHandler = std::function<HTTPResponse(const HTTPRequest&)>;
@@ -53,7 +53,7 @@ class ServerData {
     std::vector<std::string> _availableLanguages;
     std::string _defaultLanguage;
     BasicAuth _basicAuth;
-    LogLevel _logLevel = LogLevel::ERROR;  // Default log level
+    LogLevel _logLevel = LogLevel::Error;  // Default log level
 
     /**
      * Check if a path matches a wildcard pattern

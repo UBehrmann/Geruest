@@ -72,7 +72,7 @@ private:
 
 	bool sendSocket(const char *bufferToSend, size_t size) const;
 
-	void sendToLogger(const std::string &message, LogLevel level = LogLevel::INFO) const;
+	void sendToLogger(const std::string &message, LogLevel level = LogLevel::Info) const;
 
 	void sendToLoggerPages(const std::string &message) const;
 

@@ -63,13 +63,13 @@ bool Handler::readSocket(char* bufferToUse, size_t size) {
 #else
         if (errno == EWOULDBLOCK || errno == EAGAIN) {
 #endif
-            sendToLogger("Timeout for receiving data.", LogLevel::WARN);
+            sendToLogger("Timeout for receiving data.", LogLevel::Warning);
             idling++;
             if (idling > 2) {
                 std::cout << "Client is idling too long. Closing connection." << std::endl;
             }
         }
-        sendToLogger("Error reading from socket.", LogLevel::WARN);
+        sendToLogger("Error reading from socket.", LogLevel::Warning);
     } else {
         return true;
     }
@@ -111,22 +111,22 @@ void Handler::sendToLogger(const std::string& message, LogLevel level) const {
     }
 }
 void Handler::sendToLoggerPages(const std::string& message) const {
-    if (serverData.shouldLog(LogLevel::INFO)) {
+    if (serverData.shouldLog(LogLevel::Info)) {
         std::cout << "Page Log: " << message << " from " << IP << std::endl;
     }
 }
 void Handler::sendToLoggerAPI(const std::string& message) const {
-    if (serverData.shouldLog(LogLevel::INFO)) {
+    if (serverData.shouldLog(LogLevel::Info)) {
         std::cout << "API Log: " << message << " from " << IP << std::endl;
     }
 }
 void Handler::sendToLoggerUser(const std::string& message) const {
-    if (serverData.shouldLog(LogLevel::INFO)) {
+    if (serverData.shouldLog(LogLevel::Info)) {
         std::cout << "User Log: " << message << " from " << IP << std::endl;
     }
 }
 void Handler::sendToLoggerError(const std::string& message) const {
-    if (serverData.shouldLog(LogLevel::ERROR)) {
+    if (serverData.shouldLog(LogLevel::Error)) {
         std::cerr << "Error Log: " << message << " from " << IP << std::endl;
     }
 }

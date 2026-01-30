@@ -164,15 +164,15 @@ void Geruest::clearProtectedPages() {
 void Geruest::setLogLevel(LogLevel level) {
     serverData.setLogLevel(level);
     
-    // Only log the change if we're at INFO level or higher
-    if (serverData.shouldLog(LogLevel::INFO)) {
+    // Only log the change if we're at Info level or higher
+    if (serverData.shouldLog(LogLevel::Info)) {
         std::string levelStr;
         switch (level) {
-            case LogLevel::NONE: levelStr = "NONE"; break;
-            case LogLevel::ERROR: levelStr = "ERROR"; break;
-            case LogLevel::WARN: levelStr = "WARN"; break;
-            case LogLevel::INFO: levelStr = "INFO"; break;
-            case LogLevel::DEBUG: levelStr = "DEBUG"; break;
+            case LogLevel::None: levelStr = "None"; break;
+            case LogLevel::Error: levelStr = "Error"; break;
+            case LogLevel::Warning: levelStr = "Warning"; break;
+            case LogLevel::Info: levelStr = "Info"; break;
+            case LogLevel::Debug: levelStr = "Debug"; break;
         }
         sendToLogger("Log level set to: " + levelStr);
     }
@@ -439,13 +439,13 @@ void Geruest::workerThread() {
 }
 
 void Geruest::sendToLogger(const std::string& message) const {
-    if (serverData.shouldLog(LogLevel::INFO)) {
+    if (serverData.shouldLog(LogLevel::Info)) {
         std::cout << message << std::endl;
     }
 }
 
 void Geruest::sendToLoggerError(const std::string& message) const {
-    if (serverData.shouldLog(LogLevel::ERROR)) {
+    if (serverData.shouldLog(LogLevel::Error)) {
         std::cerr << "Error: " << message << std::endl;
     }
 }
