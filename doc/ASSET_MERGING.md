@@ -357,7 +357,75 @@ Asset merging preserves the order of files as they appear in the HTML. Ensure de
 <script src="/assets/js/main.js"></script>
 ```
 
-### 4. Development vs. Production
+### 4. JavaScript Scope Management
+
+⚠️ **IMPORTANT**: JavaScript files are directly concatenated **without scope isolation**. All variables and functions share the global scope, which can cause conflicts if multiple files define the same names.
+
+**Potential Issues**:
+```javascript
+// file1.js
+var config = { debug: true };
+function init() { console.log('File 1'); }
+
+// file2.js
+var config = { debug: false };  // ❌ Overwrites file1's config!
+function init() { console.log('File 2'); }  // ❌ Overwrites file1's init()
+```
+
+**Recommended Solutions**:
+
+#### Option 1: Use ES6 Modules (if supported by your target browsers)
+```javascript
+// module1.js
+export const config = { debug: true };
+export function init() { console.log('Module 1'); }
+
+// module2.js
+import { config as config1 } from './module1.js';
+export const config = { debug: false };
+```
+
+#### Option 2: Use Namespacing Pattern
+```javascript
+// file1.js
+var MyApp = MyApp || {};
+MyApp.config = { debug: true };
+MyApp.init = function() { console.log('App initialized'); };
+
+// file2.js
+var MyApp = MyApp || {};
+MyApp.utils = {
+    helper: function() { /* ... */ }
+};
+```
+
+#### Option 3: Wrap Individual Files in IIFEs Manually
+```javascript
+// file1.js
+(function() {
+    var config = { debug: true };  // Local scope
+    function init() { console.log('File 1'); }
+    
+    // Only expose what's needed
+    window.MyApp = window.MyApp || {};
+    window.MyApp.init = init;
+})();
+```
+
+#### Option 4: Use Unique Prefixes
+```javascript
+// file1.js
+var file1_config = { debug: true };
+function file1_init() { console.log('File 1'); }
+
+// file2.js
+var file2_config = { debug: false };
+function file2_init() { console.log('File 2'); }
+```
+
+**Best Practice**: Design your JavaScript architecture with merging in mind from the start. Use consistent namespacing or module patterns throughout your codebase.
+
+### 5. Development vs. Production
 
 **Development** (merging disabled):
 - Easier debugging with separate files
@@ -369,7 +437,7 @@ Asset merging preserves the order of files as they appear in the HTML. Ensure de
 - Better performance
 - Smaller total transfer size (if compression enabled)
 
-### 5. Testing Both Modes
+### 6. Testing Both Modes
 
 Always test your application with **both merging enabled and disabled** to ensure path compatibility:
 
@@ -419,13 +487,15 @@ Always test your application with **both merging enabled and disabled** to ensur
 struct MergeResult {
     std::string modifiedHtml;    // HTML with merged references
     std::string mergedCss;       // Concatenated CSS content
-    std::string mergedJs;        // Concatenated JS content
+    std::string mergedJs;        // Concatenated JS content (no IIFE wrapping)
     bool hasCss;                 // Has CSS files to merge
     bool hasJs;                  // Has JS files to merge
     std::string cssSubdir;       // Detected CSS subdirectory
     std::string jsSubdir;        // Detected JS subdirectory
 };
 ```
+
+**Note**: JavaScript files are directly concatenated without automatic scope isolation. See the "JavaScript Scope Management" section in Best Practices for handling scope conflicts.
 
 ### Regex Patterns
 
@@ -501,6 +571,7 @@ Now the browser knows it's absolute:
 2. **No Source Maps**: Original file boundaries are not preserved
 3. **Static Analysis**: Only processes files referenced in HTML at build time
 4. **Comment Handling**: HTML comments are removed by default (configurable)
+5. **No Automatic Scope Isolation**: JavaScript files are concatenated directly without IIFE wrapping - developers must manage scope conflicts manually (see Best Practices)
 
 ### Future Enhancements
 
