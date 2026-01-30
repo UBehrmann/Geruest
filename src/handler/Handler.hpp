@@ -72,13 +72,15 @@ private:
 
 	bool sendSocket(const char *bufferToSend, size_t size) const;
 
-	void sendToLogger(const std::string &message) const;
+	void sendToLogger(const std::string &message, LogLevel level = LogLevel::Info) const;
 
 	void sendToLoggerPages(const std::string &message) const;
 
 	void sendToLoggerAPI(const std::string &message) const;
 
 	void sendToLoggerUser(const std::string &message) const;
+
+	void sendToLoggerError(const std::string &message) const;
 
 	void handleRequest(HTTPRequest *request);
 
@@ -109,8 +111,6 @@ public:
 	~Handler();
 
 	void run();
-
-	void sendToLoggerError(const std::string &message) const;
 };
 
 }  // namespace geruest

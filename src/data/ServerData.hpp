@@ -11,6 +11,7 @@
 #define GERUEST_SERVERDATA_HPP
 
 #include <algorithm>
+#include <atomic>
 #include <functional>
 #include <optional>
 #include <string>
@@ -23,6 +24,22 @@
 #include "../auth/BasicAuth.hpp"
 
 namespace geruest {
+
+/**
+ * Log level enumeration for filtering log output
+ * None: No logging
+ * Error: Only errors
+ * Warning: Errors and warnings
+ * Info: Errors, warnings, and informational messages
+ * Debug: All messages including debug information
+ */
+enum class LogLevel {
+    None = 0,
+    Error = 1,
+    Warning = 2,
+    Info = 3,
+    Debug = 4
+};
 
 using RouteHandler = std::function<HTTPResponse(const HTTPRequest&)>;
 
@@ -37,6 +54,7 @@ class ServerData {
     std::vector<std::string> _availableLanguages;
     std::string _defaultLanguage;
     BasicAuth _basicAuth;
+    std::atomic<LogLevel> _logLevel{LogLevel::Error};  // Thread-safe log level (can be changed at runtime)
 
     /**
      * Check if a path matches a wildcard pattern
@@ -99,6 +117,34 @@ class ServerData {
 
    public:
     ServerData() = default;
+
+    // Custom copy constructor needed because std::atomic is not copyable
+    ServerData(const ServerData& other)
+        : _routes(other._routes),
+          _wildcardRoutes(other._wildcardRoutes),
+          _root(other._root),
+          _removeComments(other._removeComments),
+          _mergeAssets(other._mergeAssets),
+          _availableLanguages(other._availableLanguages),
+          _defaultLanguage(other._defaultLanguage),
+          _basicAuth(other._basicAuth),
+          _logLevel(other._logLevel.load(std::memory_order_relaxed)) {}
+
+    // Custom copy assignment operator needed because std::atomic is not copyable
+    ServerData& operator=(const ServerData& other) {
+        if (this != &other) {
+            _routes = other._routes;
+            _wildcardRoutes = other._wildcardRoutes;
+            _root = other._root;
+            _removeComments = other._removeComments;
+            _mergeAssets = other._mergeAssets;
+            _availableLanguages = other._availableLanguages;
+            _defaultLanguage = other._defaultLanguage;
+            _basicAuth = other._basicAuth;
+            _logLevel.store(other._logLevel.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        }
+        return *this;
+    }
 
     ServerData(const std::unordered_map<std::string, RouteHandler>& routes, std::string root)
         : _routes(routes), _root(std::move(root)) {}
@@ -223,6 +269,30 @@ class ServerData {
      * @return Const reference to BasicAuth instance
      */
     const BasicAuth& getBasicAuth() const { return _basicAuth; }
+
+    /**
+     * Set the log level for filtering log output
+     * @param level LogLevel enum value (None, Error, Warning, Info, Debug)
+     * @note Thread-safe - can be called from any thread at runtime
+     */
+    void setLogLevel(LogLevel level) { _logLevel.store(level, std::memory_order_relaxed); }
+
+    /**
+     * Get the current log level
+     * @return Current LogLevel
+     * @note Thread-safe
+     */
+    LogLevel getLogLevel() const { return _logLevel.load(std::memory_order_relaxed); }
+
+    /**
+     * Check if a message at the given level should be logged
+     * @param level The level of the message to check
+     * @return true if the message should be logged based on current log level
+     * @note Thread-safe - called from multiple handler threads
+     */
+    bool shouldLog(LogLevel level) const {
+        return static_cast<int>(level) <= static_cast<int>(_logLevel.load(std::memory_order_relaxed));
+    }
 };
 
 }  // namespace geruest

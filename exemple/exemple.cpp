@@ -43,6 +43,30 @@ int main(int argc, char* argv[]) {
     server->setHostname(HOSTNAME);
     
     // ============================================================
+    // LOG LEVEL CONFIGURATION (can be changed anytime)
+    // ============================================================
+    
+    // Configure log level to control verbosity
+    // Levels: None < Error (framework default) < Warning < Info < Debug
+    
+    // Recommended for production/Docker to filter out timeout spam:
+    server->setLogLevel(LogLevel::Warning);
+    
+    // Other options:
+    // server->setLogLevel(LogLevel::None);     // Silent mode
+    // server->setLogLevel(LogLevel::Error);    // Only errors (default if not set)
+    // server->setLogLevel(LogLevel::Info);     // All normal logs (info and above)
+    // server->setLogLevel(LogLevel::Debug);    // Verbose debugging
+    
+    std::cout << "\n=== Log Level Configuration ===" << std::endl;
+    std::cout << "Log level: Warning (filters out timeout/connection noise)" << std::endl;
+    std::cout << "  ✓ Errors: YES" << std::endl;
+    std::cout << "  ✓ Warnings: YES" << std::endl;
+    std::cout << "  ✗ Info messages: NO (filtered)" << std::endl;
+    std::cout << "  ✗ Debug messages: NO (filtered)" << std::endl;
+    std::cout << "================================\n" << std::endl;
+    
+    // ============================================================
     // THREAD POOL CONFIGURATION (must be called before init/start)
     // ============================================================
     

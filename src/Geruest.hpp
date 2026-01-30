@@ -171,6 +171,28 @@ class Geruest {
      */
     void clearProtectedPages();
 
+    // ========== Logging Configuration Methods ==========
+
+    /**
+     * @brief Set the log level for filtering log output
+     * @param level LogLevel enum value (None, Error, Warning, Info, Debug)
+     * @note Default is Error. Set before init() or during runtime
+     * 
+     * Levels:
+     * - None: No logging
+     * - Error: Only critical errors (default)
+     * - Warning: Errors and warnings (recommended for production)
+     * - Info: Errors, warnings, and informational messages
+     * - Debug: All messages including verbose debug information
+     */
+    void setLogLevel(LogLevel level);
+
+    /**
+     * @brief Get the current log level
+     * @return Current LogLevel
+     */
+    LogLevel getLogLevel() const;
+
     /*
      * Initializes the server, sets up the socket, binds it to the address and port,
      * and prepares it to listen for incoming connections.
