@@ -242,8 +242,8 @@ std::string AssetMerger::mergeJsFiles(const std::vector<std::string>& jsFiles) {
                 content = removeJsComments(content);
             }
             
-            // Add IIFE wrapper to prevent global scope pollution between files
-            merged += "(function() {\n" + content + "\n})();\n\n";
+            // Simply concatenate files without wrapper
+            merged += content + "\n\n";
         }
     }
     
