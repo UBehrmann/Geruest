@@ -176,13 +176,13 @@ class Geruest {
     /**
      * @brief Set the log level for filtering log output
      * @param level LogLevel enum value (None, Error, Warning, Info, Debug)
-     * @note Default is Info. Set before init() or during runtime
+     * @note Default is Error. Set before init() or during runtime
      * 
      * Levels:
      * - None: No logging
-     * - Error: Only critical errors
+     * - Error: Only critical errors (default)
      * - Warning: Errors and warnings (recommended for production)
-     * - Info: Errors, warnings, and informational messages (default)
+     * - Info: Errors, warnings, and informational messages
      * - Debug: All messages including verbose debug information
      */
     void setLogLevel(LogLevel level);
