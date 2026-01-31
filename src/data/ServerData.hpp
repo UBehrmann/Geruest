@@ -126,6 +126,7 @@ class ServerData {
           _root(other._root),
           _removeComments(other._removeComments),
           _mergeAssets(other._mergeAssets),
+          _devMode(other._devMode),
           _availableLanguages(other._availableLanguages),
           _defaultLanguage(other._defaultLanguage),
           _basicAuth(other._basicAuth),
@@ -139,6 +140,7 @@ class ServerData {
             _root = other._root;
             _removeComments = other._removeComments;
             _mergeAssets = other._mergeAssets;
+            _devMode = other._devMode;
             _availableLanguages = other._availableLanguages;
             _defaultLanguage = other._defaultLanguage;
             _basicAuth = other._basicAuth;

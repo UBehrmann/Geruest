@@ -16,10 +16,14 @@
 
 namespace geruest {
 
+// Initialize static members
+std::unordered_map<std::string, std::string> HtmlBuilder::_mergedAssetsCache;
+std::mutex HtmlBuilder::_cacheMutex;
+
 HtmlBuilder::HtmlBuilder(const std::string& inputPath, const std::string& inputServerRoot, bool removeCommentsFlag,
-                         const std::vector<std::string>& languages, bool mergeAssets, bool devMode)
-    : ContentBuilder(inputPath, inputServerRoot, removeCommentsFlag, languages, devMode), 
-      _mergeAssets(mergeAssets), _devMode(devMode) {
+                         const std::vector<std::string>& languages, bool mergeAssets, bool devModeFlag)
+    : ContentBuilder(inputPath, inputServerRoot, removeCommentsFlag, languages, devModeFlag), 
+      _mergeAssets(mergeAssets), _devMode(devModeFlag) {
     buildHtml();
 }
 
@@ -317,25 +321,40 @@ void HtmlBuilder::processAssetMerging(const std::string& pageName) {
     // Update the HTML content with merged asset references
     builtFile = result.modifiedHtml;
     
-    // Save merged files only if NOT in dev mode
-    // In dev mode, merged content is generated but not cached to disk
-    if (!_devMode) {
-        // Save merged CSS file if there are multiple CSS files to merge
+    // In dev mode: Store merged assets in memory cache instead of saving to disk
+    // In production: Save merged assets to disk for performance
+    if (_devMode) {
+        std::lock_guard<std::mutex> lock(_cacheMutex);
+        
+        // Store merged CSS in cache
+        if (result.hasCss && !result.mergedCss.empty()) {
+            std::string cssPath = result.cssSubdir.empty() ?
+                "/assets/css/" + pageName + ".css" :
+                "/assets/css/" + result.cssSubdir + "/" + pageName + ".css";
+            _mergedAssetsCache[cssPath] = result.mergedCss;
+        }
+        
+        // Store merged JS in cache
+        if (result.hasJs && !result.mergedJs.empty()) {
+            std::string jsPath = result.jsSubdir.empty() ?
+                "/assets/js/" + pageName + ".js" :
+                "/assets/js/" + result.jsSubdir + "/" + pageName + ".js";
+            _mergedAssetsCache[jsPath] = result.mergedJs;
+        }
+    } else {
+        // Production mode: Save to disk
         if (result.hasCss && !result.mergedCss.empty()) {
             std::string cssPath = result.cssSubdir.empty() ?
                 root + "/assets/css/" + pageName + ".css" :
                 root + "/assets/css/" + result.cssSubdir + "/" + pageName + ".css";
             FileManagement::saveFile(cssPath, result.mergedCss);
-            // Note: If save fails, merged content is still in memory
         }
         
-        // Save merged JS file if there are multiple JS files to merge
         if (result.hasJs && !result.mergedJs.empty()) {
             std::string jsPath = result.jsSubdir.empty() ?
                 root + "/assets/js/" + pageName + ".js" :
                 root + "/assets/js/" + result.jsSubdir + "/" + pageName + ".js";
             FileManagement::saveFile(jsPath, result.mergedJs);
-            // Note: If save fails, merged content is still in memory
         }
     }
 }
@@ -393,6 +412,20 @@ void HtmlBuilder::ensureAbsoluteAssetPaths() {
     }
     result += std::string(searchStart, builtFile.cend());
     builtFile = result;
+}
+
+std::string HtmlBuilder::getMergedAssetFromCache(const std::string& path) {
+    std::lock_guard<std::mutex> lock(_cacheMutex);
+    auto it = _mergedAssetsCache.find(path);
+    if (it != _mergedAssetsCache.end()) {
+        return it->second;
+    }
+    return "";
+}
+
+bool HtmlBuilder::hasMergedAssetInCache(const std::string& path) {
+    std::lock_guard<std::mutex> lock(_cacheMutex);
+    return _mergedAssetsCache.find(path) != _mergedAssetsCache.end();
 }
 
 }  // namespace geruest

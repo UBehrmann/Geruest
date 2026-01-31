@@ -23,7 +23,7 @@ class CSSBuilder : public ContentBuilder {
  public:
 
   CSSBuilder(const std::string &inputPath, const std::string &inputServerRoot, 
-             bool removeCommentsFlag = true, bool mergeAssets = false);
+             bool removeCommentsFlag = true, bool mergeAssets = false, bool devModeFlag = false);
 
  private:
 
