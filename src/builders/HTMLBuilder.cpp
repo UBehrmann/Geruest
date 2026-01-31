@@ -17,8 +17,9 @@
 namespace geruest {
 
 HtmlBuilder::HtmlBuilder(const std::string& inputPath, const std::string& inputServerRoot, bool removeCommentsFlag,
-                         const std::vector<std::string>& languages, bool mergeAssets)
-    : ContentBuilder(inputPath, inputServerRoot, removeCommentsFlag, languages), _mergeAssets(mergeAssets) {
+                         const std::vector<std::string>& languages, bool mergeAssets, bool devMode)
+    : ContentBuilder(inputPath, inputServerRoot, removeCommentsFlag, languages, devMode), 
+      _mergeAssets(mergeAssets), _devMode(devMode) {
     buildHtml();
 }
 
@@ -121,11 +122,13 @@ void HtmlBuilder::buildHtml() {
         // Change references to the correct path
         replaceReferences(language);
 
-        // Save the file
-        if (!FileManagement::saveFile(path, builtFile)) {
-            // Error saving file
-            builtFile = "";
+        // Save the file only if NOT in dev mode
+        // In dev mode, files are kept in memory only for faster iteration
+        if (!_devMode) {
+            FileManagement::saveFile(path, builtFile);
+            // Note: If save fails, content is still in builtFile for serving
         }
+        // If in dev mode, content stays in builtFile for serving without disk writes
     }
 }
 
@@ -314,20 +317,26 @@ void HtmlBuilder::processAssetMerging(const std::string& pageName) {
     // Update the HTML content with merged asset references
     builtFile = result.modifiedHtml;
     
-    // Save merged CSS file if there are multiple CSS files to merge
-    if (result.hasCss && !result.mergedCss.empty()) {
-        std::string cssPath = result.cssSubdir.empty() ?
-            root + "/assets/css/" + pageName + ".css" :
-            root + "/assets/css/" + result.cssSubdir + "/" + pageName + ".css";
-        FileManagement::saveFile(cssPath, result.mergedCss);
-    }
-    
-    // Save merged JS file if there are multiple JS files to merge
-    if (result.hasJs && !result.mergedJs.empty()) {
-        std::string jsPath = result.jsSubdir.empty() ?
-            root + "/assets/js/" + pageName + ".js" :
-            root + "/assets/js/" + result.jsSubdir + "/" + pageName + ".js";
-        FileManagement::saveFile(jsPath, result.mergedJs);
+    // Save merged files only if NOT in dev mode
+    // In dev mode, merged content is generated but not cached to disk
+    if (!_devMode) {
+        // Save merged CSS file if there are multiple CSS files to merge
+        if (result.hasCss && !result.mergedCss.empty()) {
+            std::string cssPath = result.cssSubdir.empty() ?
+                root + "/assets/css/" + pageName + ".css" :
+                root + "/assets/css/" + result.cssSubdir + "/" + pageName + ".css";
+            FileManagement::saveFile(cssPath, result.mergedCss);
+            // Note: If save fails, merged content is still in memory
+        }
+        
+        // Save merged JS file if there are multiple JS files to merge
+        if (result.hasJs && !result.mergedJs.empty()) {
+            std::string jsPath = result.jsSubdir.empty() ?
+                root + "/assets/js/" + pageName + ".js" :
+                root + "/assets/js/" + result.jsSubdir + "/" + pageName + ".js";
+            FileManagement::saveFile(jsPath, result.mergedJs);
+            // Note: If save fails, merged content is still in memory
+        }
     }
 }
 

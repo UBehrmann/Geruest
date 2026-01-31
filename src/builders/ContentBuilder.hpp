@@ -22,7 +22,8 @@ class ContentBuilder {
 public:
 
     ContentBuilder(const std::string &inputPath, const std::string &inputServerRoot, 
-                   bool removeCommentsFlag = true, const std::vector<std::string>& languages = {});
+                   bool removeCommentsFlag = true, const std::vector<std::string>& languages = {},
+                   bool devMode = false);
 
     [[nodiscard]] std::string sizeString() const;
 
@@ -42,6 +43,7 @@ protected:
     std::string path;
 
     const bool removeComments;
+    const bool devMode;
     const std::vector<std::string> availableLanguages;
 
     /**

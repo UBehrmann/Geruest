@@ -51,6 +51,7 @@ class ServerData {
     std::string _root;
     bool _removeComments = true;    // Remove comments from built files
     bool _mergeAssets = false;      // Automatic CSS/JS merging per page
+    bool _devMode = false;          // Development mode (no file caching, verbose logging)
     std::vector<std::string> _availableLanguages;
     std::string _defaultLanguage;
     BasicAuth _basicAuth;
@@ -218,6 +219,29 @@ class ServerData {
      * @return true if asset merging is enabled
      */
     bool getMergeAssets() const { return _mergeAssets; }
+
+    /**
+     * Enable development mode
+     * When enabled:
+     * - Log level is automatically set to Debug (all logs shown)
+     * - Files are generated in-memory only (not saved to disk)
+     * - Comments are kept (easier debugging)
+     * - Asset merging setting is preserved (can be enabled or disabled separately)
+     * This is useful during development when HTML/CSS/JS change frequently
+     * @note Should be disabled in production for better performance
+     */
+    void enableDevMode() {
+        _devMode = true;
+        setLogLevel(LogLevel::Debug);  // Show all logs
+        _removeComments = false;       // Keep comments for easier debugging
+        // Note: Asset merging is NOT disabled - user can control it separately
+    }
+
+    /**
+     * Check if development mode is enabled
+     * @return true if dev mode is active
+     */
+    bool isDevMode() const { return _devMode; }
 
     /**
      * Set available languages for the server

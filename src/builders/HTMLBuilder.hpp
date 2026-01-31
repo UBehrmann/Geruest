@@ -25,10 +25,11 @@ namespace geruest {
 class HtmlBuilder : public ContentBuilder {
    public:
     HtmlBuilder(const std::string& inputPath, const std::string& inputServerRoot, bool removeCommentsFlag = true,
-                const std::vector<std::string>& languages = {}, bool mergeAssets = false);
+                const std::vector<std::string>& languages = {}, bool mergeAssets = false, bool devMode = false);
 
    private:
     bool _mergeAssets;
+    bool _devMode;
 
     void buildHtml();
 

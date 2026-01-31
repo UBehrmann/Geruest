@@ -269,7 +269,7 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
             }
 
             contentBuilder = std::make_unique<HtmlBuilder>(contentPath, serverData.getRoot(), serverData.getRemoveComments(),
-                                             serverData.getAvailableLanguages(), serverData.getMergeAssets());
+                                             serverData.getAvailableLanguages(), serverData.getMergeAssets(), serverData.isDevMode());
 
         } else if (contentType == "text/javascript") {
             contentBuilder = std::make_unique<JSBuilder>(contentPath, serverData.getRoot(), serverData.getRemoveComments(),

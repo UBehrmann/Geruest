@@ -24,6 +24,10 @@ Welcome to the Geruest documentation! This guide will help you get started with 
 
 - [**Basic Authentication**](BASIC_AUTH.md) - HTTP Basic Auth for protected pages
 
+### Development
+
+- [**Development Mode**](DEV_MODE.md) - Verbose logging and no-cache mode for rapid development
+
 ### Contributing
 
 - [**Contributing Guide**](CONTRIBUTING.md) - Development setup, code style, testing
@@ -68,6 +72,7 @@ int main() {
 | **Components** | Reusable HTML includes | [HTML Injections](HTML_INJECTIONS.md) |
 | **Translations** | JSON-based i18n | [Translations](TRANSLATIONS.md) |
 | **Basic Auth** | HTTP authentication | [Basic Auth](BASIC_AUTH.md) |
+| **Dev Mode** | Verbose logs, no file caching | [Dev Mode](DEV_MODE.md) |
 | **JSON Parser** | Built-in JSON handling | [Data Classes](DATA_CLASSES.md#jsonparser) |
 
 ## Requirements
