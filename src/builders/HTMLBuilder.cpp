@@ -16,9 +16,14 @@
 
 namespace geruest {
 
+// Initialize static members
+std::unordered_map<std::string, std::string> HtmlBuilder::_mergedAssetsCache;
+std::mutex HtmlBuilder::_cacheMutex;
+
 HtmlBuilder::HtmlBuilder(const std::string& inputPath, const std::string& inputServerRoot, bool removeCommentsFlag,
-                         const std::vector<std::string>& languages, bool mergeAssets)
-    : ContentBuilder(inputPath, inputServerRoot, removeCommentsFlag, languages), _mergeAssets(mergeAssets) {
+                         const std::vector<std::string>& languages, bool mergeAssets, bool devModeFlag)
+    : ContentBuilder(inputPath, inputServerRoot, removeCommentsFlag, languages, devModeFlag), 
+      _mergeAssets(mergeAssets), _devMode(devModeFlag) {
     buildHtml();
 }
 
@@ -121,11 +126,13 @@ void HtmlBuilder::buildHtml() {
         // Change references to the correct path
         replaceReferences(language);
 
-        // Save the file
-        if (!FileManagement::saveFile(path, builtFile)) {
-            // Error saving file
-            builtFile = "";
+        // Save the file only if NOT in dev mode
+        // In dev mode, files are kept in memory only for faster iteration
+        if (!_devMode) {
+            FileManagement::saveFile(path, builtFile);
+            // Note: If save fails, content is still in builtFile for serving
         }
+        // If in dev mode, content stays in builtFile for serving without disk writes
     }
 }
 
@@ -190,7 +197,14 @@ void HtmlBuilder::replaceTranslations(const std::string& language) {
         if (endPos == std::string::npos) break;
 
         std::string keyword = builtFile.substr(startPos, endPos - startPos);
-        std::string pathToInsert = root + keyword.substr(1);  // remove the '[' character
+        std::string keywordPath = keyword.substr(1);  // remove the '[' character
+        
+        // Ensure the path starts with '/'
+        if (!keywordPath.empty() && keywordPath[0] != '/') {
+            keywordPath = "/" + keywordPath;
+        }
+        
+        std::string pathToInsert = root + keywordPath;
 
         // path_to_json:element
         std::string pathToJSON = pathToInsert.substr(0, pathToInsert.rfind(':'));
@@ -235,22 +249,32 @@ void HtmlBuilder::replaceReferences(const std::string& language) {
         if (endQuote != std::string::npos) {
             std::string href = builtFile.substr(start, endQuote - start);
             
-            // Skip if it's a CSS file, /assets/ path, or already has language prefix
+            // Skip if it's a CSS file or /assets/ path
             if (href.find(".css") != std::string::npos || 
-                href.compare(0, 7, "assets/") == 0 ||
-                href.compare(0, language.length() + 1, language + "/") == 0) {
+                href.compare(0, 7, "assets/") == 0) {
+                pos = endQuote;
+                continue;
+            }
+            
+            // Check if it already starts with any supported language
+            bool hasLanguagePrefix = false;
+            for (const auto& lang : availableLanguages) {
+                if (href.compare(0, lang.length() + 1, lang + "/") == 0 ||
+                    href == lang) {  // Also check if href is exactly the language (e.g., href="/de")
+                    hasLanguagePrefix = true;
+                    break;
+                }
+            }
+            
+            if (hasLanguagePrefix) {
                 pos = endQuote;
                 continue;
             }
         }
 
-        // Skip if it already starts with the language
-        if (builtFile.compare(start, language.length() + 1, language + "/") != 0) {
-            builtFile.insert(start, language + "/");
-            pos = start + language.length() + 1;  // Move past inserted /lang/
-        } else {
-            pos = start + language.length() + 1;  // Already has /lang/, skip
-        }
+        // Add language prefix if it doesn't have one already
+        builtFile.insert(start, language + "/");
+        pos = start + language.length() + 1;  // Move past inserted /lang/
     }
     
     // Process src="/" attributes (for scripts, images, etc.)
@@ -265,7 +289,7 @@ void HtmlBuilder::replaceReferences(const std::string& language) {
         if (endQuote != std::string::npos) {
             std::string src = builtFile.substr(start, endQuote - start);
             
-            // Skip if it's a JS file, image file, /assets/ path, or already has language prefix
+            // Skip if it's a JS file, image file, or /assets/ path
             if (src.find(".js") != std::string::npos || 
                 src.find(".png") != std::string::npos ||
                 src.find(".jpg") != std::string::npos ||
@@ -274,20 +298,30 @@ void HtmlBuilder::replaceReferences(const std::string& language) {
                 src.find(".svg") != std::string::npos ||
                 src.find(".webp") != std::string::npos ||
                 src.find(".ico") != std::string::npos ||
-                src.compare(0, 7, "assets/") == 0 ||
-                src.compare(0, language.length() + 1, language + "/") == 0) {
+                src.compare(0, 7, "assets/") == 0) {
+                pos = endQuote;
+                continue;
+            }
+            
+            // Check if it already starts with any supported language
+            bool hasLanguagePrefix = false;
+            for (const auto& lang : availableLanguages) {
+                if (src.compare(0, lang.length() + 1, lang + "/") == 0 ||
+                    src == lang) {  // Also check if src is exactly the language
+                    hasLanguagePrefix = true;
+                    break;
+                }
+            }
+            
+            if (hasLanguagePrefix) {
                 pos = endQuote;
                 continue;
             }
         }
 
-        // Skip if it already starts with the language
-        if (builtFile.compare(start, language.length() + 1, language + "/") != 0) {
-            builtFile.insert(start, language + "/");
-            pos = start + language.length() + 1;  // Move past inserted /lang/
-        } else {
-            pos = start + language.length() + 1;  // Already has /lang/, skip
-        }
+        // Add language prefix if it doesn't have one already
+        builtFile.insert(start, language + "/");
+        pos = start + language.length() + 1;  // Move past inserted /lang/
     }
 }
 
@@ -314,20 +348,41 @@ void HtmlBuilder::processAssetMerging(const std::string& pageName) {
     // Update the HTML content with merged asset references
     builtFile = result.modifiedHtml;
     
-    // Save merged CSS file if there are multiple CSS files to merge
-    if (result.hasCss && !result.mergedCss.empty()) {
-        std::string cssPath = result.cssSubdir.empty() ?
-            root + "/assets/css/" + pageName + ".css" :
-            root + "/assets/css/" + result.cssSubdir + "/" + pageName + ".css";
-        FileManagement::saveFile(cssPath, result.mergedCss);
-    }
-    
-    // Save merged JS file if there are multiple JS files to merge
-    if (result.hasJs && !result.mergedJs.empty()) {
-        std::string jsPath = result.jsSubdir.empty() ?
-            root + "/assets/js/" + pageName + ".js" :
-            root + "/assets/js/" + result.jsSubdir + "/" + pageName + ".js";
-        FileManagement::saveFile(jsPath, result.mergedJs);
+    // In dev mode: Store merged assets in memory cache instead of saving to disk
+    // In production: Save merged assets to disk for performance
+    if (_devMode) {
+        std::lock_guard<std::mutex> lock(_cacheMutex);
+        
+        // Store merged CSS in cache
+        if (result.hasCss && !result.mergedCss.empty()) {
+            std::string cssPath = result.cssSubdir.empty() ?
+                "/assets/css/" + pageName + ".css" :
+                "/assets/css/" + result.cssSubdir + "/" + pageName + ".css";
+            _mergedAssetsCache[cssPath] = result.mergedCss;
+        }
+        
+        // Store merged JS in cache
+        if (result.hasJs && !result.mergedJs.empty()) {
+            std::string jsPath = result.jsSubdir.empty() ?
+                "/assets/js/" + pageName + ".js" :
+                "/assets/js/" + result.jsSubdir + "/" + pageName + ".js";
+            _mergedAssetsCache[jsPath] = result.mergedJs;
+        }
+    } else {
+        // Production mode: Save to disk
+        if (result.hasCss && !result.mergedCss.empty()) {
+            std::string cssPath = result.cssSubdir.empty() ?
+                root + "/assets/css/" + pageName + ".css" :
+                root + "/assets/css/" + result.cssSubdir + "/" + pageName + ".css";
+            FileManagement::saveFile(cssPath, result.mergedCss);
+        }
+        
+        if (result.hasJs && !result.mergedJs.empty()) {
+            std::string jsPath = result.jsSubdir.empty() ?
+                root + "/assets/js/" + pageName + ".js" :
+                root + "/assets/js/" + result.jsSubdir + "/" + pageName + ".js";
+            FileManagement::saveFile(jsPath, result.mergedJs);
+        }
     }
 }
 
@@ -384,6 +439,20 @@ void HtmlBuilder::ensureAbsoluteAssetPaths() {
     }
     result += std::string(searchStart, builtFile.cend());
     builtFile = result;
+}
+
+std::string HtmlBuilder::getMergedAssetFromCache(const std::string& path) {
+    std::lock_guard<std::mutex> lock(_cacheMutex);
+    auto it = _mergedAssetsCache.find(path);
+    if (it != _mergedAssetsCache.end()) {
+        return it->second;
+    }
+    return "";
+}
+
+bool HtmlBuilder::hasMergedAssetInCache(const std::string& path) {
+    std::lock_guard<std::mutex> lock(_cacheMutex);
+    return _mergedAssetsCache.find(path) != _mergedAssetsCache.end();
 }
 
 }  // namespace geruest

@@ -94,6 +94,24 @@ class Geruest {
     void setMergeAssets(bool enabled);
 
     /**
+     * @brief Enable development mode for easier debugging and rapid development.
+     * 
+     * When enabled, development mode:
+     * - Sets log level to Debug (shows all logs including verbose information)
+     * - Disables file caching (content generated in-memory only)
+     * - Keeps HTML/CSS/JS comments (easier debugging)
+     * 
+     * This is particularly useful during development when HTML, CSS, and JS files
+     * change frequently, as the generated/merged files won't be saved to disk.
+     * Files are regenerated on each request for immediate feedback.
+     * 
+     * @note Development mode is disabled by default
+     * @note Should be disabled in production for better performance
+     * @note Must be called before init() or start()
+     */
+    void enableDevMode();
+
+    /**
      * @brief Sets the number of worker threads in the thread pool.
      * @param count Number of worker threads (default: CPU cores * 2)
      * @note Must be called before init() or start()

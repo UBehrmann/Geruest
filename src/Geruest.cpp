@@ -79,6 +79,11 @@ void Geruest::setMergeAssets(bool enabled) {
     sendToLogger(std::string("Asset merging ") + (enabled ? "enabled" : "disabled"));
 }
 
+void Geruest::enableDevMode() {
+    serverData.enableDevMode();
+    sendToLogger("Development mode enabled: verbose logging, no file caching, comments preserved");
+}
+
 void Geruest::setWorkerThreadCount(size_t count) {
     if (running || _workersRunning) {
         sendToLoggerError("Cannot change worker thread count while server is running");

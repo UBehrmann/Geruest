@@ -43,6 +43,24 @@ int main(int argc, char* argv[]) {
     server->setHostname(HOSTNAME);
     
     // ============================================================
+    // DEVELOPMENT MODE (optional, call before init/start)
+    // ============================================================
+    
+    // Enable development mode for rapid iteration and debugging
+    // When enabled:
+    // - Log level automatically set to Debug (all logs shown)
+    // - Files generated in-memory only (not saved to disk)
+    // - Comments preserved in HTML/CSS/JS
+    // - Asset merging still works if enabled separately
+    //
+    // Perfect for active development when files change frequently!
+    // Files are regenerated on each request for immediate feedback.
+    // DISABLE in production for better performance.
+    
+    // Uncomment to enable:
+    // server->enableDevMode();
+    
+    // ============================================================
     // LOG LEVEL CONFIGURATION (can be changed anytime)
     // ============================================================
     

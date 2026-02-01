@@ -11,18 +11,34 @@
  */
 
 #include "CSSBuilder.hpp"
+#include "HTMLBuilder.hpp"
 #include <filesystem>
 
 namespace geruest {
 
 CSSBuilder::CSSBuilder(const std::string &inputPath, const std::string &inputServerRoot, 
-                       bool removeCommentsFlag, bool mergeAssets) 
-    : ContentBuilder(inputPath, inputServerRoot, removeCommentsFlag), 
+                       bool removeCommentsFlag, bool mergeAssets, bool devModeFlag) 
+    : ContentBuilder(inputPath, inputServerRoot, removeCommentsFlag, {}, devModeFlag), 
       _mergeAssets(mergeAssets) {
     builCSS();
 }
 
 void CSSBuilder::builCSS() {
+    // In dev mode with merging, check if content is in cache first
+    if (devMode && _mergeAssets) {
+        // Extract relative path from full path (remove root)
+        std::string relativePath = path;
+        size_t rootPos = relativePath.find("/assets/");
+        if (rootPos != std::string::npos) {
+            relativePath = relativePath.substr(rootPos);
+            
+            if (HtmlBuilder::hasMergedAssetInCache(relativePath)) {
+                builtFile = HtmlBuilder::getMergedAssetFromCache(relativePath);
+                return;
+            }
+        }
+    }
+    
     // File is already loaded by ContentBuilder base class via loadFile(path)
     // Just handle comment removal if enabled
     if (removeComments && !builtFile.empty()) {
