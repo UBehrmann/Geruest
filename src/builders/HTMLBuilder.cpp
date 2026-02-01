@@ -249,22 +249,32 @@ void HtmlBuilder::replaceReferences(const std::string& language) {
         if (endQuote != std::string::npos) {
             std::string href = builtFile.substr(start, endQuote - start);
             
-            // Skip if it's a CSS file, /assets/ path, or already has language prefix
+            // Skip if it's a CSS file or /assets/ path
             if (href.find(".css") != std::string::npos || 
-                href.compare(0, 7, "assets/") == 0 ||
-                href.compare(0, language.length() + 1, language + "/") == 0) {
+                href.compare(0, 7, "assets/") == 0) {
+                pos = endQuote;
+                continue;
+            }
+            
+            // Check if it already starts with any supported language
+            bool hasLanguagePrefix = false;
+            for (const auto& lang : availableLanguages) {
+                if (href.compare(0, lang.length() + 1, lang + "/") == 0 ||
+                    href == lang) {  // Also check if href is exactly the language (e.g., href="/de")
+                    hasLanguagePrefix = true;
+                    break;
+                }
+            }
+            
+            if (hasLanguagePrefix) {
                 pos = endQuote;
                 continue;
             }
         }
 
-        // Skip if it already starts with the language
-        if (builtFile.compare(start, language.length() + 1, language + "/") != 0) {
-            builtFile.insert(start, language + "/");
-            pos = start + language.length() + 1;  // Move past inserted /lang/
-        } else {
-            pos = start + language.length() + 1;  // Already has /lang/, skip
-        }
+        // Add language prefix if it doesn't have one already
+        builtFile.insert(start, language + "/");
+        pos = start + language.length() + 1;  // Move past inserted /lang/
     }
     
     // Process src="/" attributes (for scripts, images, etc.)
@@ -279,7 +289,7 @@ void HtmlBuilder::replaceReferences(const std::string& language) {
         if (endQuote != std::string::npos) {
             std::string src = builtFile.substr(start, endQuote - start);
             
-            // Skip if it's a JS file, image file, /assets/ path, or already has language prefix
+            // Skip if it's a JS file, image file, or /assets/ path
             if (src.find(".js") != std::string::npos || 
                 src.find(".png") != std::string::npos ||
                 src.find(".jpg") != std::string::npos ||
@@ -288,20 +298,30 @@ void HtmlBuilder::replaceReferences(const std::string& language) {
                 src.find(".svg") != std::string::npos ||
                 src.find(".webp") != std::string::npos ||
                 src.find(".ico") != std::string::npos ||
-                src.compare(0, 7, "assets/") == 0 ||
-                src.compare(0, language.length() + 1, language + "/") == 0) {
+                src.compare(0, 7, "assets/") == 0) {
+                pos = endQuote;
+                continue;
+            }
+            
+            // Check if it already starts with any supported language
+            bool hasLanguagePrefix = false;
+            for (const auto& lang : availableLanguages) {
+                if (src.compare(0, lang.length() + 1, lang + "/") == 0 ||
+                    src == lang) {  // Also check if src is exactly the language
+                    hasLanguagePrefix = true;
+                    break;
+                }
+            }
+            
+            if (hasLanguagePrefix) {
                 pos = endQuote;
                 continue;
             }
         }
 
-        // Skip if it already starts with the language
-        if (builtFile.compare(start, language.length() + 1, language + "/") != 0) {
-            builtFile.insert(start, language + "/");
-            pos = start + language.length() + 1;  // Move past inserted /lang/
-        } else {
-            pos = start + language.length() + 1;  // Already has /lang/, skip
-        }
+        // Add language prefix if it doesn't have one already
+        builtFile.insert(start, language + "/");
+        pos = start + language.length() + 1;  // Move past inserted /lang/
     }
 }
 
