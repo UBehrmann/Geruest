@@ -197,7 +197,14 @@ void HtmlBuilder::replaceTranslations(const std::string& language) {
         if (endPos == std::string::npos) break;
 
         std::string keyword = builtFile.substr(startPos, endPos - startPos);
-        std::string pathToInsert = root + keyword.substr(1);  // remove the '[' character
+        std::string keywordPath = keyword.substr(1);  // remove the '[' character
+        
+        // Ensure the path starts with '/'
+        if (!keywordPath.empty() && keywordPath[0] != '/') {
+            keywordPath = "/" + keywordPath;
+        }
+        
+        std::string pathToInsert = root + keywordPath;
 
         // path_to_json:element
         std::string pathToJSON = pathToInsert.substr(0, pathToInsert.rfind(':'));
