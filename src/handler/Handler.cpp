@@ -18,6 +18,7 @@
 #include "builders/ContentBuilder.hpp"
 #include "builders/HTMLBuilder.hpp"
 #include "builders/JSBuilder.hpp"
+#include "builders/WebPConverter.hpp"
 #include "data/HTTPResponse.hpp"
 
 namespace geruest {
@@ -337,9 +338,66 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
         std::ifstream file(contentPath, std::ios::binary);
 
         if (!file.is_open()) {
-            sendToLogger("File not found: " + contentPath);
-            sendResponse("404 Not Found", "text/html", "<html><body><h1>404 Not Found</h1></body></html>");
-            return;
+            // If this is a WebP request and the file doesn't exist, try on-demand conversion
+            if (contentType == "image/webp" && serverData.getWebPConversion()) {
+                // Look for original PNG/JPG/JPEG file
+                std::string basePath = contentPath;
+                size_t dotPos = basePath.find_last_of('.');
+                if (dotPos != std::string::npos) {
+                    basePath = basePath.substr(0, dotPos);
+                }
+                
+                std::string sourcePath;
+                std::vector<std::string> extensions = {".jpg", ".jpeg", ".png"};
+                
+                for (const auto& ext : extensions) {
+                    if (std::filesystem::exists(basePath + ext)) {
+                        sourcePath = basePath + ext;
+                        break;
+                    }
+                }
+                
+                if (!sourcePath.empty()) {
+                    // Convert on-demand
+                    bool cacheOnly = serverData.isDevMode();
+                    if (WebPConverter::convertImage(sourcePath, contentPath, cacheOnly, serverData.getWebPQuality())) {
+                        if (cacheOnly) {
+                            // Serve from cache
+                            std::vector<uint8_t> webpData = WebPConverter::getFromCache(contentPath);
+                            if (!webpData.empty()) {
+                                HTTPResponse webpResponse("200 OK");
+                                webpResponse.setHeader("Content-Type", contentType);
+                                webpResponse.setHeader("Content-Length", std::to_string(webpData.size()));
+                                
+                                std::string response = webpResponse.toString();
+                                
+                                if (!sendSocket(response.c_str(), response.size())) {
+                                    sendToLoggerError("Failed to send on-demand WebP header: " + contentPath);
+                                    return;
+                                }
+                                
+                                if (!sendSocket(reinterpret_cast<const char*>(webpData.data()), webpData.size())) {
+                                    sendToLoggerError("Failed to send on-demand WebP data: " + contentPath);
+                                }
+                                return;
+                            }
+                        } else {
+                            // File was saved to disk, try opening again
+                            file.open(contentPath, std::ios::binary);
+                            if (file.is_open()) {
+                                // Continue with normal file serving below
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // If still not open, send 404
+            if (!file.is_open()) {
+                sendToLogger("File not found: " + contentPath);
+                sendResponse("404 Not Found", "text/html", "<html><body><h1>404 Not Found</h1></body></html>");
+                return;
+            }
         }
 
         // Get file size
