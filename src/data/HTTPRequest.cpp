@@ -36,18 +36,18 @@ HTTPRequest::HTTPRequest(std::string rawRequest, std::string clientIP, std::stri
     parseRequest(_rawRequest);
 }
 
-std::string HTTPRequest::getMethod() const { return _method; }
-std::string HTTPRequest::getPathString() const { return _path; }
+const std::string& HTTPRequest::getMethod() const { return _method; }
+const std::string& HTTPRequest::getPathString() const { return _path; }
 std::string HTTPRequest::getPath(size_t index) const {
     if (index < _pathParts.size()) return _pathParts[index];
     return "";
 }
-std::string HTTPRequest::getRawRequest() const { return _rawRequest; }
-std::string HTTPRequest::getRawRequestLine() const { return _rawRequestLine; }
-std::string HTTPRequest::getClientIP() const { return ip; }
-std::string HTTPRequest::getOrigin() const { return origin; }
-std::string HTTPRequest::getServerRoot() const { return serverRoot; }
-std::string HTTPRequest::getBody() const { return _body; }
+const std::string& HTTPRequest::getRawRequest() const { return _rawRequest; }
+const std::string& HTTPRequest::getRawRequestLine() const { return _rawRequestLine; }
+const std::string& HTTPRequest::getClientIP() const { return ip; }
+const std::string& HTTPRequest::getOrigin() const { return origin; }
+const std::string& HTTPRequest::getServerRoot() const { return serverRoot; }
+const std::string& HTTPRequest::getBody() const { return _body; }
 
 std::string HTTPRequest::getParam(const std::string& name) const {
     auto it = _queryParams.find(name);
@@ -63,12 +63,12 @@ bool HTTPRequest::hasParam(const std::string& name) const {
     return _queryParams.count(name) > 0 || _jsonParams.count(name) > 0 || _cookies.count(name) > 0;
 }
 
-std::string HTTPRequest::getHeader(const std::string& key) const {
-    auto it = _headers.find(toLower(key));
+std::string HTTPRequest::getHeader(std::string_view key) const {
+    auto it = _headers.find(std::string(toLower(std::string(key))));
     return it != _headers.end() ? it->second : "";
 }
 
-bool HTTPRequest::hasHeader(const std::string& key) const { return _headers.count(toLower(key)) > 0; }
+bool HTTPRequest::hasHeader(std::string_view key) const { return _headers.count(std::string(toLower(std::string(key)))) > 0; }
 
 void HTTPRequest::parseRequest(const std::string& rawRequest) {
     auto firstNewlinePos = rawRequest.find('\n');

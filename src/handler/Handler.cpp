@@ -193,7 +193,8 @@ void Handler::handleRequest(HTTPRequest* request) {
         HTTPResponse response = (*routeHandler)(*request);
 
         // Send the response
-        if (!sendSocket(response.toString().c_str(), response.toString().size())) {
+        std::string responseStr = response.toString();
+        if (!sendSocket(responseStr.c_str(), responseStr.size())) {
             sendToLoggerError("Failed to send route response for: " + request->getPathString());
         }
 

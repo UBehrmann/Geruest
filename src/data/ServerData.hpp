@@ -205,7 +205,7 @@ class ServerData {
         return std::nullopt;
     }
 
-    std::string getRoot() const { return _root; }
+    const std::string& getRoot() const { return _root; }
     void setRoot(const std::string& newRoot) { _root = newRoot; }
 
     bool getRemoveComments() const { return _removeComments; }
@@ -316,7 +316,7 @@ class ServerData {
      * Get the default language (first in the available languages list)
      * @return Default language code, or empty string if no languages configured
      */
-    std::string getDefaultLanguage() const { return _defaultLanguage; }
+    const std::string& getDefaultLanguage() const { return _defaultLanguage; }
 
     /**
      * Check if a language is available

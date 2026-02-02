@@ -39,30 +39,45 @@ void HTTPResponse::setBody(const std::string& responseBody) {
 }
 
 std::string HTTPResponse::toString() const {
-    std::ostringstream response;
-    response << "HTTP/1.1 " << status << "\r\n";
+    // Pre-calculate approximate size to avoid reallocations
+    size_t estimatedSize = 32 + status.size() + body.size();  // "HTTP/1.1 " + status + "\r\n\r\n" + body
+    for (const auto& header : headers) {
+        estimatedSize += header.first.size() + header.second.size() + 4;  // ": " + "\r\n"
+    }
+    
+    std::string response;
+    response.reserve(estimatedSize);
+    
+    response += "HTTP/1.1 ";
+    response += status;
+    response += "\r\n";
 
     // Add all headers from the multimap
     for (const auto& header : headers) {
-        response << header.first << ": " << header.second << "\r\n";
+        response += header.first;
+        response += ": ";
+        response += header.second;
+        response += "\r\n";
     }
 
     // Check body size and add Content-Length if body is not empty
     if (headers.count("Content-Length") == 0) {
+        response += "Content-Length: ";
         if (body.empty()) {
-            response << "Content-Length: 0\r\n";
+            response += "0";
         } else {
-            response << "Content-Length: " << body.size() << "\r\n";
+            response += std::to_string(body.size());
         }
+        response += "\r\n";
     }
 
     // add a blank line to separate headers from the body
-    response << "\r\n";
+    response += "\r\n";
 
     // Append the body to the response
-    response << body;
+    response += body;
 
-    return response.str();
+    return response;
 }
 
 std::string buildHeader(const std::string& status, const std::string& contentType, const std::string& size) {
