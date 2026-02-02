@@ -23,16 +23,26 @@ size_t ContentBuilder::size() const { return builtFile.size(); }
 std::string ContentBuilder::file() const { return builtFile; }
 
 std::string ContentBuilder::loadFile(const std::string& pathReceived) {
-    std::ifstream fileStream(pathReceived);
+    std::ifstream fileStream(pathReceived, std::ios::binary | std::ios::ate);
 
     if (!fileStream) return "";
 
-    std::stringstream buffer;
-    buffer << fileStream.rdbuf();
-
+    // Get file size and pre-allocate string
+    auto fileSize = fileStream.tellg();
+    if (fileSize <= 0) {
+        fileStream.close();
+        return "";
+    }
+    
+    std::string content;
+    content.resize(static_cast<size_t>(fileSize));
+    
+    // Read directly into string buffer
+    fileStream.seekg(0);
+    fileStream.read(&content[0], fileSize);
     fileStream.close();
 
-    return buffer.str();
+    return content;
 }
 
 }  // namespace geruest

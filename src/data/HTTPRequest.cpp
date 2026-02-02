@@ -197,19 +197,22 @@ void HTTPRequest::parseJsonBody(const std::string& jsonStr) {
 
 std::vector<std::string> HTTPRequest::splitString(const std::string& str, char delimiter) {
     std::vector<std::string> result;
+    result.reserve(16);  // Pre-allocate for typical case
     std::string current;
+    current.reserve(64);  // Pre-allocate for typical segment size
     for (char c : str) {
         if (c == delimiter) {
             if (!current.empty()) {
-                result.push_back(current);
+                result.push_back(std::move(current));
                 current.clear();
+                current.reserve(64);
             }
         } else {
             current.push_back(c);
         }
     }
     if (!current.empty()) {
-        result.push_back(current);
+        result.push_back(std::move(current));
     }
     return result;
 }
@@ -244,10 +247,9 @@ std::string HTTPRequest::stripQuotes(const std::string& input) {
 }
 
 std::string HTTPRequest::toLower(const std::string& str) {
-    std::string result;
-    result.reserve(str.size());
-    for (char c : str) {
-        result.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    std::string result = str;  // Single copy
+    for (char& c : result) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     }
     return result;
 }

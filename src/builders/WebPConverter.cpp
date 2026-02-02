@@ -121,12 +121,9 @@ void WebPConverter::clearStaticCache() {
 std::vector<std::string> WebPConverter::extractImagePathsFromHtml(const std::string& htmlContent) {
     std::vector<std::string> imagePaths;
     
-    // Regex patterns for src attributes with PNG/JPEG images
-    // Matches: src="path.png", src='path.jpg', src="path.jpeg"
-    std::regex imgSrcRegex(R"(src\s*=\s*["']([^"']*\.(?:png|jpg|jpeg))["'])", std::regex::icase);
-    
-    // Regex for CSS background-image with PNG/JPEG
-    std::regex bgImageRegex(R"(url\s*\(\s*["']?([^"')]*\.(?:png|jpg|jpeg))["']?\s*\))", std::regex::icase);
+    // Static regex patterns - compiled only once
+    static const std::regex imgSrcRegex(R"(src\s*=\s*["']([^"']*\.(?:png|jpg|jpeg))["'])", std::regex::icase);
+    static const std::regex bgImageRegex(R"(url\s*\(\s*["']?([^"')]*\.(?:png|jpg|jpeg))["']?\s*\))", std::regex::icase);
     
     // Find all src attributes
     std::sregex_iterator srcIt(htmlContent.begin(), htmlContent.end(), imgSrcRegex);
@@ -177,30 +174,22 @@ std::vector<std::string> WebPConverter::extractImagePathsFromHtml(const std::str
 std::string WebPConverter::replaceImageReferencesWithWebP(const std::string& htmlContent) {
     std::string result = htmlContent;
     
-    // Just change the extension from .png/.jpg/.jpeg to .webp
-    // Keep the path exactly as it is in the HTML
-    // The assets/images/ prefix is only used internally for file lookup
+    // Static regex patterns - compiled only once for performance
+    static const std::regex srcPngRegex(R"((src\s*=\s*["'][^"']*\.)png(["']))", std::regex::icase);
+    static const std::regex srcJpgRegex(R"((src\s*=\s*["'][^"']*\.)jpg(["']))", std::regex::icase);
+    static const std::regex srcJpegRegex(R"((src\s*=\s*["'][^"']*\.)jpeg(["']))", std::regex::icase);
+    static const std::regex bgPngRegex(R"((url\s*\(\s*["']?[^"')]*\.)png(["']?\s*\)))", std::regex::icase);
+    static const std::regex bgJpgRegex(R"((url\s*\(\s*["']?[^"')]*\.)jpg(["']?\s*\)))", std::regex::icase);
+    static const std::regex bgJpegRegex(R"((url\s*\(\s*["']?[^"')]*\.)jpeg(["']?\s*\)))", std::regex::icase);
     
-    // Replace .png with .webp in src attributes
-    std::regex srcPngRegex(R"((src\s*=\s*["'][^"']*\.)png(["']))", std::regex::icase);
+    // Replace extensions in src attributes
     result = std::regex_replace(result, srcPngRegex, "$1webp$2");
-    
-    // Replace .jpg with .webp in src attributes
-    std::regex srcJpgRegex(R"((src\s*=\s*["'][^"']*\.)jpg(["']))", std::regex::icase);
     result = std::regex_replace(result, srcJpgRegex, "$1webp$2");
-    
-    // Replace .jpeg with .webp in src attributes
-    std::regex srcJpegRegex(R"((src\s*=\s*["'][^"']*\.)jpeg(["']))", std::regex::icase);
     result = std::regex_replace(result, srcJpegRegex, "$1webp$2");
     
-    // CSS url() for background images
-    std::regex bgPngRegex(R"((url\s*\(\s*["']?[^"')]*\.)png(["']?\s*\)))", std::regex::icase);
+    // Replace extensions in CSS url()
     result = std::regex_replace(result, bgPngRegex, "$1webp$2");
-    
-    std::regex bgJpgRegex(R"((url\s*\(\s*["']?[^"')]*\.)jpg(["']?\s*\)))", std::regex::icase);
     result = std::regex_replace(result, bgJpgRegex, "$1webp$2");
-    
-    std::regex bgJpegRegex(R"((url\s*\(\s*["']?[^"')]*\.)jpeg(["']?\s*\)))", std::regex::icase);
     result = std::regex_replace(result, bgJpegRegex, "$1webp$2");
     
     return result;
