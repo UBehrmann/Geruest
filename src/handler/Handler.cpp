@@ -269,7 +269,8 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
             }
 
             contentBuilder = std::make_unique<HtmlBuilder>(contentPath, serverData.getRoot(), serverData.getRemoveComments(),
-                                             serverData.getAvailableLanguages(), serverData.getMergeAssets(), serverData.isDevMode());
+                                             serverData.getAvailableLanguages(), serverData.getMergeAssets(), serverData.isDevMode(),
+                                             serverData.getWebPConversion(), serverData.getWebPQuality());
 
         } else if (contentType == "text/javascript") {
             contentBuilder = std::make_unique<JSBuilder>(contentPath, serverData.getRoot(), serverData.getRemoveComments(),
@@ -306,6 +307,32 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
 
 
     } else {
+        // Check if this is a WebP request and we have it cached (devMode)
+        if (contentType == "image/webp" && serverData.isDevMode() && serverData.getWebPConversion()) {
+            // Try to get from WebP cache
+            std::vector<uint8_t> cachedWebP = HtmlBuilder::getWebPFromCache(contentPath);
+            if (!cachedWebP.empty()) {
+                // Serve from cache
+                HTTPResponse htmlResponse("200 OK");
+                htmlResponse.setHeader("Content-Type", contentType);
+                htmlResponse.setHeader("Content-Length", std::to_string(cachedWebP.size()));
+                
+                std::string response = htmlResponse.toString();
+                
+                // Send headers
+                if (!sendSocket(response.c_str(), response.size())) {
+                    sendToLoggerError("Failed to send cached WebP header: " + contentPath);
+                    return;
+                }
+                
+                // Send cached WebP data
+                if (!sendSocket(reinterpret_cast<const char*>(cachedWebP.data()), cachedWebP.size())) {
+                    sendToLoggerError("Failed to send cached WebP data: " + contentPath);
+                }
+                return;
+            }
+        }
+        
         // Open file
         std::ifstream file(contentPath, std::ios::binary);
 
@@ -371,7 +398,7 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
     std::map<std::string, std::string> contentRoot = {
         {"html", "/html"},         {"htm", "/html"},           {"css", "/assets/css"},    {"js", "/assets/js"},
         {"jpg", "/assets/images"}, {"jpeg", "/assets/images"}, {"png", "/assets/images"}, {"gif", "/assets/images"},
-        {"svg", "/assets/images"}, {"ico", "/assets/images"},  {"JSON", "/assets/JSONs"}, {"pdf", "/assets/docs"},
+        {"svg", "/assets/images"}, {"ico", "/assets/images"},  {"webp", "/assets/images"}, {"JSON", "/assets/JSONs"}, {"pdf", "/assets/docs"},
         {"zip", "/assets/docs"},   {"mp3", "/assets/audio"},   {"mp4", "/assets/video"},  {"xml", "/assets/docs"},
         {"csv", "/assets/docs"},   {"txt", "/assets/docs"}};
 
@@ -381,7 +408,7 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
 
     // TODO : Find better way to check for language, can't always add an 'or' statement for each new language
     if (Extension == "jpg" || Extension == "jpeg" || Extension == "png" || Extension == "gif" || Extension == "svg" ||
-        Extension == "ico") {
+        Extension == "ico" || Extension == "webp") {
         // For image files with /assets/ prefix, use path as-is (already normalized)
         if (pathReceived.find("/assets/") == 0) {
             // Assets are stored without language prefix, use direct path
@@ -505,9 +532,9 @@ std::string Handler::getContentType(const std::string& extension) {
     std::map<std::string, std::string> contentTypes = {
         {"html", "text/html"},      {"htm", "text/html"},    {"css", "text/css"},          {"js", "text/javascript"},
         {"jpg", "image/jpeg"},      {"jpeg", "image/jpeg"},  {"png", "image/png"},         {"gif", "image/gif"},
-        {"svg", "image/svg+xml"},   {"ico", "image/x-icon"}, {"JSON", "application/JSON"}, {"pdf", "application/pdf"},
-        {"zip", "application/zip"}, {"mp3", "audio/mpeg"},   {"mp4", "video/mp4"},         {"xml", "application/xml"},
-        {"csv", "text/csv"},        {"txt", "text/plain"}};
+        {"webp", "image/webp"},     {"svg", "image/svg+xml"},{"ico", "image/x-icon"},      {"JSON", "application/JSON"},
+        {"pdf", "application/pdf"}, {"zip", "application/zip"}, {"mp3", "audio/mpeg"},     {"mp4", "video/mp4"},
+        {"xml", "application/xml"}, {"csv", "text/csv"},        {"txt", "text/plain"}};
 
     return contentTypes.count(extension) ? contentTypes[extension] : "application/octet-stream";
 }

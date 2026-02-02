@@ -52,6 +52,8 @@ class ServerData {
     bool _removeComments = true;    // Remove comments from built files
     bool _mergeAssets = false;      // Automatic CSS/JS merging per page
     bool _devMode = false;          // Development mode (no file caching, verbose logging)
+    bool _webpConversion = false;   // Automatic PNG/JPG to WebP conversion
+    float _webpQuality = 75.0f;     // WebP encoding quality (0-100, default 75%)
     std::vector<std::string> _availableLanguages;
     std::string _defaultLanguage;
     BasicAuth _basicAuth;
@@ -127,6 +129,8 @@ class ServerData {
           _removeComments(other._removeComments),
           _mergeAssets(other._mergeAssets),
           _devMode(other._devMode),
+          _webpConversion(other._webpConversion),
+          _webpQuality(other._webpQuality),
           _availableLanguages(other._availableLanguages),
           _defaultLanguage(other._defaultLanguage),
           _basicAuth(other._basicAuth),
@@ -141,6 +145,8 @@ class ServerData {
             _removeComments = other._removeComments;
             _mergeAssets = other._mergeAssets;
             _devMode = other._devMode;
+            _webpConversion = other._webpConversion;
+            _webpQuality = other._webpQuality;
             _availableLanguages = other._availableLanguages;
             _defaultLanguage = other._defaultLanguage;
             _basicAuth = other._basicAuth;
@@ -221,6 +227,49 @@ class ServerData {
      * @return true if asset merging is enabled
      */
     bool getMergeAssets() const { return _mergeAssets; }
+
+    /**
+     * Enable/disable automatic PNG/JPG to WebP conversion
+     * When enabled, HTMLBuilder will:
+     * - Scan HTML for img tags and CSS url() references with .png/.jpg/.jpeg
+     * - Convert referenced images to WebP format
+     * - Replace the original references with .webp extensions
+     * In devMode, images are converted on-the-fly and cached in memory.
+     * In production mode, converted images are saved to disk.
+     * @param value true to enable WebP conversion, false to disable (default: false)
+     */
+    void setWebPConversion(bool value) { _webpConversion = value; }
+
+    /**
+     * Check if automatic WebP conversion is enabled
+     * @return true if WebP conversion is enabled
+     */
+    bool getWebPConversion() const { return _webpConversion; }
+
+    /**
+     * Enable automatic WebP conversion (alias for setWebPConversion(true))
+     * This follows the same pattern as enableDevMode()
+     */
+    void enableWebPConversion() { _webpConversion = true; }
+
+    /**
+     * Set WebP encoding quality
+     * @param quality Quality value from 0-100 (default: 75)
+     *        Higher values = better quality but larger file size
+     *        Lower values = smaller files but lower quality
+     *        Recommended: 70-85 for most use cases
+     */
+    void setWebPQuality(float quality) {
+        _webpQuality = quality;
+        if (_webpQuality < 0.0f) _webpQuality = 0.0f;
+        if (_webpQuality > 100.0f) _webpQuality = 100.0f;
+    }
+
+    /**
+     * Get WebP encoding quality
+     * @return Current quality setting (0-100)
+     */
+    float getWebPQuality() const { return _webpQuality; }
 
     /**
      * Enable development mode

@@ -13,6 +13,30 @@ endif()
 # Find required packages
 find_package(Threads REQUIRED)
 
+# Check for WebP library (optional)
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(WEBP QUIET libwebp)
+endif()
+
+if(WEBP_FOUND)
+    message(STATUS "WebP library found - WebP conversion enabled")
+    set(GERUEST_HAS_WEBP 1)
+else()
+    # Try finding without pkg-config
+    find_library(WEBP_LIBRARY NAMES webp)
+    find_path(WEBP_INCLUDE_DIR webp/encode.h)
+    if(WEBP_LIBRARY AND WEBP_INCLUDE_DIR)
+        message(STATUS "WebP library found - WebP conversion enabled")
+        set(GERUEST_HAS_WEBP 1)
+        set(WEBP_LIBRARIES ${WEBP_LIBRARY})
+        set(WEBP_INCLUDE_DIRS ${WEBP_INCLUDE_DIR})
+    else()
+        message(STATUS "WebP library not found - WebP conversion disabled")
+        set(GERUEST_HAS_WEBP 0)
+    endif()
+endif()
+
 # Build the Geruest library first
 add_library(Geruest STATIC
     ../src/Geruest.cpp
@@ -22,6 +46,7 @@ add_library(Geruest STATIC
     ../src/builders/CSSBuilder.cpp
     ../src/builders/HTMLBuilder.cpp
     ../src/builders/JSBuilder.cpp
+    ../src/builders/WebPConverter.cpp
     ../src/data/HTTPRequest.cpp
     ../src/data/HTTPResponse.cpp
     ../src/FileManagement/FileManagement.cpp
@@ -32,6 +57,13 @@ add_library(Geruest STATIC
 target_include_directories(Geruest PUBLIC
     ../src
 )
+
+# Add WebP compile definition and link library
+target_compile_definitions(Geruest PUBLIC GERUEST_HAS_WEBP=${GERUEST_HAS_WEBP})
+if(GERUEST_HAS_WEBP)
+    target_include_directories(Geruest PRIVATE ${WEBP_INCLUDE_DIRS})
+    target_link_libraries(Geruest ${WEBP_LIBRARIES})
+endif()
 
 target_link_libraries(Geruest
     Threads::Threads

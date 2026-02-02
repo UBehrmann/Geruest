@@ -21,9 +21,10 @@ std::unordered_map<std::string, std::string> HtmlBuilder::_mergedAssetsCache;
 std::mutex HtmlBuilder::_cacheMutex;
 
 HtmlBuilder::HtmlBuilder(const std::string& inputPath, const std::string& inputServerRoot, bool removeCommentsFlag,
-                         const std::vector<std::string>& languages, bool mergeAssets, bool devModeFlag)
+                         const std::vector<std::string>& languages, bool mergeAssets, bool devModeFlag,
+                         bool webpConversionFlag, float webpQuality)
     : ContentBuilder(inputPath, inputServerRoot, removeCommentsFlag, languages, devModeFlag), 
-      _mergeAssets(mergeAssets), _devMode(devModeFlag) {
+      _mergeAssets(mergeAssets), _devMode(devModeFlag), _webpConversion(webpConversionFlag), _webpQuality(webpQuality) {
     buildHtml();
 }
 
@@ -121,6 +122,11 @@ void HtmlBuilder::buildHtml() {
         } else {
             // When merging is disabled, ensure all asset paths have leading slashes
             ensureAbsoluteAssetPaths();
+        }
+
+        // Process PNG/JPG to WebP conversion if enabled
+        if (_webpConversion) {
+            processWebPConversion();
         }
 
         // Change references to the correct path
@@ -453,6 +459,85 @@ std::string HtmlBuilder::getMergedAssetFromCache(const std::string& path) {
 bool HtmlBuilder::hasMergedAssetInCache(const std::string& path) {
     std::lock_guard<std::mutex> lock(_cacheMutex);
     return _mergedAssetsCache.find(path) != _mergedAssetsCache.end();
+}
+
+std::vector<uint8_t> HtmlBuilder::getWebPFromCache(const std::string& path) {
+    return WebPConverter::getFromCache(path);
+}
+
+bool HtmlBuilder::hasWebPInCache(const std::string& path) {
+    return WebPConverter::hasInCache(path);
+}
+
+void HtmlBuilder::processWebPConversion() {
+    // Extract all image paths from HTML
+    // Images are expected to be in assets/images/ directory (standard Geruest path)
+    std::vector<std::string> imagePaths = WebPConverter::extractImagePathsFromHtml(builtFile);
+    
+    if (imagePaths.empty()) {
+        return;
+    }
+    
+    // Ensure root has trailing slash for path concatenation
+    std::string rootPath = root;
+    if (!rootPath.empty() && rootPath.back() != '/' && rootPath.back() != '\\') {
+        rootPath += '/';
+    }
+    
+    // Standard image base path in Geruest
+    const std::string imageBasePath = "assets/images/";
+    
+    // Process each image
+    for (const auto& relativePath : imagePaths) {
+        // Build full path to source image
+        // relativePath may or may not have leading slash, handle both cases
+        std::string cleanRelativePath = relativePath;
+        if (!cleanRelativePath.empty() && (cleanRelativePath[0] == '/' || cleanRelativePath[0] == '\\')) {
+            cleanRelativePath = cleanRelativePath.substr(1);
+        }
+        
+        // Prepend assets/images/ to find the actual file
+        // HTML has "Home/image.jpg" but file is at "assets/images/Home/image.jpg"
+        std::string fullSourcePath = rootPath + imageBasePath + cleanRelativePath;
+        
+        // Determine output path (change extension to .webp)
+        std::string webpRelativePath = cleanRelativePath;
+        size_t dotPos = webpRelativePath.rfind('.');
+        if (dotPos != std::string::npos) {
+            webpRelativePath = webpRelativePath.substr(0, dotPos) + ".webp";
+        }
+        std::string fullWebPPath = rootPath + imageBasePath + webpRelativePath;
+        
+        // Convert image to WebP
+        bool success = false;
+        if (_devMode) {
+            // In dev mode: convert and cache in memory, don't save to disk
+            // Regenerate on each build (for devMode behavior)
+            success = WebPConverter::convertImage(fullSourcePath, fullWebPPath, true, _webpQuality);
+        } else {
+            // Production mode: check if WebP already exists and is newer than source
+            if (std::filesystem::exists(fullWebPPath)) {
+                auto sourceTime = std::filesystem::last_write_time(fullSourcePath);
+                auto webpTime = std::filesystem::last_write_time(fullWebPPath);
+                if (webpTime >= sourceTime) {
+                    // WebP is up-to-date, skip conversion
+                    success = true;
+                }
+            }
+            
+            if (!success) {
+                // Convert and save to disk
+                success = WebPConverter::convertImage(fullSourcePath, fullWebPPath, false, _webpQuality);
+            }
+        }
+        
+        // Note: We don't replace references in builtFile here because
+        // replaceImageReferencesWithWebP will be called if conversion was successful
+    }
+    
+    // Replace all image references in HTML with .webp extensions
+    // Keep the same path, just change the extension
+    builtFile = WebPConverter::replaceImageReferencesWithWebP(builtFile);
 }
 
 }  // namespace geruest
