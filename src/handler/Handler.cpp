@@ -269,16 +269,12 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
                 }
             }
 
-            contentBuilder = std::make_unique<HtmlBuilder>(contentPath, serverData.getRoot(), serverData.getRemoveComments(),
-                                             serverData.getAvailableLanguages(), serverData.getMergeAssets(), serverData.isDevMode(),
-                                             serverData.getWebPConversion(), serverData.getWebPQuality());
+            contentBuilder = std::make_unique<HtmlBuilder>(contentPath, serverData);
 
         } else if (contentType == "text/javascript") {
-            contentBuilder = std::make_unique<JSBuilder>(contentPath, serverData.getRoot(), serverData.getRemoveComments(),
-                                           serverData.getMergeAssets(), serverData.isDevMode());
+            contentBuilder = std::make_unique<JSBuilder>(contentPath, serverData);
         } else if (contentType == "text/css") {
-            contentBuilder = std::make_unique<CSSBuilder>(contentPath, serverData.getRoot(), serverData.getRemoveComments(),
-                                            serverData.getMergeAssets(), serverData.isDevMode());
+            contentBuilder = std::make_unique<CSSBuilder>(contentPath, serverData);
         }
 
         // Check if builder was created

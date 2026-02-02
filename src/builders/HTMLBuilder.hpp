@@ -27,9 +27,7 @@ namespace geruest {
 
 class HtmlBuilder : public ContentBuilder {
    public:
-    HtmlBuilder(const std::string& inputPath, const std::string& inputServerRoot, bool removeCommentsFlag = true,
-                const std::vector<std::string>& languages = {}, bool mergeAssets = false, bool devModeFlag = false,
-                bool webpConversionFlag = false, float webpQuality = 75.0f);
+    HtmlBuilder(const std::string& inputPath, const ServerData& serverData);
 
     // Static cache for merged assets in dev mode
     static std::string getMergedAssetFromCache(const std::string& path);
@@ -40,11 +38,6 @@ class HtmlBuilder : public ContentBuilder {
     static bool hasWebPInCache(const std::string& path);
 
    private:
-    bool _mergeAssets;
-    bool _devMode;
-    bool _webpConversion;
-    float _webpQuality;
-
     // In-memory cache for merged assets (dev mode only)
     static std::unordered_map<std::string, std::string> _mergedAssetsCache;
     static std::mutex _cacheMutex;

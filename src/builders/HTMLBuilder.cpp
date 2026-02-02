@@ -20,11 +20,8 @@ namespace geruest {
 std::unordered_map<std::string, std::string> HtmlBuilder::_mergedAssetsCache;
 std::mutex HtmlBuilder::_cacheMutex;
 
-HtmlBuilder::HtmlBuilder(const std::string& inputPath, const std::string& inputServerRoot, bool removeCommentsFlag,
-                         const std::vector<std::string>& languages, bool mergeAssets, bool devModeFlag,
-                         bool webpConversionFlag, float webpQuality)
-    : ContentBuilder(inputPath, inputServerRoot, removeCommentsFlag, languages, devModeFlag), 
-      _mergeAssets(mergeAssets), _devMode(devModeFlag), _webpConversion(webpConversionFlag), _webpQuality(webpQuality) {
+HtmlBuilder::HtmlBuilder(const std::string& inputPath, const ServerData& serverData)
+    : ContentBuilder(inputPath, serverData) {
     buildHtml();
 }
 
@@ -63,8 +60,8 @@ void HtmlBuilder::buildHtml() {
     }
     
     // If no language detected, use default language
-    if (language.empty() && !availableLanguages.empty()) {
-        language = availableLanguages[0];
+    if (language.empty() && !_serverData.getAvailableLanguages().empty()) {
+        language = _serverData.getAvailableLanguages()[0];
     }
 
     // Check if the file exists with the language directory
@@ -87,7 +84,7 @@ void HtmlBuilder::buildHtml() {
     }
 
     // Remove comments if enabled
-    if (removeComments) {
+    if (_serverData.getRemoveComments()) {
         builtFile = removeCommentsFromString(builtFile, FILETYPE_HTML);
     }
 
@@ -99,8 +96,8 @@ void HtmlBuilder::buildHtml() {
         // Check if the target language is supported before processing and saving
         // Extract language from path: /root/html/XX/file.html
         bool languageSupported =
-            availableLanguages.empty() ||
-            std::find(availableLanguages.begin(), availableLanguages.end(), language) != availableLanguages.end();
+            _serverData.getAvailableLanguages().empty() ||
+            std::find(_serverData.getAvailableLanguages().begin(), _serverData.getAvailableLanguages().end(), language) != _serverData.getAvailableLanguages().end();
 
         if (!languageSupported) {
             // Language not supported, don't save the file
@@ -116,7 +113,7 @@ void HtmlBuilder::buildHtml() {
         replaceTranslations(language);
 
         // Process CSS/JS asset merging if enabled
-        if (_mergeAssets) {
+        if (_serverData.getMergeAssets()) {
             std::string pageName = getPageNameFromPath(path);
             processAssetMerging(pageName);
         } else {
@@ -125,7 +122,7 @@ void HtmlBuilder::buildHtml() {
         }
 
         // Process PNG/JPG to WebP conversion if enabled
-        if (_webpConversion) {
+        if (_serverData.getWebPConversion()) {
             processWebPConversion();
         }
 
@@ -134,7 +131,7 @@ void HtmlBuilder::buildHtml() {
 
         // Save the file only if NOT in dev mode
         // In dev mode, files are kept in memory only for faster iteration
-        if (!_devMode) {
+        if (!_serverData.isDevMode()) {
             FileManagement::saveFile(path, builtFile);
             // Note: If save fails, content is still in builtFile for serving
         }
@@ -264,7 +261,7 @@ void HtmlBuilder::replaceReferences(const std::string& language) {
             
             // Check if it already starts with any supported language
             bool hasLanguagePrefix = false;
-            for (const auto& lang : availableLanguages) {
+            for (const auto& lang : _serverData.getAvailableLanguages()) {
                 if (href.compare(0, lang.length() + 1, lang + "/") == 0 ||
                     href == lang) {  // Also check if href is exactly the language (e.g., href="/de")
                     hasLanguagePrefix = true;
@@ -311,7 +308,7 @@ void HtmlBuilder::replaceReferences(const std::string& language) {
             
             // Check if it already starts with any supported language
             bool hasLanguagePrefix = false;
-            for (const auto& lang : availableLanguages) {
+            for (const auto& lang : _serverData.getAvailableLanguages()) {
                 if (src.compare(0, lang.length() + 1, lang + "/") == 0 ||
                     src == lang) {  // Also check if src is exactly the language
                     hasLanguagePrefix = true;
@@ -348,7 +345,7 @@ std::string HtmlBuilder::getPageNameFromPath(const std::string& filePath) {
 
 void HtmlBuilder::processAssetMerging(const std::string& pageName) {
     // Create AssetMerger and process the HTML
-    AssetMerger merger(root, removeComments);
+    AssetMerger merger(root, _serverData.getRemoveComments());
     MergeResult result = merger.processHtml(builtFile, pageName);
     
     // Update the HTML content with merged asset references
@@ -356,7 +353,7 @@ void HtmlBuilder::processAssetMerging(const std::string& pageName) {
     
     // In dev mode: Store merged assets in memory cache instead of saving to disk
     // In production: Save merged assets to disk for performance
-    if (_devMode) {
+    if (_serverData.isDevMode()) {
         std::lock_guard<std::mutex> lock(_cacheMutex);
         
         // Store merged CSS in cache
@@ -510,10 +507,10 @@ void HtmlBuilder::processWebPConversion() {
         
         // Convert image to WebP
         bool success = false;
-        if (_devMode) {
+        if (_serverData.isDevMode()) {
             // In dev mode: convert and cache in memory, don't save to disk
             // Regenerate on each build (for devMode behavior)
-            success = WebPConverter::convertImage(fullSourcePath, fullWebPPath, true, _webpQuality);
+            success = WebPConverter::convertImage(fullSourcePath, fullWebPPath, true, _serverData.getWebPQuality());
         } else {
             // Production mode: check if WebP already exists and is newer than source
             if (std::filesystem::exists(fullWebPPath)) {
@@ -527,7 +524,7 @@ void HtmlBuilder::processWebPConversion() {
             
             if (!success) {
                 // Convert and save to disk
-                success = WebPConverter::convertImage(fullSourcePath, fullWebPPath, false, _webpQuality);
+                success = WebPConverter::convertImage(fullSourcePath, fullWebPPath, false, _serverData.getWebPQuality());
             }
         }
         
