@@ -80,18 +80,35 @@ void Geruest::setMergeAssets(bool enabled) {
 }
 
 void Geruest::setWebPConversion(bool enabled) {
+#if GERUEST_HAS_WEBP
     serverData.setWebPConversion(enabled);
     sendToLogger(std::string("WebP conversion ") + (enabled ? "enabled" : "disabled"));
+#else
+    if (enabled) {
+        sendToLoggerError("WebP conversion cannot be enabled - library not available (GERUEST_HAS_WEBP=0)");
+        sendToLoggerError("Install libwebp-dev (apt) or webp (vcpkg) and rebuild to enable this feature");
+    }
+    serverData.setWebPConversion(false);
+#endif
 }
 
 void Geruest::enableWebPConversion() {
+#if GERUEST_HAS_WEBP
     serverData.enableWebPConversion();
     sendToLogger("WebP conversion enabled");
+#else
+    sendToLoggerError("WebP conversion cannot be enabled - library not available (GERUEST_HAS_WEBP=0)");
+    sendToLoggerError("Install libwebp-dev (apt) or webp (vcpkg) and rebuild to enable this feature");
+#endif
 }
 
 void Geruest::setWebPQuality(float quality) {
+#if GERUEST_HAS_WEBP
     serverData.setWebPQuality(quality);
     sendToLogger("WebP quality set to " + std::to_string(static_cast<int>(serverData.getWebPQuality())) + "%");
+#else
+    sendToLoggerError("WebP quality cannot be set - library not available (GERUEST_HAS_WEBP=0)");
+#endif
 }
 
 void Geruest::enableDevMode() {
