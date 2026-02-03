@@ -22,12 +22,9 @@ namespace geruest {
 class JSBuilder : public ContentBuilder {
 public:
 
-    JSBuilder(const std::string &inputPath, const std::string &inputServerRoot, 
-              bool removeCommentsFlag = true, bool mergeAssets = false, bool devModeFlag = false);
+    JSBuilder(const std::string &inputPath, const ServerData& serverData);
 
 private:
-
-    bool _mergeAssets;
 
     void builJS();
 };

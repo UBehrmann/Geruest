@@ -169,6 +169,40 @@ int main(int argc, char* argv[]) {
     std::cout << "  ✓ HTML automatically updated with merged includes" << std::endl;
     std::cout << "===================================\n" << std::endl;
 
+    // ============================================================
+    // WEBP CONVERSION CONFIGURATION (optional, must be called before init/start)
+    // ============================================================
+    
+    // Enable automatic PNG/JPG to WebP conversion
+    // When enabled, HTMLBuilder scans each page for <img src="..."> tags
+    // and CSS url() references with .png, .jpg, .jpeg extensions.
+    // Images are converted to WebP format for smaller file sizes.
+    //
+    // Default: false (serves original images as-is)
+    //
+    // Behavior depends on mode:
+    // - Dev mode: Images converted on-the-fly and cached in memory
+    //             (never saved to disk, regenerated each restart)
+    // - Production: Converted images saved to disk for efficiency
+    //
+    // Benefits:
+    // - 25-35% smaller file sizes compared to PNG/JPG
+    // - Faster page load times
+    // - Automatic format optimization
+    //
+    // NOTE: Requires libwebp library for WebP encoding
+    
+    server->setWebPConversion(true);   // Enable WebP conversion
+    server->setWebPQuality(80.0f);     // Set quality to 80% (default is 75%)
+    
+    std::cout << "=== WebP Conversion Configuration ===" << std::endl;
+    std::cout << "WebP conversion: ENABLED" << std::endl;
+    std::cout << "WebP quality: 80%" << std::endl;
+    std::cout << "  ✓ PNG/JPG images will be converted to WebP" << std::endl;
+    std::cout << "  ✓ HTML img tags automatically updated" << std::endl;
+    std::cout << "  ✓ CSS url() references automatically updated" << std::endl;
+    std::cout << "=====================================\n" << std::endl;
+
     // Add basic auth
     server->setBasicAuthEnabled(true);
 

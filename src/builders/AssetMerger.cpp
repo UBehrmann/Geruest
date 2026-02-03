@@ -22,14 +22,25 @@ AssetMerger::AssetMerger(const std::string& serverRoot, bool removeComments)
 }
 
 std::string AssetMerger::loadFile(const std::string& filePath) {
-    std::ifstream fileStream(filePath);
+    std::ifstream fileStream(filePath, std::ios::binary | std::ios::ate);
     if (!fileStream) return "";
 
-    std::stringstream buffer;
-    buffer << fileStream.rdbuf();
+    // Get file size and pre-allocate string
+    auto fileSize = fileStream.tellg();
+    if (fileSize <= 0) {
+        fileStream.close();
+        return "";
+    }
+    
+    std::string content;
+    content.resize(static_cast<size_t>(fileSize));
+    
+    // Read directly into string buffer
+    fileStream.seekg(0);
+    fileStream.read(&content[0], fileSize);
     fileStream.close();
 
-    return buffer.str();
+    return content;
 }
 
 bool AssetMerger::isExternalUrl(const std::string& url) {

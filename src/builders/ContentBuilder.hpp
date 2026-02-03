@@ -16,14 +16,14 @@
 #include <utility>
 #include <vector>
 
+#include "data/ServerData.hpp"
+
 namespace geruest {
 
 class ContentBuilder {
 public:
 
-    ContentBuilder(const std::string &inputPath, const std::string &inputServerRoot, 
-                   bool removeCommentsFlag = true, const std::vector<std::string>& languages = {},
-                   bool devMode = false);
+    ContentBuilder(const std::string &inputPath, const ServerData& serverData);
 
     [[nodiscard]] std::string sizeString() const;
 
@@ -38,13 +38,10 @@ protected:
     static constexpr const char* FILETYPE_HTML = "html";
     static constexpr const char* FILETYPE_CSS = "css";
 
+    const ServerData& _serverData;
     const std::string root;
     std::string builtFile;
     std::string path;
-
-    const bool removeComments;
-    const bool devMode;
-    const std::vector<std::string> availableLanguages;
 
     /**
      * Remove comments from a string (CSS, JS, or HTML style)

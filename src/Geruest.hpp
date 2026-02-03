@@ -94,6 +94,59 @@ class Geruest {
     void setMergeAssets(bool enabled);
 
     /**
+     * @brief Enable or disable automatic PNG/JPG to WebP conversion.
+     * 
+     * When enabled, the HTMLBuilder scans each HTML template for:
+     * - <img src="..."> tags with .png, .jpg, .jpeg extensions
+     * - CSS url() references with .png, .jpg, .jpeg extensions
+     * 
+     * It then:
+     * 1. Extracts all referenced image paths
+     * 2. Converts them to WebP format (using libwebp)
+     * 3. Replaces the original references with .webp extensions
+     * 
+     * Behavior depends on mode:
+     * - Dev mode: Images are converted on-the-fly and cached in memory
+     *             (never saved to disk, regenerated each restart)
+     * - Production: Converted images are saved to disk for efficiency
+     * 
+     * Benefits of WebP conversion:
+     * - Significantly smaller file sizes (25-35% smaller than PNG/JPG)
+     * - Faster page load times
+     * - Automatic format optimization
+     * 
+     * @param enabled true to convert images to WebP, false to serve original formats
+     * @note Must be called before init() or start()
+     * @note Requires libwebp library for WebP encoding
+     */
+    void setWebPConversion(bool enabled);
+
+    /**
+     * @brief Enable automatic WebP conversion (alias for setWebPConversion(true))
+     * 
+     * Convenience method that follows the same pattern as enableDevMode().
+     * @see setWebPConversion for detailed behavior description
+     */
+    void enableWebPConversion();
+
+    /**
+     * @brief Set WebP encoding quality.
+     * 
+     * Controls the quality/size tradeoff for WebP image conversion.
+     * Higher values produce better quality images but larger file sizes.
+     * 
+     * @param quality Quality value from 0-100 (default: 75)
+     *        - 0-50: Low quality, very small files (thumbnails, previews)
+     *        - 50-70: Medium quality, good for web backgrounds
+     *        - 70-85: High quality, recommended for most images (default: 75)
+     *        - 85-100: Near-lossless, for images requiring high fidelity
+     * 
+     * @note Values outside 0-100 are clamped to the valid range
+     * @note Must be called before init() or start() to affect initial conversion
+     */
+    void setWebPQuality(float quality);
+
+    /**
      * @brief Enable development mode for easier debugging and rapid development.
      * 
      * When enabled, development mode:

@@ -79,6 +79,21 @@ void Geruest::setMergeAssets(bool enabled) {
     sendToLogger(std::string("Asset merging ") + (enabled ? "enabled" : "disabled"));
 }
 
+void Geruest::setWebPConversion(bool enabled) {
+    serverData.setWebPConversion(enabled);
+    sendToLogger(std::string("WebP conversion ") + (enabled ? "enabled" : "disabled"));
+}
+
+void Geruest::enableWebPConversion() {
+    serverData.enableWebPConversion();
+    sendToLogger("WebP conversion enabled");
+}
+
+void Geruest::setWebPQuality(float quality) {
+    serverData.setWebPQuality(quality);
+    sendToLogger("WebP quality set to " + std::to_string(static_cast<int>(serverData.getWebPQuality())) + "%");
+}
+
 void Geruest::enableDevMode() {
     serverData.enableDevMode();
     sendToLogger("Development mode enabled: verbose logging, no file caching, comments preserved");

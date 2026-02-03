@@ -19,6 +19,7 @@
 #include "ContentBuilder.hpp"
 #include "FileManagement/FileManagement.hpp"
 #include "parser/JSONParser.hpp"
+#include "WebPConverter.hpp"
 
 namespace fs = std::filesystem;
 
@@ -26,17 +27,17 @@ namespace geruest {
 
 class HtmlBuilder : public ContentBuilder {
    public:
-    HtmlBuilder(const std::string& inputPath, const std::string& inputServerRoot, bool removeCommentsFlag = true,
-                const std::vector<std::string>& languages = {}, bool mergeAssets = false, bool devModeFlag = false);
+    HtmlBuilder(const std::string& inputPath, const ServerData& serverData);
 
     // Static cache for merged assets in dev mode
     static std::string getMergedAssetFromCache(const std::string& path);
     static bool hasMergedAssetInCache(const std::string& path);
 
-   private:
-    bool _mergeAssets;
-    bool _devMode;
+    // Static accessor for WebP cache (used by Handler)
+    static std::vector<uint8_t> getWebPFromCache(const std::string& path);
+    static bool hasWebPInCache(const std::string& path);
 
+   private:
     // In-memory cache for merged assets (dev mode only)
     static std::unordered_map<std::string, std::string> _mergedAssetsCache;
     static std::mutex _cacheMutex;
@@ -76,6 +77,17 @@ class HtmlBuilder : public ContentBuilder {
      * @return The page name without extension
      */
     static std::string getPageNameFromPath(const std::string& filePath);
+
+    /**
+     * Process PNG/JPG to WebP conversion for images referenced in HTML
+     * This method:
+     * 1. Extracts all image paths (.png, .jpg, .jpeg) from the HTML
+     * 2. Converts each image to WebP format
+     * 3. Replaces image references in HTML with .webp extensions
+     * 4. In devMode: caches converted images in memory
+     * 5. In production: saves converted images to disk
+     */
+    void processWebPConversion();
 };
 
 }  // namespace geruest

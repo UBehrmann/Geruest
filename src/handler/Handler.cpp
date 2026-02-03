@@ -18,16 +18,17 @@
 #include "builders/ContentBuilder.hpp"
 #include "builders/HTMLBuilder.hpp"
 #include "builders/JSBuilder.hpp"
+#include "builders/WebPConverter.hpp"
 #include "data/HTTPResponse.hpp"
 
 namespace geruest {
 
 #ifdef _WIN32
-Handler::Handler(SOCKET socket, std::string clientIP, ServerData serverDataArg)
+Handler::Handler(SOCKET socket, std::string clientIP, const ServerData& serverDataRef)
 #else
-Handler::Handler(int socket, std::string clientIP, ServerData serverDataArg)
+Handler::Handler(int socket, std::string clientIP, const ServerData& serverDataRef)
 #endif
-    : clientSocket(socket), serverData(serverDataArg), IP(std::move(clientIP)), buffer(std::make_unique<char[]>(BUFFER_SIZE)) {
+    : clientSocket(socket), serverData(serverDataRef), IP(std::move(clientIP)), buffer(std::make_unique<char[]>(BUFFER_SIZE)) {
 }
 
 Handler::~Handler() {
@@ -192,7 +193,8 @@ void Handler::handleRequest(HTTPRequest* request) {
         HTTPResponse response = (*routeHandler)(*request);
 
         // Send the response
-        if (!sendSocket(response.toString().c_str(), response.toString().size())) {
+        std::string responseStr = response.toString();
+        if (!sendSocket(responseStr.c_str(), responseStr.size())) {
             sendToLoggerError("Failed to send route response for: " + request->getPathString());
         }
 
@@ -268,15 +270,12 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
                 }
             }
 
-            contentBuilder = std::make_unique<HtmlBuilder>(contentPath, serverData.getRoot(), serverData.getRemoveComments(),
-                                             serverData.getAvailableLanguages(), serverData.getMergeAssets(), serverData.isDevMode());
+            contentBuilder = std::make_unique<HtmlBuilder>(contentPath, serverData);
 
         } else if (contentType == "text/javascript") {
-            contentBuilder = std::make_unique<JSBuilder>(contentPath, serverData.getRoot(), serverData.getRemoveComments(),
-                                           serverData.getMergeAssets(), serverData.isDevMode());
+            contentBuilder = std::make_unique<JSBuilder>(contentPath, serverData);
         } else if (contentType == "text/css") {
-            contentBuilder = std::make_unique<CSSBuilder>(contentPath, serverData.getRoot(), serverData.getRemoveComments(),
-                                            serverData.getMergeAssets(), serverData.isDevMode());
+            contentBuilder = std::make_unique<CSSBuilder>(contentPath, serverData);
         }
 
         // Check if builder was created
@@ -306,13 +305,96 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
 
 
     } else {
+        // Check if this is a WebP request and we have it cached (devMode)
+        if (contentType == "image/webp" && serverData.isDevMode() && serverData.getWebPConversion()) {
+            // Try to get from WebP cache
+            std::vector<uint8_t> cachedWebP = HtmlBuilder::getWebPFromCache(contentPath);
+            if (!cachedWebP.empty()) {
+                // Serve from cache
+                HTTPResponse htmlResponse("200 OK");
+                htmlResponse.setHeader("Content-Type", contentType);
+                htmlResponse.setHeader("Content-Length", std::to_string(cachedWebP.size()));
+                
+                std::string response = htmlResponse.toString();
+                
+                // Send headers
+                if (!sendSocket(response.c_str(), response.size())) {
+                    sendToLoggerError("Failed to send cached WebP header: " + contentPath);
+                    return;
+                }
+                
+                // Send cached WebP data
+                if (!sendSocket(reinterpret_cast<const char*>(cachedWebP.data()), cachedWebP.size())) {
+                    sendToLoggerError("Failed to send cached WebP data: " + contentPath);
+                }
+                return;
+            }
+        }
+        
         // Open file
         std::ifstream file(contentPath, std::ios::binary);
 
         if (!file.is_open()) {
-            sendToLogger("File not found: " + contentPath);
-            sendResponse("404 Not Found", "text/html", "<html><body><h1>404 Not Found</h1></body></html>");
-            return;
+            // If this is a WebP request and the file doesn't exist, try on-demand conversion
+            if (contentType == "image/webp" && serverData.getWebPConversion()) {
+                // Look for original PNG/JPG/JPEG file
+                std::string basePath = contentPath;
+                size_t dotPos = basePath.find_last_of('.');
+                if (dotPos != std::string::npos) {
+                    basePath = basePath.substr(0, dotPos);
+                }
+                
+                std::string sourcePath;
+                std::vector<std::string> extensions = {".jpg", ".jpeg", ".png"};
+                
+                for (const auto& ext : extensions) {
+                    if (std::filesystem::exists(basePath + ext)) {
+                        sourcePath = basePath + ext;
+                        break;
+                    }
+                }
+                
+                if (!sourcePath.empty()) {
+                    // Convert on-demand
+                    bool cacheOnly = serverData.isDevMode();
+                    if (WebPConverter::convertImage(sourcePath, contentPath, cacheOnly, serverData.getWebPQuality())) {
+                        if (cacheOnly) {
+                            // Serve from cache
+                            std::vector<uint8_t> webpData = WebPConverter::getFromCache(contentPath);
+                            if (!webpData.empty()) {
+                                HTTPResponse webpResponse("200 OK");
+                                webpResponse.setHeader("Content-Type", contentType);
+                                webpResponse.setHeader("Content-Length", std::to_string(webpData.size()));
+                                
+                                std::string response = webpResponse.toString();
+                                
+                                if (!sendSocket(response.c_str(), response.size())) {
+                                    sendToLoggerError("Failed to send on-demand WebP header: " + contentPath);
+                                    return;
+                                }
+                                
+                                if (!sendSocket(reinterpret_cast<const char*>(webpData.data()), webpData.size())) {
+                                    sendToLoggerError("Failed to send on-demand WebP data: " + contentPath);
+                                }
+                                return;
+                            }
+                        } else {
+                            // File was saved to disk, try opening again
+                            file.open(contentPath, std::ios::binary);
+                            if (file.is_open()) {
+                                // Continue with normal file serving below
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // If still not open, send 404
+            if (!file.is_open()) {
+                sendToLogger("File not found: " + contentPath);
+                sendResponse("404 Not Found", "text/html", "<html><body><h1>404 Not Found</h1></body></html>");
+                return;
+            }
         }
 
         // Get file size
@@ -371,7 +453,7 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
     std::map<std::string, std::string> contentRoot = {
         {"html", "/html"},         {"htm", "/html"},           {"css", "/assets/css"},    {"js", "/assets/js"},
         {"jpg", "/assets/images"}, {"jpeg", "/assets/images"}, {"png", "/assets/images"}, {"gif", "/assets/images"},
-        {"svg", "/assets/images"}, {"ico", "/assets/images"},  {"JSON", "/assets/JSONs"}, {"pdf", "/assets/docs"},
+        {"svg", "/assets/images"}, {"ico", "/assets/images"},  {"webp", "/assets/images"}, {"JSON", "/assets/JSONs"}, {"pdf", "/assets/docs"},
         {"zip", "/assets/docs"},   {"mp3", "/assets/audio"},   {"mp4", "/assets/video"},  {"xml", "/assets/docs"},
         {"csv", "/assets/docs"},   {"txt", "/assets/docs"}};
 
@@ -381,7 +463,7 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
 
     // TODO : Find better way to check for language, can't always add an 'or' statement for each new language
     if (Extension == "jpg" || Extension == "jpeg" || Extension == "png" || Extension == "gif" || Extension == "svg" ||
-        Extension == "ico") {
+        Extension == "ico" || Extension == "webp") {
         // For image files with /assets/ prefix, use path as-is (already normalized)
         if (pathReceived.find("/assets/") == 0) {
             // Assets are stored without language prefix, use direct path
@@ -505,9 +587,9 @@ std::string Handler::getContentType(const std::string& extension) {
     std::map<std::string, std::string> contentTypes = {
         {"html", "text/html"},      {"htm", "text/html"},    {"css", "text/css"},          {"js", "text/javascript"},
         {"jpg", "image/jpeg"},      {"jpeg", "image/jpeg"},  {"png", "image/png"},         {"gif", "image/gif"},
-        {"svg", "image/svg+xml"},   {"ico", "image/x-icon"}, {"JSON", "application/JSON"}, {"pdf", "application/pdf"},
-        {"zip", "application/zip"}, {"mp3", "audio/mpeg"},   {"mp4", "video/mp4"},         {"xml", "application/xml"},
-        {"csv", "text/csv"},        {"txt", "text/plain"}};
+        {"webp", "image/webp"},     {"svg", "image/svg+xml"},{"ico", "image/x-icon"},      {"JSON", "application/JSON"},
+        {"pdf", "application/pdf"}, {"zip", "application/zip"}, {"mp3", "audio/mpeg"},     {"mp4", "video/mp4"},
+        {"xml", "application/xml"}, {"csv", "text/csv"},        {"txt", "text/plain"}};
 
     return contentTypes.count(extension) ? contentTypes[extension] : "application/octet-stream";
 }

@@ -22,12 +22,9 @@ namespace geruest {
 class CSSBuilder : public ContentBuilder {
  public:
 
-  CSSBuilder(const std::string &inputPath, const std::string &inputServerRoot, 
-             bool removeCommentsFlag = true, bool mergeAssets = false, bool devModeFlag = false);
+  CSSBuilder(const std::string &inputPath, const ServerData& serverData);
 
  private:
-
-  bool _mergeAssets;
 
   void builCSS();
 

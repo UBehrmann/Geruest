@@ -16,16 +16,14 @@
 
 namespace geruest {
 
-JSBuilder::JSBuilder(const std::string &inputPath, const std::string &inputServerRoot, 
-                     bool removeCommentsFlag, bool mergeAssets, bool devModeFlag) 
-    : ContentBuilder(inputPath, inputServerRoot, removeCommentsFlag, {}, devModeFlag), 
-      _mergeAssets(mergeAssets) {
+JSBuilder::JSBuilder(const std::string &inputPath, const ServerData& serverData) 
+    : ContentBuilder(inputPath, serverData) {
     builJS();
 }
 
 void JSBuilder::builJS() {
     // In dev mode with merging, check if content is in cache first
-    if (devMode && _mergeAssets) {
+    if (_serverData.isDevMode() && _serverData.getMergeAssets()) {
         // Extract relative path from full path (remove root)
         std::string relativePath = path;
         size_t rootPos = relativePath.find("/assets/");
@@ -41,7 +39,7 @@ void JSBuilder::builJS() {
     
     // File is already loaded by ContentBuilder base class via loadFile(path)
     // Just handle comment removal if enabled
-    if (removeComments && !builtFile.empty()) {
+    if (_serverData.getRemoveComments() && !builtFile.empty()) {
         builtFile = removeCommentsFromString(builtFile, FILETYPE_JS);
     }
 }

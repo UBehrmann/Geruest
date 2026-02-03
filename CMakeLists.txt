@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 
 # Define the project name and version
-project(GeruestLibrary VERSION 0.6.5 LANGUAGES CXX)
+project(GeruestLibrary VERSION 0.6.6 LANGUAGES CXX)
 
 # Configure version header
 configure_file(
@@ -32,6 +32,18 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 # Required packages
 find_package(Threads REQUIRED)
 
+# Optional: Find libwebp for WebP image conversion
+# Users must install libwebp-dev (Linux) or webp (vcpkg/conan) for this feature
+find_package(WebP QUIET)
+if(WebP_FOUND)
+    message(STATUS "WebP library found - WebP conversion enabled")
+    set(GERUEST_HAS_WEBP TRUE)
+else()
+    message(STATUS "WebP library not found - WebP conversion disabled")
+    message(STATUS "To enable WebP conversion, install libwebp-dev (apt) or webp (vcpkg)")
+    set(GERUEST_HAS_WEBP FALSE)
+endif()
+
 # Create the static library
 add_library(Geruest STATIC
     src/Geruest.cpp
@@ -41,6 +53,7 @@ add_library(Geruest STATIC
     src/builders/CSSBuilder.cpp
     src/builders/HTMLBuilder.cpp
     src/builders/JSBuilder.cpp
+    src/builders/WebPConverter.cpp
     src/data/HTTPRequest.cpp
     src/data/HTTPResponse.cpp
     src/FileManagement/FileManagement.cpp
@@ -55,9 +68,17 @@ target_include_directories(Geruest PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(Geruest Threads::Threads)
+target_link_libraries(Geruest PUBLIC Threads::Threads)
 if(WIN32)
-    target_link_libraries(Geruest ws2_32)
+    target_link_libraries(Geruest PUBLIC ws2_32)
+endif()
+
+# Link WebP library if found (PRIVATE to avoid leaking to consumers)
+if(GERUEST_HAS_WEBP)
+    target_link_libraries(Geruest PRIVATE WebP::webp)
+    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_WEBP=1)
+else()
+    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_WEBP=0)
 endif()
 
 # -------------------

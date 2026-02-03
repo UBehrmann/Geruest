@@ -39,6 +39,7 @@ set(GERUEST_SOURCES
     ../builders/HTMLBuilder.cpp
     ../builders/CSSBuilder.cpp
     ../builders/JSBuilder.cpp
+    ../builders/WebPConverter.cpp
     ../handler/Handler.cpp
 )
 
@@ -71,11 +72,13 @@ target_link_libraries(FileManagement_Tests ${PLATFORM_LIBS})
 
 add_executable(ContentBuilder_Tests 
     ContentBuilder/ContentBuilder_tests.cpp 
+    ../auth/BasicAuth.cpp
     ../builders/AssetMerger.cpp
     ../builders/ContentBuilder.cpp
     ../builders/HTMLBuilder.cpp
     ../builders/CSSBuilder.cpp
     ../builders/JSBuilder.cpp
+    ../builders/WebPConverter.cpp
     ../parser/JSONParser.cpp
     ../FileManagement/FileManagement.cpp
 )

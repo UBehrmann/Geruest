@@ -14,6 +14,7 @@
 #include <cctype>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -26,23 +27,23 @@ class HTTPRequest {
    public:
     HTTPRequest(std::string rawRequest, std::string clientIP, std::string serverRootPath);
 
-    std::string getMethod() const;
-    std::string getPathString() const;
+    const std::string& getMethod() const;
+    const std::string& getPathString() const;
     std::string getPath(size_t index) const;
-    std::string getRawRequest() const;
-    std::string getRawRequestLine() const;
-    std::string getClientIP() const;
-    std::string getOrigin() const;
-    std::string getServerRoot() const;
-    std::string getBody() const;
+    const std::string& getRawRequest() const;
+    const std::string& getRawRequestLine() const;
+    const std::string& getClientIP() const;
+    const std::string& getOrigin() const;
+    const std::string& getServerRoot() const;
+    const std::string& getBody() const;
 
     std::string getParam(const std::string& name) const;
 
     bool hasParam(const std::string& name) const;
 
-    std::string getHeader(const std::string& key) const;
+    std::string getHeader(std::string_view key) const;
 
-    bool hasHeader(const std::string& key) const;
+    bool hasHeader(std::string_view key) const;
 
    private:
     std::string ip;

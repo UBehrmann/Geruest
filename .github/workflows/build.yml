@@ -18,6 +18,11 @@ jobs:
       - name: Set up CMake
         uses: lukka/get-cmake@latest
 
+      - name: Install libwebp
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebp-dev
+
       - name: Configure and Build
         run: |
           mkdir build && cd build
@@ -50,7 +55,7 @@ jobs:
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-make
+          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-make mingw-w64-x86_64-libwebp
 
       - name: Configure and Build
         shell: msys2 {0}
@@ -83,10 +88,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install libwebp via vcpkg
+        run: |
+          vcpkg install libwebp:x64-windows
+          echo "CMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" >> $env:GITHUB_ENV
+
       - name: Configure and Build (.lib)
         run: |
           mkdir build && cd build
-          cmake .. -DCMAKE_GENERATOR_PLATFORM=x64 -A x64 -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+          cmake .. -DCMAKE_GENERATOR_PLATFORM=x64 -A x64 -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
           cmake --build . --config Release
 
       - name: Build Unit Tests

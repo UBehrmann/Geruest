@@ -59,7 +59,7 @@ private:
 
 	unsigned int messageCount = 0;
 
-	ServerData serverData;
+	const ServerData& serverData;
 
 	const std::string IP;
 
@@ -103,9 +103,9 @@ private:
 public:
 
 #ifdef _WIN32
-	Handler(SOCKET socket, std::string clientIP, ServerData serverDataArg);
+	Handler(SOCKET socket, std::string clientIP, const ServerData& serverDataRef);
 #else
-	Handler(int socket, std::string clientIP, ServerData serverDataArg);
+	Handler(int socket, std::string clientIP, const ServerData& serverDataRef);
 #endif
 
 	~Handler();
