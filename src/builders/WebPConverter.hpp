@@ -33,7 +33,7 @@ public:
     /**
      * @brief Default WebP quality (0-100, where 100 is lossless)
      */
-    static constexpr float DEFAULT_QUALITY = 80.0f;
+    static constexpr float WEBP_DEFAULT_QUALITY = 75.0f;
 
     // ========== Static methods for direct use without instance ==========
 
@@ -46,7 +46,7 @@ public:
      * @return true if conversion succeeded, false otherwise
      */
     static bool convertImage(const std::string& sourcePath, const std::string& outputPath, 
-                            bool cacheOnly = false, float quality = DEFAULT_QUALITY);
+                            bool cacheOnly = false, float quality = WEBP_DEFAULT_QUALITY);
 
     /**
      * @brief Extract image paths from HTML content (returns vector of relative paths)
@@ -104,7 +104,7 @@ public:
      * @param devMode If true, converted images are kept in memory only
      * @param quality WebP compression quality (0-100)
      */
-    WebPConverter(const std::string& serverRoot, bool devMode = false, float quality = DEFAULT_QUALITY);
+    WebPConverter(const std::string& serverRoot, bool devMode = false, float quality = WEBP_DEFAULT_QUALITY);
 
     /**
      * @brief Convert an image file to WebP format
