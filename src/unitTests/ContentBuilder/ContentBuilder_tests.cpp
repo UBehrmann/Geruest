@@ -13,11 +13,20 @@
 #include "../../builders/HTMLBuilder.hpp"
 #include "../../builders/CSSBuilder.hpp"
 #include "../../builders/JSBuilder.hpp"
+#include "../../data/ServerData.hpp"
 
 namespace geruest {
 namespace test {
 
 const std::string TEST_ROOT = "test_content_root";
+
+// Helper function to create a ServerData with the test root
+ServerData createTestServerData(bool removeComments = true) {
+    ServerData data;
+    data.setRoot(TEST_ROOT);
+    data.setRemoveComments(removeComments);
+    return data;
+}
 
 void setup_test_environment() {
     // Create test directory structure
@@ -82,9 +91,10 @@ void test_contentbuilder_load_file() {
     setup_test_environment();
     
     std::string testFile = TEST_ROOT + "/html/test.html";
+    ServerData serverData = createTestServerData(true);
     
     // Since loadFile is protected, test it through ContentBuilder constructor
-    ContentBuilder builder(testFile, TEST_ROOT, true);
+    ContentBuilder builder(testFile, serverData);
     std::string content = builder.file();
     
     assert(!content.empty());
@@ -127,7 +137,8 @@ void test_contentbuilder_basic_functionality() {
     setup_test_environment();
     
     std::string testFile = TEST_ROOT + "/html/test.html";
-    ContentBuilder builder(testFile, TEST_ROOT, true);
+    ServerData serverData = createTestServerData(true);
+    ContentBuilder builder(testFile, serverData);
     
     assert(builder.size() > 0);
     assert(!builder.file().empty());
@@ -138,7 +149,8 @@ void test_contentbuilder_with_comments_disabled() {
     setup_test_environment();
     
     std::string testFile = TEST_ROOT + "/html/test.html";
-    ContentBuilder builder(testFile, TEST_ROOT, false); // Don't remove comments
+    ServerData serverData = createTestServerData(false); // Don't remove comments
+    ContentBuilder builder(testFile, serverData);
     
     std::string content = builder.file();
     // Should still contain comments
@@ -149,7 +161,8 @@ void test_contentbuilder_with_comments_enabled() {
     setup_test_environment();
     
     std::string testFile = TEST_ROOT + "/html/test.html";
-    ContentBuilder builder(testFile, TEST_ROOT, true); // Remove comments
+    ServerData serverData = createTestServerData(true); // Remove comments
+    ContentBuilder builder(testFile, serverData);
     
     std::string content = builder.file();
     // Should not contain comments (this may depend on the actual implementation)
@@ -157,7 +170,8 @@ void test_contentbuilder_with_comments_enabled() {
 }
 
 void test_contentbuilder_nonexistent_file() {
-    ContentBuilder builder("nonexistent.html", TEST_ROOT, true);
+    ServerData serverData = createTestServerData(true);
+    ContentBuilder builder("nonexistent.html", serverData);
     
     // Should handle gracefully
     assert(builder.size() == 0);
