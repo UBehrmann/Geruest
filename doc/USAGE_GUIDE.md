@@ -205,6 +205,7 @@ FROM ubuntu:22.04
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libstdc++6 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
@@ -214,23 +215,12 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 WORKDIR /app
 
 # Copy built application and website files
-COPY --from=builder-app /app/build/myapp /app/
+COPY --from=builder-app /app/build/myapp /app/build/
 COPY --from=builder-app /app/website /app/website
 
-# Copy Geruest library
-COPY --from=builder-deps /usr/local/lib /usr/local/lib
-
-# Copy vcpkg libraries (WebP and dependencies)
-COPY --from=builder-deps /opt/vcpkg/installed /opt/vcpkg-libs
-
-# Copy WebP shared libraries to system location
-RUN if [ -d "/opt/vcpkg-libs/x64-linux/lib" ]; then \
-        cp -r /opt/vcpkg-libs/x64-linux/lib/*.so* /usr/local/lib/ 2>/dev/null || true; \
-    fi && \
-    rm -rf /opt/vcpkg-libs
-
-# Update library cache
-RUN ldconfig
+# Note: Geruest is a static library with WebP statically linked
+# All dependencies are already compiled into the binary, so no runtime libraries needed
+# (If you build Geruest as shared, copy /usr/local/lib and run ldconfig)
 
 # Change ownership to non-root user
 RUN chown -R appuser:appuser /app
@@ -242,7 +232,7 @@ USER appuser
 EXPOSE 8080
 
 # Run the application
-CMD ["./myapp"]
+CMD ["./build/myapp"]
 ```
 
 ### Simple Dockerfile (Without WebP)
@@ -284,21 +274,22 @@ FROM ubuntu:22.04
 
 RUN apt-get update && apt-get install -y \
     libstdc++6 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 WORKDIR /app
-COPY --from=builder /app/myapp/build/myapp .
+COPY --from=builder /app/myapp/build/myapp ./build/
 COPY --from=builder /app/myapp/website ./website
-COPY --from=builder /usr/local/lib /usr/local/lib
 
-RUN ldconfig
+# Note: Geruest is statically linked - no runtime libraries needed
+
 RUN chown -R appuser:appuser /app
 
 USER appuser
 EXPOSE 8080
-CMD ["./myapp"]
+CMD ["./build/myapp"]
 ```
 
 ### Multi-Stage with Alpine (Smaller Image)
@@ -334,7 +325,7 @@ RUN mkdir -p build && cd build && \
 # Runtime stage
 FROM alpine:3.18
 
-RUN apk add --no-cache libstdc++ libgcc
+RUN apk add --no-cache libstdc++ libgcc curl
 
 WORKDIR /app
 COPY --from=builder /app/myapp/build/myapp .
