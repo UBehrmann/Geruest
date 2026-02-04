@@ -99,6 +99,7 @@ void Geruest::enableWebPConversion() {
 #else
     sendToLoggerError("WebP conversion cannot be enabled - library not available (GERUEST_HAS_WEBP=0)");
     sendToLoggerError("Install libwebp-dev (apt) or webp (vcpkg) and rebuild to enable this feature");
+    serverData.setWebPConversion(false);
 #endif
 }
 
