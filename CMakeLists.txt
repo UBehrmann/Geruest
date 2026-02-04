@@ -47,7 +47,6 @@ else()
         if(LIBWEBP_FOUND)
             message(STATUS "WebP library found via pkg-config - WebP conversion enabled")
             set(GERUEST_HAS_WEBP TRUE)
-            set(WEBP_LINK_TARGET "")  # Will use LIBWEBP_* variables instead
         endif()
     endif()
     
