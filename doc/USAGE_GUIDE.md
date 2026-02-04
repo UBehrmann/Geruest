@@ -125,10 +125,122 @@ cmake --build .
 
 ## Docker Deployment
 
-### Basic Dockerfile
+### Multi-Stage Dockerfile with WebP Support
+
+This example shows a production-ready multi-stage build with vcpkg for WebP support:
 
 ```dockerfile
-# Dockerfile
+# Multi-stage Docker build for Geruest Application
+# Stage 1: Build dependencies (Geruest library with WebP support)
+FROM ubuntu:22.04 AS builder-deps
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    git \
+    ca-certificates \
+    curl \
+    zip \
+    unzip \
+    tar \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install vcpkg for better dependency management
+RUN git clone https://github.com/Microsoft/vcpkg.git /opt/vcpkg && \
+    /opt/vcpkg/bootstrap-vcpkg.sh
+
+# Install libwebp via vcpkg (provides proper CMake config)
+RUN /opt/vcpkg/vcpkg install libwebp
+
+# Create working directory
+WORKDIR /app
+
+# Clone and build Geruest library
+RUN git clone https://github.com/UBehrmann/Geruest.git && \
+    cd Geruest && \
+    mkdir -p build && cd build && \
+    cmake -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX=/usr/local \
+          -DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake \
+          .. && \
+    make -j$(nproc) && \
+    make install
+
+# Stage 2: Build your application
+FROM ubuntu:22.04 AS builder-app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy vcpkg and installed libraries from stage 1
+COPY --from=builder-deps /opt/vcpkg /opt/vcpkg
+COPY --from=builder-deps /usr/local /usr/local
+
+# Create working directory
+WORKDIR /app
+
+# Copy your project files
+COPY src/ ./src/
+COPY CMakeLists.txt .
+COPY website/ ./website/
+
+# Build your application
+RUN mkdir -p build && cd build && \
+    cmake -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_PREFIX_PATH=/usr/local \
+          -DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake \
+          .. && \
+    make -j$(nproc)
+
+# Stage 3: Runtime image (minimal size)
+FROM ubuntu:22.04
+
+# Install minimal runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libstdc++6 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user for security
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+# Create application directory
+WORKDIR /app
+
+# Copy built application and website files
+COPY --from=builder-app /app/build/myapp /app/build/
+COPY --from=builder-app /app/website /app/website
+
+# Note: Geruest is a static library with WebP statically linked
+# All dependencies are already compiled into the binary, so no runtime libraries needed
+# (If you build Geruest as shared, copy /usr/local/lib and run ldconfig)
+
+# Change ownership to non-root user
+RUN chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
+# Expose port (adjust as needed)
+EXPOSE 8080
+
+# Run the application
+CMD ["./build/myapp"]
+```
+
+### Simple Dockerfile (Without WebP)
+
+If you don't need WebP support, you can use this simpler version:
+
+```dockerfile
+# Simple multi-stage build without vcpkg
 FROM ubuntu:22.04 AS builder
 
 # Install build dependencies
@@ -138,46 +250,54 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy source code
 WORKDIR /app
-COPY . .
 
-# Build Geruest library
-RUN mkdir -p build && cd build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+# Clone and build Geruest
+RUN git clone https://github.com/UBehrmann/Geruest.git && \
+    cd Geruest && \
+    mkdir -p build && cd build && \
+    cmake -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX=/usr/local \
+          .. && \
     make -j$(nproc) && \
     make install
 
-# Build your application (assuming it's in /app/myapp)
+# Copy and build your application
 WORKDIR /app/myapp
+COPY . .
 RUN mkdir -p build && cd build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release && \
-    make
+    cmake -DCMAKE_BUILD_TYPE=Release .. && \
+    make -j$(nproc)
 
 # Runtime stage
 FROM ubuntu:22.04
 
-# Install runtime dependencies (minimal)
 RUN apt-get update && apt-get install -y \
     libstdc++6 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy built application
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
 WORKDIR /app
-COPY --from=builder /app/myapp/build/myapp .
+COPY --from=builder /app/myapp/build/myapp ./build/
 COPY --from=builder /app/myapp/website ./website
 
-# Expose port
-EXPOSE 8080
+# Note: Geruest is statically linked - no runtime libraries needed
 
-# Run
-CMD ["./myapp"]
+RUN chown -R appuser:appuser /app
+
+USER appuser
+EXPOSE 8080
+CMD ["./build/myapp"]
 ```
 
 ### Multi-Stage with Alpine (Smaller Image)
 
+**Note**: Alpine support requires additional configuration for WebP. Use Ubuntu-based images for best compatibility.
+
 ```dockerfile
-# Dockerfile.alpine
+# Dockerfile.alpine - Advanced users only
 FROM alpine:3.18 AS builder
 
 # Install build dependencies
@@ -205,7 +325,7 @@ RUN mkdir -p build && cd build && \
 # Runtime stage
 FROM alpine:3.18
 
-RUN apk add --no-cache libstdc++ libgcc
+RUN apk add --no-cache libstdc++ libgcc curl
 
 WORKDIR /app
 COPY --from=builder /app/myapp/build/myapp .
@@ -213,6 +333,32 @@ COPY --from=builder /app/myapp/website ./website
 
 EXPOSE 8080
 CMD ["./myapp"]
+```
+
+### Build and Run Commands
+
+```bash
+# Build the image
+docker build -t mygeruest-app .
+
+# Run the container
+docker run -d \
+  --name myapp \
+  -p 8080:8080 \
+  -v $(pwd)/website:/app/website:ro \
+  mygeruest-app
+
+# View logs
+docker logs -f myapp
+
+# Stop and remove
+docker stop myapp
+docker rm myapp
+
+# Rebuild and run (development)
+docker build -t mygeruest-app . && \
+docker stop myapp 2>/dev/null && docker rm myapp 2>/dev/null; \
+docker run -d --name myapp -p 8080:8080 mygeruest-app
 ```
 
 ### Docker Compose
@@ -229,16 +375,17 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      # Mount website for hot-reload during development
+      # Mount website for live changes (development only)
       - ./website:/app/website:ro
     environment:
       - PORT=8080
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 40s
 
   # Optional: nginx reverse proxy
   nginx:
@@ -250,33 +397,28 @@ services:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./certs:/etc/nginx/certs:ro
     depends_on:
-      - webserver
+      webserver:
+        condition: service_healthy
     restart: unless-stopped
 ```
 
-### Build and Run with Docker
+### Docker Compose Commands
 
 ```bash
-# Build the image
-docker build -t mygeruest-app .
-
-# Run the container
-docker run -d \
-  --name myapp \
-  -p 8080:8080 \
-  -v $(pwd)/website:/app/website:ro \
-  mygeruest-app
+# Build and start services
+docker-compose up -d
 
 # View logs
-docker logs -f myapp
+docker-compose logs -f webserver
 
-# Stop
-docker stop myapp
+# Rebuild after code changes
+docker-compose up -d --build
 
-# Using docker-compose
-docker-compose up -d
-docker-compose logs -f
+# Stop services
 docker-compose down
+
+# Clean up (including volumes)
+docker-compose down -v
 ```
 
 ### Development with Docker Volumes
