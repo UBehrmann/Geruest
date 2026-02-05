@@ -32,6 +32,14 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 # Required packages
 find_package(Threads REQUIRED)
 
+# Required: Find CURL for email functionality
+find_package(CURL REQUIRED)
+if(CURL_FOUND)
+    message(STATUS "CURL library found - Email functionality enabled")
+else()
+    message(FATAL_ERROR "CURL library not found - required for email functionality")
+endif()
+
 # Optional: Find libwebp for WebP image conversion
 # Users must install libwebp-dev (Linux) or webp (vcpkg/conan) for this feature
 find_package(WebP QUIET)
@@ -69,6 +77,7 @@ add_library(Geruest STATIC
     src/builders/WebPConverter.cpp
     src/data/HTTPRequest.cpp
     src/data/HTTPResponse.cpp
+    src/email/EmailSender.cpp
     src/FileManagement/FileManagement.cpp
     src/handler/Handler.cpp
     src/parser/JSONParser.cpp
@@ -81,7 +90,7 @@ target_include_directories(Geruest PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(Geruest PUBLIC Threads::Threads)
+target_link_libraries(Geruest PUBLIC Threads::Threads CURL::libcurl)
 if(WIN32)
     target_link_libraries(Geruest PUBLIC ws2_32)
 endif()

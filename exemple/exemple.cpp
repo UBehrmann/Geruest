@@ -13,6 +13,8 @@
 #include <csignal>
 #include <filesystem>
 #include "Geruest.hpp"
+#include "email/EmailSender.hpp"
+#include "EnvLoader.hpp"
 
 #define PORT 8080
 #define HOSTNAME "localhost"
@@ -27,11 +29,68 @@ void signalHandler(int signum) {
     if (server) {
         server->stop();
     }
+    // Stop email sender
+    try {
+        auto& emailSender = geruest::EmailSender::getInstance();
+        emailSender.stop();
+    } catch (...) {
+        // Not initialized, ignore
+    }
 }
 
 void addRoutes(Geruest* serverToAddRoutes);
 
 int main(int argc, char* argv[]) {
+
+    // Load environment variables from .env file
+    std::cout << "\n=== Environment Configuration ===" << std::endl;
+    
+    // Get the executable's directory
+    std::filesystem::path exePath = std::filesystem::canonical("/proc/self/exe");
+    std::filesystem::path exeDir = exePath.parent_path();
+    std::filesystem::path envPath = exeDir / ".." / ".env";
+    std::filesystem::path normalizedEnvPath = std::filesystem::weakly_canonical(envPath);
+    
+    std::cout << "Looking for .env at: " << normalizedEnvPath << std::endl;
+    
+    if (!EnvLoader::load(normalizedEnvPath.string())) {
+        std::cout << "No .env file found, using default values" << std::endl;
+        std::cout << "Copy .env.example to .env and configure your SMTP settings" << std::endl;
+    }
+    // ============================================================
+    // EMAIL SENDER CONFIGURATION (initialize before server)
+    // ============================================================
+    
+    geruest::EmailSender::Config emailConfig;
+    emailConfig.smtpServer = EnvLoader::get("SMTP_SERVER", "smtp.gmail.com");
+    emailConfig.port = EnvLoader::getInt("SMTP_PORT", 587);
+    emailConfig.username = EnvLoader::get("SMTP_USERNAME", "your-email@gmail.com");
+    emailConfig.password = EnvLoader::get("SMTP_PASSWORD", "your-app-password");
+    emailConfig.fromAddress = EnvLoader::get("SMTP_FROM_ADDRESS", "noreply@example.com");
+    emailConfig.useTLS = true;
+    
+    // Initialize email sender
+    geruest::EmailSender::init(emailConfig);
+    auto& emailSender = geruest::EmailSender::getInstance();
+    
+    // Configure spam protection
+    emailSender.setMinEmailInterval(EnvLoader::getInt("EMAIL_MIN_INTERVAL", 60));
+    emailSender.setMaxEmailsPerIP(EnvLoader::getInt("EMAIL_MAX_PER_IP", 10));
+    emailSender.setIPTrackingDuration(EnvLoader::getInt("EMAIL_TRACKING_DURATION", 3600));
+    emailSender.setMaxQueueSize(EnvLoader::getInt("EMAIL_MAX_QUEUE_SIZE", 1000));
+    
+    std::cout << "\n=== Email Sender Configuration ===" << std::endl;
+    std::cout << "SMTP Server: " << emailConfig.smtpServer << ":" << emailConfig.port << std::endl;
+    std::cout << "Username: " << emailConfig.username << std::endl;
+    std::cout << "Password: " << (emailConfig.password.empty() ? "[NOT SET]" : "[" + std::to_string(emailConfig.password.length()) + " chars]") << std::endl;
+    std::cout << "From Address: " << emailConfig.fromAddress << std::endl;
+    std::cout << "Spam Protection:" << std::endl;
+    std::cout << "  Min interval: " << EnvLoader::getInt("EMAIL_MIN_INTERVAL", 60) << "s" << std::endl;
+    std::cout << "  Max per IP: " << EnvLoader::getInt("EMAIL_MAX_PER_IP", 10) << " emails" << std::endl;
+    std::cout << "  Tracking duration: " << EnvLoader::getInt("EMAIL_TRACKING_DURATION", 3600) << "s" << std::endl;
+    std::cout << "===================================\n" << std::endl;
+
+    std::cout << "=================================\n" << std::endl;
 
     server = std::make_unique<Geruest>();
 
@@ -223,6 +282,8 @@ int main(int argc, char* argv[]) {
     std::cout << "  GET  http://" << HOSTNAME << ":" << PORT << "/test" << std::endl;
     std::cout << "  GET  http://" << HOSTNAME << ":" << PORT << "/api/get" << std::endl;
     std::cout << "  POST http://" << HOSTNAME << ":" << PORT << "/api/post" << std::endl;
+    std::cout << "  POST http://" << HOSTNAME << ":" << PORT << "/api/send-test-email (Email)" << std::endl;
+    std::cout << "  WEB  http://" << HOSTNAME << ":" << PORT << "/email-test (Email Test Page)" << std::endl;
     std::cout << "  Wildcard: http://" << HOSTNAME << ":" << PORT << "/api/anything" << std::endl;
     std::cout << "  Static files from: ./website/" << std::endl;
     std::cout << "\n=== Controls ===" << std::endl;
@@ -282,6 +343,72 @@ void addRoutes(Geruest* serverToAddRoutes) {
         return response;
     });
 
+    // ============================================================
+    // EMAIL CONTACT FORM ENDPOINT
+    // ============================================================
+    
+    // POST endpoint for contact form with email sending
+    // Test with: curl -X POST http://localhost:8080/api/contact \
+    //   -H "Content-Type: application/json" \
+    //   -d '{"email":"user@example.com","name":"John Doe","message":"Hello!"}'
+    serverToAddRoutes->addRoute("/api/contact", [](const HTTPRequest& req) {
+        HTTPResponse response("200 OK");
+        response.setHeader("Content-Type", "application/json");
+        response.setHeader("Access-Control-Allow-Origin", "*");
+        
+        try {
+            // Parse JSON body
+            geruest::JSONParser parser(req.getBody());
+            
+            std::string userEmail = parser.getString("email");
+            std::string userName = parser.getString("name");
+            std::string message = parser.getString("message");
+            std::string clientIP = req.getClientIP();
+            
+            // Validate input
+            if (userEmail.empty() || message.empty()) {
+                response.setBody(R"({"status":"error","message":"Email and message are required"})");
+                return response;
+            }
+            
+            // Prepare email content
+            std::string emailSubject = "Contact Form: " + userName;
+            std::string emailBody = "New contact form submission:\n\n";
+            emailBody += "From: " + userName + " (" + userEmail + ")\n";
+            emailBody += "IP: " + clientIP + "\n\n";
+            emailBody += "Message:\n" + message + "\n";
+            
+            // Queue email
+            auto& emailSender = geruest::EmailSender::getInstance();
+            bool queued = emailSender.enqueueEmail(
+                "admin@example.com",  // Replace with your actual admin email
+                emailSubject,
+                emailBody,
+                clientIP
+            );
+            
+            if (queued) {
+                response.setBody(R"({
+                    "status":"success",
+                    "message":"Your message has been sent successfully!",
+                    "queue_size":)" + std::to_string(emailSender.getQueueSize()) + R"(,
+                    "emails_sent":)" + std::to_string(emailSender.getEmailsSent()) + R"(
+                })");
+            } else {
+                response.setBody(R"({
+                    "status":"error",
+                    "message":"Too many requests. Please try again later."
+                })");
+            }
+            
+        } catch (const std::exception& e) {
+            response.setBody(R"({"status":"error","message":"Invalid request: )" + 
+                           std::string(e.what()) + R"("})");
+        }
+        
+        return response;
+    });
+
     // Specific exact routes that should take precedence over wildcards
     
     // GET endpoint (exact match takes precedence over /api/*)
@@ -313,6 +440,73 @@ void addRoutes(Geruest* serverToAddRoutes) {
         HTTPResponse response("200 OK");
         response.setHeader("Content-Type", "application/json");
         response.setBody(R"({"method": "DELETE", "message": "DELETE request received!"})");
+        return response;
+    });
+
+    // ============================================================
+    // EMAIL TEST ENDPOINT
+    // ============================================================
+    
+    // POST endpoint for sending simple test emails
+    // Test with: curl -X POST http://localhost:8080/api/send-test-email \
+    //   -H "Content-Type: application/json" \
+    //   -d '{"to":"recipient@example.com"}'
+    // Or visit: http://localhost:8080/email-test.html
+    serverToAddRoutes->addRoute("/api/send-test-email", [](const HTTPRequest& req) {
+        HTTPResponse response("200 OK");
+        response.setHeader("Content-Type", "application/json");
+        response.setHeader("Access-Control-Allow-Origin", "*");
+        
+        try {
+            // Parse JSON body
+            geruest::JSONParser parser(req.getBody());
+            
+            std::string toEmail = parser.getString("to");
+            std::string clientIP = req.getClientIP();
+            
+            // Validate input
+            if (toEmail.empty()) {
+                response.setBody(R"({"status":"error","message":"Recipient email address is required"})");
+                return response;
+            }
+            
+            // Prepare test email content
+            std::string emailSubject = "Test Email from Geruest Server";
+            std::string emailBody = "This is a test email sent from your Geruest server.\n\n";
+            emailBody += "Server: Geruest Framework\n";
+            emailBody += "Timestamp: " + std::to_string(std::time(nullptr)) + "\n";
+            emailBody += "Client IP: " + clientIP + "\n\n";
+            emailBody += "If you received this email, your SMTP configuration is working correctly!\n";
+            
+            // Queue email
+            auto& emailSender = geruest::EmailSender::getInstance();
+            bool queued = emailSender.enqueueEmail(
+                toEmail,
+                emailSubject,
+                emailBody,
+                clientIP
+            );
+            
+            if (queued) {
+                response.setBody(R"({
+                    "status":"success",
+                    "message":"Test email sent successfully to )" + toEmail + R"(!",
+                    "queue_size":)" + std::to_string(emailSender.getQueueSize()) + R"(,
+                    "emails_sent":)" + std::to_string(emailSender.getEmailsSent()) + R"(,
+                    "emails_rejected":)" + std::to_string(emailSender.getEmailsRejected()) + R"(
+                })");
+            } else {
+                response.setBody(R"({
+                    "status":"error",
+                    "message":"Rate limit exceeded. Please wait before sending another email."
+                })");
+            }
+            
+        } catch (const std::exception& e) {
+            response.setBody(R"({"status":"error","message":"Invalid request: )" + 
+                           std::string(e.what()) + R"("})");
+        }
+        
         return response;
     });
 }

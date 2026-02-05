@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Test - Geruest</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            color: #555;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        
+        input[type="email"] {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+        
+        input[type="email"]:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            margin-top: 10px;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        
+        .btn:active {
+            transform: translateY(0);
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .response {
+            margin-top: 20px;
+            padding: 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            display: none;
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .response.success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        
+        .response.error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        
+        .response.info {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+        
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 0.6s linear infinite;
+            margin-right: 8px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 20px;
+            font-size: 12px;
+        }
+        
+        .stat {
+            text-align: center;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 6px;
+        }
+        
+        .stat-value {
+            display: block;
+            font-size: 20px;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 4px;
+        }
+        
+        .stat-label {
+            color: #666;
+            font-size: 11px;
+        }
+        
+        .back-link {
+            display: inline-block;
+            margin-top: 20px;
+            color: #667eea;
+            text-decoration: none;
+            font-size: 14px;
+            transition: color 0.2s ease;
+        }
+        
+        .back-link:hover {
+            color: #764ba2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📧 Email Test</h1>
+        <p class="subtitle">Send a test email to verify your SMTP configuration</p>
+        
+        <form id="emailForm">
+            <div class="form-group">
+                <label for="toEmail">Recipient Email Address</label>
+                <input 
+                    type="email" 
+                    id="toEmail" 
+                    name="to" 
+                    placeholder="recipient@example.com"
+                    required
+                    autocomplete="email"
+                >
+            </div>
+            
+            <button type="submit" class="btn" id="sendBtn">
+                Send Test Email
+            </button>
+        </form>
+        
+        <div id="response" class="response"></div>
+        
+        <div class="stats" id="stats" style="display: none;">
+            <div class="stat">
+                <span class="stat-value" id="queueSize">0</span>
+                <span class="stat-label">Queue</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="emailsSent">0</span>
+                <span class="stat-label">Sent</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="emailsRejected">0</span>
+                <span class="stat-label">Rejected</span>
+            </div>
+        </div>
+        
+        <a href="/" class="back-link">← Back to Home</a>
+    </div>
+    
+    <script>
+        const form = document.getElementById('emailForm');
+        const sendBtn = document.getElementById('sendBtn');
+        const responseDiv = document.getElementById('response');
+        const statsDiv = document.getElementById('stats');
+        
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const toEmail = document.getElementById('toEmail').value;
+            
+            // Disable button and show loading state
+            sendBtn.disabled = true;
+            sendBtn.innerHTML = '<span class="spinner"></span>Sending...';
+            
+            // Hide previous response
+            responseDiv.style.display = 'none';
+            
+            try {
+                const response = await fetch('/api/send-test-email', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ to: toEmail })
+                });
+                
+                const data = await response.json();
+                
+                // Show response
+                responseDiv.style.display = 'block';
+                
+                if (data.status === 'success') {
+                    responseDiv.className = 'response success';
+                    responseDiv.textContent = '✓ ' + data.message;
+                    
+                    // Update stats if available
+                    if (data.queue_size !== undefined) {
+                        statsDiv.style.display = 'grid';
+                        document.getElementById('queueSize').textContent = data.queue_size;
+                        document.getElementById('emailsSent').textContent = data.emails_sent;
+                        document.getElementById('emailsRejected').textContent = data.emails_rejected || 0;
+                    }
+                } else {
+                    responseDiv.className = 'response error';
+                    responseDiv.textContent = '✗ ' + (data.message || 'Failed to send email');
+                }
+                
+            } catch (error) {
+                responseDiv.style.display = 'block';
+                responseDiv.className = 'response error';
+                responseDiv.textContent = '✗ Network error: ' + error.message;
+            } finally {
+                // Re-enable button
+                sendBtn.disabled = false;
+                sendBtn.textContent = 'Send Test Email';
+            }
+        });
+    </script>
+</body>
+</html>

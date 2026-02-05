@@ -12,6 +12,7 @@ endif()
 
 # Find required packages
 find_package(Threads REQUIRED)
+find_package(CURL REQUIRED)
 
 # Check for WebP library (optional)
 find_package(PkgConfig QUIET)
@@ -49,6 +50,7 @@ add_library(Geruest STATIC
     ../src/builders/WebPConverter.cpp
     ../src/data/HTTPRequest.cpp
     ../src/data/HTTPResponse.cpp
+    ../src/email/EmailSender.cpp
     ../src/FileManagement/FileManagement.cpp
     ../src/handler/Handler.cpp
     ../src/parser/JSONParser.cpp
@@ -66,6 +68,7 @@ if(GERUEST_HAS_WEBP)
 endif()
 
 target_link_libraries(Geruest
+    CURL::libcurl
     Threads::Threads
 )
 
