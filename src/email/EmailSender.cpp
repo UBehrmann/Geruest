@@ -172,7 +172,7 @@ void EmailSender::worker() {
             }
 
             // Periodically cleanup old IP records (every 100 emails)
-            if (_emailsSent % 100 == 0) {
+            if (_emailsSent.load() % 100 == 0) {
                 cleanupOldIPRecords();
             }
         }
