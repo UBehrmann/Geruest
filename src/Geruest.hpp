@@ -39,7 +39,9 @@
 #include "handler/Handler.hpp"
 #include "parser/JSONParser.hpp"
 #include "config/ConfigLoader.hpp"
+#if GERUEST_HAS_CURL
 #include "email/EmailSender.hpp"
+#endif
 
 // Constants
 #define TIMEOUT_SEC 30
@@ -282,8 +284,7 @@ class Geruest {
     void clearProtectedPages();
 
     // ========== Email Configuration Methods ==========
-
-    /**
+#if GERUEST_HAS_CURL    /**
      * @brief Initialize the email sender with SMTP configuration
      * @param smtpServer SMTP server hostname (e.g., "smtp.gmail.com")
      * @param smtpPort SMTP port (default: 587 for TLS)
@@ -320,6 +321,7 @@ class Geruest {
      * @param size Maximum pending emails (default: 1000)
      */
     void setEmailMaxQueueSize(size_t size);
+#endif  // GERUEST_HAS_CURL
 
     // ========== Logging Configuration Methods ==========
 
@@ -394,12 +396,14 @@ class Geruest {
         bool maxQueueSizeSet = false;
         bool logLevelSet = false;
         
+#if GERUEST_HAS_CURL
         // Email configuration flags
         bool emailInitialized = false;
         bool emailMinIntervalSet = false;
         bool emailMaxPerIPSet = false;
         bool emailTrackingDurationSet = false;
         bool emailMaxQueueSizeSet = false;
+#endif
     } _configFlags;
 
     // Thread pool components

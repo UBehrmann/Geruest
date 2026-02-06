@@ -9,6 +9,8 @@
 
 #include "EmailSender.hpp"
 
+#if GERUEST_HAS_CURL
+
 #include <cstring>
 #include <iostream>
 
@@ -340,3 +342,5 @@ void EmailSender::sendToLoggerError(const std::string& message) const {
 }
 
 }  // namespace geruest
+
+#endif  // GERUEST_HAS_CURL

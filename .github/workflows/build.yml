@@ -18,10 +18,10 @@ jobs:
       - name: Set up CMake
         uses: lukka/get-cmake@latest
 
-      - name: Install libwebp
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebp-dev
+          sudo apt-get install -y libwebp-dev libcurl4-openssl-dev
 
       - name: Configure and Build
         run: |
@@ -55,7 +55,7 @@ jobs:
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-make mingw-w64-x86_64-libwebp
+          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-make mingw-w64-x86_64-libwebp mingw-w64-x86_64-curl
 
       - name: Configure and Build
         shell: msys2 {0}
@@ -88,9 +88,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install libwebp via vcpkg
+      - name: Install dependencies via vcpkg
         run: |
-          vcpkg install libwebp:x64-windows
+          vcpkg install libwebp:x64-windows curl:x64-windows
           echo "CMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" >> $env:GITHUB_ENV
 
       - name: Configure and Build (.lib)

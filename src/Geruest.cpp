@@ -214,6 +214,7 @@ void Geruest::clearProtectedPages() {
     sendToLogger("Cleared all protected pages");
 }
 
+#if GERUEST_HAS_CURL
 // ========== Email Configuration Implementation ==========
 
 void Geruest::initEmail(const std::string& smtpServer, int smtpPort,
@@ -275,6 +276,7 @@ void Geruest::setEmailMaxQueueSize(size_t size) {
         sendToLoggerError("Cannot set email queue size - email sender not initialized");
     }
 }
+#endif  // GERUEST_HAS_CURL
 
 // ========== Logging Configuration Implementation ==========
 
@@ -414,6 +416,7 @@ void Geruest::loadConfig(const std::string& envFilePath) {
         }
     }
     
+#if GERUEST_HAS_CURL
     // ========== Email Configuration ==========
     
     // Initialize email sender if not already initialized via code
@@ -487,6 +490,7 @@ void Geruest::loadConfig(const std::string& envFilePath) {
     } catch (const std::runtime_error&) {
         // Email sender not initialized - this is fine, email functionality is optional
     }
+#endif  // GERUEST_HAS_CURL
     
     sendToLogger("Configuration loading complete");
 }

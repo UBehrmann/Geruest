@@ -32,12 +32,15 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 # Required packages
 find_package(Threads REQUIRED)
 
-# Required: Find CURL for email functionality
-find_package(CURL REQUIRED)
+# Optional: Find CURL for email functionality
+find_package(CURL QUIET)
 if(CURL_FOUND)
     message(STATUS "CURL library found - Email functionality enabled")
+    set(GERUEST_HAS_CURL TRUE)
 else()
-    message(FATAL_ERROR "CURL library not found - required for email functionality")
+    message(STATUS "CURL library not found - Email functionality disabled")
+    message(STATUS "To enable email functionality, install libcurl4-openssl-dev (apt) or curl (vcpkg)")
+    set(GERUEST_HAS_CURL FALSE)
 endif()
 
 # Optional: Find libwebp for WebP image conversion
@@ -91,9 +94,17 @@ target_include_directories(Geruest PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(Geruest PUBLIC Threads::Threads CURL::libcurl)
+target_link_libraries(Geruest PUBLIC Threads::Threads)
 if(WIN32)
     target_link_libraries(Geruest PUBLIC ws2_32)
+endif()
+
+# Link CURL library if found (PUBLIC because EmailSender needs it)
+if(GERUEST_HAS_CURL)
+    target_link_libraries(Geruest PUBLIC CURL::libcurl)
+    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_CURL=1)
+else()
+    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_CURL=0)
 endif()
 
 # Link WebP library if found (PRIVATE to avoid leaking to consumers)

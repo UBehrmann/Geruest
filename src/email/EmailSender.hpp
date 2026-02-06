@@ -10,6 +10,8 @@
 #ifndef GERUEST_EMAILSENDER_HPP
 #define GERUEST_EMAILSENDER_HPP
 
+#if GERUEST_HAS_CURL
+
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -241,4 +243,5 @@ class EmailSender {
 
 }  // namespace geruest
 
+#endif  // GERUEST_HAS_CURL
 #endif  // GERUEST_EMAILSENDER_HPP
