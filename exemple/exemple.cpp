@@ -13,7 +13,9 @@
 #include <csignal>
 #include <filesystem>
 #include "Geruest.hpp"
+#if GERUEST_HAS_CURL
 #include "email/EmailSender.hpp"
+#endif
 
 #define PORT 8080
 #define HOSTNAME "localhost"
@@ -28,6 +30,7 @@ void signalHandler(int signum) {
     if (server) {
         server->stop();
     }
+#if GERUEST_HAS_CURL
     // Stop email sender
     try {
         auto& emailSender = geruest::EmailSender::getInstance();
@@ -35,6 +38,7 @@ void signalHandler(int signum) {
     } catch (...) {
         // Not initialized, ignore
     }
+#endif
 }
 
 void addRoutes(Geruest* serverToAddRoutes);
@@ -260,6 +264,7 @@ void addRoutes(Geruest* serverToAddRoutes) {
         return response;
     });
 
+#if GERUEST_HAS_CURL
     // ============================================================
     // EMAIL CONTACT FORM ENDPOINT
     // ============================================================
@@ -325,6 +330,7 @@ void addRoutes(Geruest* serverToAddRoutes) {
         
         return response;
     });
+#endif  // GERUEST_HAS_CURL
 
     // Specific exact routes that should take precedence over wildcards
     
@@ -360,6 +366,7 @@ void addRoutes(Geruest* serverToAddRoutes) {
         return response;
     });
 
+#if GERUEST_HAS_CURL
     // ============================================================
     // EMAIL TEST ENDPOINT
     // ============================================================
@@ -426,4 +433,5 @@ void addRoutes(Geruest* serverToAddRoutes) {
         
         return response;
     });
+#endif  // GERUEST_HAS_CURL
 }

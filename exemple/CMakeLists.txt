@@ -4,6 +4,11 @@ project(GeruestExample VERSION 0.0.1 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Windows-specific: Prevent min/max macros that conflict with std::min/std::max
+if(WIN32)
+    add_compile_definitions(NOMINMAX)
+endif()
+
 # Enable static linking for MinGW
 if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -static-libgcc -static-libstdc++")
@@ -12,7 +17,16 @@ endif()
 
 # Find required packages
 find_package(Threads REQUIRED)
-find_package(CURL REQUIRED)
+
+# Find CURL (optional for email functionality)
+find_package(CURL QUIET)
+if(CURL_FOUND)
+    message(STATUS "CURL library found - Email functionality enabled")
+    set(GERUEST_HAS_CURL 1)
+else()
+    message(STATUS "CURL library not found - Email functionality disabled")
+    set(GERUEST_HAS_CURL 0)
+endif()
 
 # Check for WebP library (optional)
 find_package(PkgConfig QUIET)
@@ -39,7 +53,7 @@ else()
 endif()
 
 # Build the Geruest library first
-add_library(Geruest STATIC
+set(GERUEST_SOURCES
     ../src/Geruest.cpp
     ../src/auth/BasicAuth.cpp
     ../src/builders/AssetMerger.cpp
@@ -51,11 +65,17 @@ add_library(Geruest STATIC
     ../src/config/ConfigLoader.cpp
     ../src/data/HTTPRequest.cpp
     ../src/data/HTTPResponse.cpp
-    ../src/email/EmailSender.cpp
     ../src/FileManagement/FileManagement.cpp
     ../src/handler/Handler.cpp
     ../src/parser/JSONParser.cpp
 )
+
+# Conditionally add EmailSender if CURL is available
+if(GERUEST_HAS_CURL)
+    list(APPEND GERUEST_SOURCES ../src/email/EmailSender.cpp)
+endif()
+
+add_library(Geruest STATIC ${GERUEST_SOURCES})
 
 target_include_directories(Geruest PUBLIC
     ../src
@@ -68,10 +88,14 @@ if(GERUEST_HAS_WEBP)
     target_link_libraries(Geruest ${WEBP_LIBRARIES})
 endif()
 
-target_link_libraries(Geruest
-    CURL::libcurl
-    Threads::Threads
-)
+# Add CURL compile definition and link library
+target_compile_definitions(Geruest PUBLIC GERUEST_HAS_CURL=${GERUEST_HAS_CURL})
+
+target_link_libraries(Geruest Threads::Threads)
+
+if(GERUEST_HAS_CURL)
+    target_link_libraries(Geruest CURL::libcurl)
+endif()
 
 # Link Windows socket library on Windows
 if(WIN32)
