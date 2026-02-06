@@ -196,7 +196,7 @@ class EmailSender {
     std::unordered_set<std::thread::id> activeWorkers;
     std::vector<std::thread> threads;
     std::queue<Email> emailQueue;
-    std::mutex queueMutex;
+    mutable std::mutex queueMutex;
     std::condition_variable condVar;
     std::atomic<bool> shuttingDown{false};
 
