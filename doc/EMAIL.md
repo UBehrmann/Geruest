@@ -420,8 +420,8 @@ Failed emails after 3 attempts are logged but not queued again.
 ```cpp
 // Email system uses a pool of worker threads
 // Defined in EmailSender.hpp:
-constexpr size_t EMAIL_WORKER_COUNT = 4;  // 4 concurrent senders
-constexpr int EMAIL_WORKER_IDLE_TIMEOUT_SECONDS = 30;  // Thread cleanup
+constexpr size_t EMAIL_WORKER_COUNT = 3;  // 3 concurrent senders
+constexpr int EMAIL_WORKER_IDLE_TIMEOUT_SECONDS = 10;  // Thread cleanup
 ```
 
 ### Custom Logging
