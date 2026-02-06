@@ -204,17 +204,12 @@ class EmailSender {
     void worker();
 
     /**
-     * @brief Check if an IP is allowed to send email based on rate limits
+     * @brief Atomically check spam limits and update IP tracking if allowed
      * @param clientIP The client's IP address
-     * @return true if allowed, false if blocked due to spam protection
+     * @return true if allowed and tracking updated, false if blocked
+     * @note This combines check + update in one critical section to prevent race conditions
      */
-    bool checkSpamProtection(const std::string& clientIP);
-
-    /**
-     * @brief Update IP activity tracking
-     * @param clientIP The client's IP address
-     */
-    void updateIPActivity(const std::string& clientIP);
+    bool checkAndUpdateSpamProtection(const std::string& clientIP);
 
     /**
      * @brief Clean up old IP tracking records

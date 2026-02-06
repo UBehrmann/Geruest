@@ -59,8 +59,8 @@ void EmailSender::stop() {
 
 bool EmailSender::enqueueEmail(const std::string& to, const std::string& subject,
                                const std::string& body, const std::string& clientIP) {
-    // Check spam protection
-    if (!checkSpamProtection(clientIP)) {
+    // Check spam protection and update IP tracking atomically
+    if (!checkAndUpdateSpamProtection(clientIP)) {
         _emailsRejected++;
         return false;
     }
@@ -81,9 +81,6 @@ bool EmailSender::enqueueEmail(const std::string& to, const std::string& subject
             threads.emplace_back(&EmailSender::worker, this);
         }
     }
-
-    // Update IP tracking
-    updateIPActivity(clientIP);
 
     // Notify one worker
     condVar.notify_one();
@@ -185,14 +182,18 @@ void EmailSender::worker() {
 
 }
 
-bool EmailSender::checkSpamProtection(const std::string& clientIP) {
+bool EmailSender::checkAndUpdateSpamProtection(const std::string& clientIP) {
     std::lock_guard<std::mutex> lock(_ipTrackingMutex);
 
     auto now = std::chrono::steady_clock::now();
     auto it = _ipTracking.find(clientIP);
 
     if (it == _ipTracking.end()) {
-        // New IP, allow
+        // New IP, allow and track
+        IPActivity activity;
+        activity.lastEmailTime = now;
+        activity.emailCount = 1;
+        _ipTracking[clientIP] = activity;
         return true;
     }
 
@@ -211,36 +212,16 @@ bool EmailSender::checkSpamProtection(const std::string& clientIP) {
         return false;
     }
 
-    return true;
-}
-
-void EmailSender::updateIPActivity(const std::string& clientIP) {
-    std::lock_guard<std::mutex> lock(_ipTrackingMutex);
-
-    auto now = std::chrono::steady_clock::now();
-    auto it = _ipTracking.find(clientIP);
-
-    if (it == _ipTracking.end()) {
-        // New IP
-        IPActivity activity;
-        activity.lastEmailTime = now;
-        activity.emailCount = 1;
-        _ipTracking[clientIP] = activity;
-    } else {
-        // Existing IP
-        auto& activity = it->second;
-        auto timeSinceLastEmail = std::chrono::duration_cast<std::chrono::seconds>(
-            now - activity.lastEmailTime).count();
-
+    // Allowed - update tracking atomically
+    if (timeSinceLastEmail >= _ipTrackingDurationSeconds) {
         // Reset count if tracking window has passed
-        if (timeSinceLastEmail >= _ipTrackingDurationSeconds) {
-            activity.emailCount = 1;
-        } else {
-            activity.emailCount++;
-        }
-        
-        activity.lastEmailTime = now;
+        activity.emailCount = 1;
+    } else {
+        activity.emailCount++;
     }
+    activity.lastEmailTime = now;
+
+    return true;
 }
 
 void EmailSender::cleanupOldIPRecords() {
