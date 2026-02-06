@@ -107,7 +107,7 @@ void EmailSender::setMaxQueueSize(size_t size) {
 }
 
 size_t EmailSender::getQueueSize() const {
-    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(queueMutex));
+    std::lock_guard<std::mutex> lock(queueMutex);
     return emailQueue.size();
 }
 
