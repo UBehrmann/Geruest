@@ -56,7 +56,11 @@ void test_http_request_query_parameters() {
     HTTPRequest request(rawRequest, "127.0.0.1", "/test/root");
     
     assert(request.getMethod() == "GET");
-    assert(request.getPathString() == "/search?q=test&limit=10");
+    assert(request.getPathString() == "/search");  // Path without query string
+    assert(request.hasParam("q"));
+    assert(request.getParam("q") == "test");
+    assert(request.hasParam("limit"));
+    assert(request.getParam("limit") == "10");
 }
 
 void test_http_request_url_decode() {

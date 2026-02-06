@@ -17,6 +17,7 @@
 #include <netinet/in.h>
 #endif
 
+#include <algorithm>
 #include <iostream>
 #include <thread>
 
@@ -56,8 +57,15 @@ Geruest::~Geruest() {
     sendToLogger("Server closed.");
 }
 
-void Geruest::setPort(int _port) { port = _port; }
-void Geruest::setHostname(const std::string& hostname) { hostname_ = hostname; }
+void Geruest::setPort(int _port) { 
+    port = _port; 
+    _configFlags.portSet = true;
+}
+
+void Geruest::setHostname(const std::string& hostname) { 
+    hostname_ = hostname; 
+    _configFlags.hostnameSet = true;
+}
 
 void Geruest::addRoute(const std::string& path, RouteHandler routeHandler) {
     serverData.addRoute(path, std::move(routeHandler));
@@ -76,12 +84,14 @@ void Geruest::setAvailableLanguages(const std::vector<std::string>& languages) {
 
 void Geruest::setMergeAssets(bool enabled) {
     serverData.setMergeAssets(enabled);
+    _configFlags.mergeAssetsSet = true;
     sendToLogger(std::string("Asset merging ") + (enabled ? "enabled" : "disabled"));
 }
 
 void Geruest::setWebPConversion(bool enabled) {
 #if GERUEST_HAS_WEBP
     serverData.setWebPConversion(enabled);
+    _configFlags.webpConversionSet = true;
     sendToLogger(std::string("WebP conversion ") + (enabled ? "enabled" : "disabled"));
 #else
     if (enabled) {
@@ -95,6 +105,7 @@ void Geruest::setWebPConversion(bool enabled) {
 void Geruest::enableWebPConversion() {
 #if GERUEST_HAS_WEBP
     serverData.enableWebPConversion();
+    _configFlags.webpConversionSet = true;
     sendToLogger("WebP conversion enabled");
 #else
     sendToLoggerError("WebP conversion cannot be enabled - library not available (GERUEST_HAS_WEBP=0)");
@@ -106,6 +117,7 @@ void Geruest::enableWebPConversion() {
 void Geruest::setWebPQuality(float quality) {
 #if GERUEST_HAS_WEBP
     serverData.setWebPQuality(quality);
+    _configFlags.webpQualitySet = true;
     sendToLogger("WebP quality set to " + std::to_string(static_cast<int>(serverData.getWebPQuality())) + "%");
 #else
     sendToLoggerError("WebP quality cannot be set - library not available (GERUEST_HAS_WEBP=0)");
@@ -114,6 +126,7 @@ void Geruest::setWebPQuality(float quality) {
 
 void Geruest::enableDevMode() {
     serverData.enableDevMode();
+    _configFlags.devModeSet = true;
     sendToLogger("Development mode enabled: verbose logging, no file caching, comments preserved");
 }
 
@@ -125,9 +138,11 @@ void Geruest::setWorkerThreadCount(size_t count) {
     if (count == 0) {
         sendToLoggerError("Worker thread count must be at least 1, setting to 1");
         _workerThreadCount = 1;
+        _configFlags.workerThreadsSet = true;
         return;
     }
     _workerThreadCount = count;
+    _configFlags.workerThreadsSet = true;
     sendToLogger("Worker thread count set to: " + std::to_string(_workerThreadCount));
 }
 
@@ -139,9 +154,11 @@ void Geruest::setMaxQueueSize(size_t size) {
     if (size == 0) {
         sendToLoggerError("Queue size must be at least 1, setting to 1");
         _maxQueueSize = 1;
+        _configFlags.maxQueueSizeSet = true;
         return;
     }
     _maxQueueSize = size;
+    _configFlags.maxQueueSizeSet = true;
     sendToLogger("Maximum queue size set to: " + std::to_string(_maxQueueSize));
 }
 
@@ -197,10 +214,75 @@ void Geruest::clearProtectedPages() {
     sendToLogger("Cleared all protected pages");
 }
 
+#if GERUEST_HAS_CURL
+// ========== Email Configuration Implementation ==========
+
+void Geruest::initEmail(const std::string& smtpServer, int smtpPort,
+                        const std::string& username, const std::string& password,
+                        const std::string& fromAddress, bool useTLS) {
+    EmailSender::Config config;
+    config.smtpServer = smtpServer;
+    config.port = smtpPort;
+    config.username = username;
+    config.password = password;
+    config.fromAddress = fromAddress;
+    config.useTLS = useTLS;
+    
+    EmailSender::init(config);
+    _configFlags.emailInitialized = true;
+    sendToLogger("Email sender initialized: " + smtpServer + ":" + std::to_string(smtpPort));
+}
+
+void Geruest::setEmailMinInterval(int seconds) {
+    try {
+        auto& emailSender = EmailSender::getInstance();
+        emailSender.setMinEmailInterval(seconds);
+        _configFlags.emailMinIntervalSet = true;
+        sendToLogger("Email min interval set to: " + std::to_string(seconds) + "s");
+    } catch (const std::runtime_error&) {
+        sendToLoggerError("Cannot set email interval - email sender not initialized");
+    }
+}
+
+void Geruest::setEmailMaxPerIP(size_t count) {
+    try {
+        auto& emailSender = EmailSender::getInstance();
+        emailSender.setMaxEmailsPerIP(count);
+        _configFlags.emailMaxPerIPSet = true;
+        sendToLogger("Email max per IP set to: " + std::to_string(count));
+    } catch (const std::runtime_error&) {
+        sendToLoggerError("Cannot set max emails per IP - email sender not initialized");
+    }
+}
+
+void Geruest::setEmailTrackingDuration(int seconds) {
+    try {
+        auto& emailSender = EmailSender::getInstance();
+        emailSender.setIPTrackingDuration(seconds);
+        _configFlags.emailTrackingDurationSet = true;
+        sendToLogger("Email tracking duration set to: " + std::to_string(seconds) + "s");
+    } catch (const std::runtime_error&) {
+        sendToLoggerError("Cannot set tracking duration - email sender not initialized");
+    }
+}
+
+void Geruest::setEmailMaxQueueSize(size_t size) {
+    try {
+        auto& emailSender = EmailSender::getInstance();
+        emailSender.setMaxQueueSize(size);
+        _configFlags.emailMaxQueueSizeSet = true;
+        sendToLogger("Email max queue size set to: " + std::to_string(size));
+    } catch (const std::runtime_error&) {
+        sendToLoggerError("Cannot set email queue size - email sender not initialized");
+    }
+}
+#endif  // GERUEST_HAS_CURL
+
 // ========== Logging Configuration Implementation ==========
 
 void Geruest::setLogLevel(LogLevel level) {
     serverData.setLogLevel(level);
+    _configFlags.logLevelSet = true;
     
     // Only log the change if we're at Info level or higher
     if (serverData.shouldLog(LogLevel::Info)) {
@@ -218,6 +300,199 @@ void Geruest::setLogLevel(LogLevel level) {
 
 LogLevel Geruest::getLogLevel() const {
     return serverData.getLogLevel();
+}
+
+void Geruest::loadConfig(const std::string& envFilePath) {
+    sendToLogger("Loading configuration from environment...");
+    
+    // Load .env file (if it exists)
+    ConfigLoader::loadEnvFile(envFilePath);
+    
+    // Apply configuration values only if NOT explicitly set via code
+    // Hierarchy: Code > .env > environment variables
+    
+    // PORT
+    if (!_configFlags.portSet) {
+        int configPort = ConfigLoader::getInt("PORT", port);
+        if (configPort != port) {
+            port = configPort;
+            sendToLogger("PORT loaded from config: " + std::to_string(port));
+        }
+    }
+    
+    // HOSTNAME
+    if (!_configFlags.hostnameSet) {
+        std::string configHostname = ConfigLoader::get("HOSTNAME", hostname_);
+        if (configHostname != hostname_) {
+            hostname_ = configHostname;
+            sendToLogger("HOSTNAME loaded from config: " + hostname_);
+        }
+    }
+    
+    // WEBP_CONVERSION
+    if (!_configFlags.webpConversionSet) {
+        bool configWebP = ConfigLoader::getBool("WEBP_CONVERSION", false);
+        if (configWebP) {
+#if GERUEST_HAS_WEBP
+            serverData.setWebPConversion(true);
+            sendToLogger("WEBP_CONVERSION enabled from config");
+#else
+            sendToLoggerError("WEBP_CONVERSION cannot be enabled - library not available");
+#endif
+        }
+    }
+    
+    // WEBP_QUALITY
+    if (!_configFlags.webpQualitySet) {
+        float configQuality = ConfigLoader::getFloat("WEBP_QUALITY", 75.0f);
+        if (configQuality >= 0.0f && configQuality <= 100.0f) {
+#if GERUEST_HAS_WEBP
+            serverData.setWebPQuality(configQuality);
+            sendToLogger("WEBP_QUALITY loaded from config: " + std::to_string(static_cast<int>(configQuality)) + "%");
+#endif
+        }
+    }
+    
+    // DEV_MODE
+    if (!_configFlags.devModeSet) {
+        bool configDevMode = ConfigLoader::getBool("DEV_MODE", false);
+        if (configDevMode) {
+            serverData.enableDevMode();
+            sendToLogger("DEV_MODE enabled from config");
+        }
+    }
+    
+    // MERGE_ASSETS
+    if (!_configFlags.mergeAssetsSet) {
+        bool configMerge = ConfigLoader::getBool("MERGE_ASSETS", false);
+        if (configMerge) {
+            serverData.setMergeAssets(true);
+            sendToLogger("MERGE_ASSETS enabled from config");
+        }
+    }
+    
+    // WORKER_THREADS
+    if (!_configFlags.workerThreadsSet) {
+        size_t configThreads = ConfigLoader::getSizeT("WORKER_THREADS", _workerThreadCount);
+        if (configThreads > 0 && configThreads != _workerThreadCount) {
+            _workerThreadCount = configThreads;
+            sendToLogger("WORKER_THREADS loaded from config: " + std::to_string(_workerThreadCount));
+        }
+    }
+    
+    // MAX_QUEUE_SIZE
+    if (!_configFlags.maxQueueSizeSet) {
+        size_t configQueueSize = ConfigLoader::getSizeT("MAX_QUEUE_SIZE", _maxQueueSize);
+        if (configQueueSize > 0 && configQueueSize != _maxQueueSize) {
+            _maxQueueSize = configQueueSize;
+            sendToLogger("MAX_QUEUE_SIZE loaded from config: " + std::to_string(_maxQueueSize));
+        }
+    }
+    
+    // LOG_LEVEL
+    if (!_configFlags.logLevelSet) {
+        std::string configLogLevel = ConfigLoader::get("LOG_LEVEL", "");
+        if (!configLogLevel.empty()) {
+            LogLevel level = LogLevel::Error;  // Default
+            std::string levelLower = configLogLevel;
+            std::transform(levelLower.begin(), levelLower.end(), levelLower.begin(), ::tolower);
+            
+            if (levelLower == "none") {
+                level = LogLevel::None;
+            } else if (levelLower == "error") {
+                level = LogLevel::Error;
+            } else if (levelLower == "warning" || levelLower == "warn") {
+                level = LogLevel::Warning;
+            } else if (levelLower == "info") {
+                level = LogLevel::Info;
+            } else if (levelLower == "debug") {
+                level = LogLevel::Debug;
+            } else {
+                sendToLoggerError("Invalid LOG_LEVEL in config: " + configLogLevel + " (using default: Error)");
+            }
+            
+            serverData.setLogLevel(level);
+            sendToLogger("LOG_LEVEL loaded from config: " + configLogLevel);
+        }
+    }
+    
+#if GERUEST_HAS_CURL
+    // ========== Email Configuration ==========
+    
+    // Initialize email sender if not already initialized via code
+    if (!_configFlags.emailInitialized) {
+        std::string smtpServer = ConfigLoader::get("SMTP_SERVER", "");
+        std::string smtpUsername = ConfigLoader::get("SMTP_USERNAME", "");
+        std::string smtpPassword = ConfigLoader::get("SMTP_PASSWORD", "");
+        std::string smtpFromAddress = ConfigLoader::get("SMTP_FROM_ADDRESS", "");
+        
+        // Only initialize if we have at least server and credentials
+        if (!smtpServer.empty() && !smtpUsername.empty() && !smtpPassword.empty()) {
+            int smtpPort = ConfigLoader::getInt("SMTP_PORT", 587);
+            bool smtpUseTLS = ConfigLoader::getBool("SMTP_USE_TLS", true);
+            
+            if (smtpFromAddress.empty()) {
+                smtpFromAddress = smtpUsername;  // Use username as from address if not specified
+            }
+            
+            EmailSender::Config emailConfig;
+            emailConfig.smtpServer = smtpServer;
+            emailConfig.port = smtpPort;
+            emailConfig.username = smtpUsername;
+            emailConfig.password = smtpPassword;
+            emailConfig.fromAddress = smtpFromAddress;
+            emailConfig.useTLS = smtpUseTLS;
+            
+            EmailSender::init(emailConfig);
+            sendToLogger("Email sender initialized from config: " + smtpServer + ":" + std::to_string(smtpPort));
+        }
+    }
+    
+    // Email spam protection settings (only if email sender exists)
+    try {
+        auto& emailSender = EmailSender::getInstance();
+        
+        // EMAIL_MIN_INTERVAL
+        if (!_configFlags.emailMinIntervalSet) {
+            int configMinInterval = ConfigLoader::getInt("EMAIL_MIN_INTERVAL", 60);
+            if (configMinInterval > 0) {
+                emailSender.setMinEmailInterval(configMinInterval);
+                sendToLogger("EMAIL_MIN_INTERVAL loaded from config: " + std::to_string(configMinInterval) + "s");
+            }
+        }
+        
+        // EMAIL_MAX_PER_IP
+        if (!_configFlags.emailMaxPerIPSet) {
+            size_t configMaxPerIP = ConfigLoader::getSizeT("EMAIL_MAX_PER_IP", 10);
+            if (configMaxPerIP > 0) {
+                emailSender.setMaxEmailsPerIP(configMaxPerIP);
+                sendToLogger("EMAIL_MAX_PER_IP loaded from config: " + std::to_string(configMaxPerIP));
+            }
+        }
+        
+        // EMAIL_TRACKING_DURATION
+        if (!_configFlags.emailTrackingDurationSet) {
+            int configTrackingDuration = ConfigLoader::getInt("EMAIL_TRACKING_DURATION", 3600);
+            if (configTrackingDuration > 0) {
+                emailSender.setIPTrackingDuration(configTrackingDuration);
+                sendToLogger("EMAIL_TRACKING_DURATION loaded from config: " + std::to_string(configTrackingDuration) + "s");
+            }
+        }
+        
+        // EMAIL_MAX_QUEUE_SIZE
+        if (!_configFlags.emailMaxQueueSizeSet) {
+            size_t configMaxQueueSize = ConfigLoader::getSizeT("EMAIL_MAX_QUEUE_SIZE", 1000);
+            if (configMaxQueueSize > 0) {
+                emailSender.setMaxQueueSize(configMaxQueueSize);
+                sendToLogger("EMAIL_MAX_QUEUE_SIZE loaded from config: " + std::to_string(configMaxQueueSize));
+            }
+        }
+    } catch (const std::runtime_error&) {
+        // Email sender not initialized - this is fine, email functionality is optional
+    }
+#endif  // GERUEST_HAS_CURL
+    
+    sendToLogger("Configuration loading complete");
 }
 
 void Geruest::init() {

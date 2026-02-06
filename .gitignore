@@ -49,3 +49,5 @@ build-lib/
 build-release/
 build-debug/
 
+# All environment files
+.env

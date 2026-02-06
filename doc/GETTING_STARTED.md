@@ -327,6 +327,8 @@ cmake --build . --config Release
 ## Next Steps
 
 - [Usage Guide](USAGE_GUIDE.md) - Detailed usage instructions with Docker examples
+- [Configuration Guide](CONFIGURATION.md) - .env file and environment variables
+- [Email System](EMAIL.md) - SMTP email sending with spam protection
 - [Features](FEATURES.md) - Overview of all features
 - [Data Classes](DATA_CLASSES.md) - HTTPRequest, HTTPResponse, JSONParser documentation
 - [Basic Authentication](BASIC_AUTH.md) - Protect your pages

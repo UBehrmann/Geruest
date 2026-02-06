@@ -35,7 +35,80 @@ cmake -G "MinGW Makefiles" ..
 cmake --build .
 ```
 
+## Configuration
+
+The example server uses a `.env` file for configuration. Create a `.env` file in the same directory as your executable:
+
+```bash
+# Copy the example configuration
+cp ../../.env.example .env
+
+# Edit with your settings
+nano .env  # or your preferred editor
+```
+
+### Minimal Configuration
+
+For basic functionality without email:
+
+```env
+PORT=8080
+LOG_LEVEL=info
+```
+
+### Email Configuration (Optional)
+
+To enable email functionality, add SMTP settings:
+
+```env
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=your-email@gmail.com
+SMTP_PASSWORD=your-app-password
+SMTP_FROM_ADDRESS=noreply@example.com
+SMTP_USE_TLS=true
+```
+
+**Note**: If email settings are not provided, email functionality will be disabled but the server will run normally. See [Configuration Guide](../doc/CONFIGURATION.md) for all available options.
+
+## Build Instructions
+
+### Linux
+
+```bash
+rm -rf build
+mkdir -p build
+cd build
+cmake .. -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
+cmake --build .
+```
+
+### Windows (MinGW)
+
+```powershell
+# Clean previous build (optional)
+Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
+
+# Create build directory
+mkdir build
+cd build
+
+# Configure and build
+cmake -G "MinGW Makefiles" ..
+cmake --build .
+```
+
 ## Run
+
+### Configuration First
+
+Before running, create or copy the `.env` file to the build directory where the executable is located:
+
+```bash
+# From the build directory
+cp ../../.env.example .env
+# Edit .env with your settings (PORT, email config, etc.)
+```
 
 ### Linux
 
@@ -51,9 +124,13 @@ sudo ./exemple
    sudo ./exemple
    ```
 
-2. **Change the port** (recommended): Edit `exemple.cpp` and change `PORT` to a value > 1024 (e.g., 8080):
-   ```cpp
-   #define PORT 8080
+2. **Change the port in .env** (recommended):
+   ```env
+   PORT=8080
+   ```
+   Then run without sudo:
+   ```bash
+   ./exemple
    ```
 
 ### Windows

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 
 # Define the project name and version
-project(GeruestLibrary VERSION 0.6.6 LANGUAGES CXX)
+project(GeruestLibrary VERSION 0.6.7 LANGUAGES CXX)
 
 # Configure version header
 configure_file(
@@ -12,6 +12,11 @@ configure_file(
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Windows-specific: Prevent min/max macros that conflict with std::min/std::max
+if(WIN32)
+    add_compile_definitions(NOMINMAX)
+endif()
 
 # Enable static linking for MinGW
 if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -31,6 +36,17 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 # Required packages
 find_package(Threads REQUIRED)
+
+# Optional: Find CURL for email functionality
+find_package(CURL QUIET)
+if(CURL_FOUND)
+    message(STATUS "CURL library found - Email functionality enabled")
+    set(GERUEST_HAS_CURL TRUE)
+else()
+    message(STATUS "CURL library not found - Email functionality disabled")
+    message(STATUS "To enable email functionality, install libcurl4-openssl-dev (apt) or curl (vcpkg)")
+    set(GERUEST_HAS_CURL FALSE)
+endif()
 
 # Optional: Find libwebp for WebP image conversion
 # Users must install libwebp-dev (Linux) or webp (vcpkg/conan) for this feature
@@ -67,8 +83,10 @@ add_library(Geruest STATIC
     src/builders/HTMLBuilder.cpp
     src/builders/JSBuilder.cpp
     src/builders/WebPConverter.cpp
+    src/config/ConfigLoader.cpp
     src/data/HTTPRequest.cpp
     src/data/HTTPResponse.cpp
+    src/email/EmailSender.cpp
     src/FileManagement/FileManagement.cpp
     src/handler/Handler.cpp
     src/parser/JSONParser.cpp
@@ -84,6 +102,14 @@ target_include_directories(Geruest PUBLIC
 target_link_libraries(Geruest PUBLIC Threads::Threads)
 if(WIN32)
     target_link_libraries(Geruest PUBLIC ws2_32)
+endif()
+
+# Link CURL library if found (PUBLIC because EmailSender needs it)
+if(GERUEST_HAS_CURL)
+    target_link_libraries(Geruest PUBLIC CURL::libcurl)
+    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_CURL=1)
+else()
+    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_CURL=0)
 endif()
 
 # Link WebP library if found (PRIVATE to avoid leaking to consumers)

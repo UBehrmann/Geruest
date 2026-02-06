@@ -13,6 +13,9 @@
 #include <csignal>
 #include <filesystem>
 #include "Geruest.hpp"
+#if GERUEST_HAS_CURL
+#include "email/EmailSender.hpp"
+#endif
 
 #define PORT 8080
 #define HOSTNAME "localhost"
@@ -27,11 +30,25 @@ void signalHandler(int signum) {
     if (server) {
         server->stop();
     }
+#if GERUEST_HAS_CURL
+    // Stop email sender
+    try {
+        auto& emailSender = geruest::EmailSender::getInstance();
+        emailSender.stop();
+    } catch (...) {
+        // Not initialized, ignore
+    }
+#endif
 }
 
 void addRoutes(Geruest* serverToAddRoutes);
 
 int main(int argc, char* argv[]) {
+
+    // Get the .env file path (same directory as executable)
+    std::filesystem::path exePath = std::filesystem::canonical("/proc/self/exe");
+    std::filesystem::path exeDir = exePath.parent_path();
+    std::filesystem::path envPath = exeDir / ".env";
 
     server = std::make_unique<Geruest>();
 
@@ -39,86 +56,49 @@ int main(int argc, char* argv[]) {
     std::signal(SIGINT, signalHandler);
     std::signal(SIGTERM, signalHandler);
 
-    server->setPort(PORT);
-    server->setHostname(HOSTNAME);
-    
     // ============================================================
-    // DEVELOPMENT MODE (optional, call before init/start)
+    // SERVER CONFIGURATION - NEW FLEXIBLE APPROACH
     // ============================================================
     
-    // Enable development mode for rapid iteration and debugging
-    // When enabled:
-    // - Log level automatically set to Debug (all logs shown)
-    // - Files generated in-memory only (not saved to disk)
-    // - Comments preserved in HTML/CSS/JS
-    // - Asset merging still works if enabled separately
+    // Load configuration from .env file and environment variables
+    // This loads settings like PORT, HOSTNAME, DEV_MODE, LOG_LEVEL, 
+    // WEBP_CONVERSION, WEBP_QUALITY, MERGE_ASSETS, WORKER_THREADS,
+    // and EMAIL (SMTP_SERVER, SMTP_USERNAME, etc.)
     //
-    // Perfect for active development when files change frequently!
-    // Files are regenerated on each request for immediate feedback.
-    // DISABLE in production for better performance.
+    // Configuration Hierarchy: Code > .env > Environment Variables
+    //
+    // See doc/CONFIGURATION.md for full documentation
+    // See .env.example for all available configuration keys
+    //
+    // Note: .env file should be in the same directory as the executable
     
-    // Uncomment to enable:
-    // server->enableDevMode();
+    std::cout << "\n=== Loading Server Configuration ===" << std::endl;
+    server->loadConfig(envPath.string());
+    std::cout << "=====================================\n" << std::endl;
     
-    // ============================================================
-    // LOG LEVEL CONFIGURATION (can be changed anytime)
-    // ============================================================
+    // The loadConfig() method automatically initializes email sender if
+    // SMTP credentials are provided in .env or environment variables.
+    // You can also initialize email manually (overrides config):
+    //
+    // server->initEmail("smtp.gmail.com", 587, "user@gmail.com", 
+    //                   "app-password", "noreply@example.com", true);
+    // server->setEmailMinInterval(60);
+    // server->setEmailMaxPerIP(10);
+    // server->setEmailTrackingDuration(3600);
+    // server->setEmailMaxQueueSize(1000);
     
-    // Configure log level to control verbosity
-    // Levels: None < Error (framework default) < Warning < Info < Debug
+    // Any explicit setter calls below will OVERRIDE config values
+    // Uncomment these to override .env settings:
     
-    // Recommended for production/Docker to filter out timeout spam:
-    server->setLogLevel(LogLevel::Warning);
-    
-    // Other options:
-    // server->setLogLevel(LogLevel::None);     // Silent mode
-    // server->setLogLevel(LogLevel::Error);    // Only errors (default if not set)
-    // server->setLogLevel(LogLevel::Info);     // All normal logs (info and above)
-    // server->setLogLevel(LogLevel::Debug);    // Verbose debugging
-    
-    std::cout << "\n=== Log Level Configuration ===" << std::endl;
-    std::cout << "Log level: Warning (filters out timeout/connection noise)" << std::endl;
-    std::cout << "  ✓ Errors: YES" << std::endl;
-    std::cout << "  ✓ Warnings: YES" << std::endl;
-    std::cout << "  ✗ Info messages: NO (filtered)" << std::endl;
-    std::cout << "  ✗ Debug messages: NO (filtered)" << std::endl;
-    std::cout << "================================\n" << std::endl;
-    
-    // ============================================================
-    // THREAD POOL CONFIGURATION (must be called before init/start)
-    // ============================================================
-    
-    // Get number of CPU cores
-    unsigned int cpuCores = std::thread::hardware_concurrency();
-    std::cout << "\n=== Thread Pool Configuration ===" << std::endl;
-    std::cout << "Detected CPU cores: " << cpuCores << std::endl;
-    
-    // Choose configuration profile
-    // Uncomment ONE of the following configurations:
-    
-    // PROFILE 1: Default/Conservative (recommended for general use)
-    server->setWorkerThreadCount(cpuCores * 2);  // CPU cores × 2
-    server->setMaxQueueSize(500);                // 500 pending connections
-    std::cout << "Profile: CONSERVATIVE (default)" << std::endl;
-    
-    // PROFILE 2: High-Traffic (for production servers with heavy load)
-    // server->setWorkerThreadCount(32);
-    // server->setMaxQueueSize(2000);
-    // std::cout << "Profile: HIGH-TRAFFIC" << std::endl;
-    
-    // PROFILE 3: Low-Resource (for embedded systems or development)
-    // server->setWorkerThreadCount(4);
-    // server->setMaxQueueSize(100);
-    // std::cout << "Profile: LOW-RESOURCE" << std::endl;
-    
-    // PROFILE 4: Testing (small pool to easily test queue overflow)
-    // server->setWorkerThreadCount(2);
-    // server->setMaxQueueSize(5);
-    // std::cout << "Profile: TESTING (small pool)" << std::endl;
-    
-    std::cout << "Worker threads: " << cpuCores * 2 << std::endl;
-    std::cout << "Max queue size: 500" << std::endl;
-    std::cout << "=================================\n" << std::endl;
+    // server->setPort(8080);                       // Override PORT from .env
+    // server->setHostname("localhost");            // Override HOSTNAME from .env
+    // server->enableDevMode();                     // Override DEV_MODE from .env
+    // server->setLogLevel(LogLevel::Warning);      // Override LOG_LEVEL from .env
+    // server->setWorkerThreadCount(16);            // Override WORKER_THREADS from .env
+    // server->setMaxQueueSize(1000);               // Override MAX_QUEUE_SIZE from .env
+    // server->setWebPConversion(true);             // Override WEBP_CONVERSION from .env
+    // server->setWebPQuality(85);                  // Override WEBP_QUALITY from .env
+    // server->setMergeAssets(true);                // Override MERGE_ASSETS from .env
     
     // ============================================================
     // LANGUAGE CONFIGURATION (optional, must be called before init/start)
@@ -223,6 +203,8 @@ int main(int argc, char* argv[]) {
     std::cout << "  GET  http://" << HOSTNAME << ":" << PORT << "/test" << std::endl;
     std::cout << "  GET  http://" << HOSTNAME << ":" << PORT << "/api/get" << std::endl;
     std::cout << "  POST http://" << HOSTNAME << ":" << PORT << "/api/post" << std::endl;
+    std::cout << "  POST http://" << HOSTNAME << ":" << PORT << "/api/send-test-email (Email)" << std::endl;
+    std::cout << "  WEB  http://" << HOSTNAME << ":" << PORT << "/email-test (Email Test Page)" << std::endl;
     std::cout << "  Wildcard: http://" << HOSTNAME << ":" << PORT << "/api/anything" << std::endl;
     std::cout << "  Static files from: ./website/" << std::endl;
     std::cout << "\n=== Controls ===" << std::endl;
@@ -282,6 +264,78 @@ void addRoutes(Geruest* serverToAddRoutes) {
         return response;
     });
 
+#if GERUEST_HAS_CURL
+    // ============================================================
+    // EMAIL CONTACT FORM ENDPOINT
+    // ============================================================
+    
+    // POST endpoint for contact form with email sending
+    // Test with: curl -X POST http://localhost:8080/api/contact \
+    //   -H "Content-Type: application/json" \
+    //   -d '{"email":"user@example.com","name":"John Doe","message":"Hello!"}'
+    serverToAddRoutes->addRoute("/api/contact", [](const HTTPRequest& req) {
+        HTTPResponse response("200 OK");
+        response.setHeader("Content-Type", "application/json");
+        response.setHeader("Access-Control-Allow-Origin", "*");
+        
+        try {
+            // Parse JSON body
+            geruest::JSONParser parser(req.getBody());
+            
+            std::string userEmail = parser.getString("email");
+            std::string userName = parser.getString("name");
+            std::string message = parser.getString("message");
+            std::string clientIP = req.getClientIP();
+            
+            // Validate input
+            if (userEmail.empty() || message.empty()) {
+                response.setBody(R"({"status":"error","message":"Email and message are required"})");
+                return response;
+            }
+            
+            // IMPORTANT: Sanitize user input used in email headers to prevent SMTP injection
+            std::string safeUserName = geruest::EmailSender::sanitizeHeaderValue(userName);
+            std::string safeUserEmail = geruest::EmailSender::sanitizeHeaderValue(userEmail);
+            
+            // Prepare email content
+            std::string emailSubject = "Contact Form: " + safeUserName;
+            std::string emailBody = "New contact form submission:\n\n";
+            emailBody += "From: " + userName + " (" + userEmail + ")\n";  // Original values OK in body
+            emailBody += "IP: " + clientIP + "\n\n";
+            emailBody += "Message:\n" + message + "\n";
+            
+            // Queue email
+            auto& emailSender = geruest::EmailSender::getInstance();
+            bool queued = emailSender.enqueueEmail(
+                "admin@example.com",  // Replace with your actual admin email
+                emailSubject,         // Using sanitized value
+                emailBody,
+                clientIP
+            );
+            
+            if (queued) {
+                response.setBody(R"({
+                    "status":"success",
+                    "message":"Your message has been sent successfully!",
+                    "queue_size":)" + std::to_string(emailSender.getQueueSize()) + R"(,
+                    "emails_sent":)" + std::to_string(emailSender.getEmailsSent()) + R"(
+                })");
+            } else {
+                response.setBody(R"({
+                    "status":"error",
+                    "message":"Too many requests. Please try again later."
+                })");
+            }
+            
+        } catch (const std::exception& e) {
+            response.setBody(R"({"status":"error","message":"Invalid request: )" + 
+                           std::string(e.what()) + R"("})");
+        }
+        
+        return response;
+    });
+#endif  // GERUEST_HAS_CURL
+
     // Specific exact routes that should take precedence over wildcards
     
     // GET endpoint (exact match takes precedence over /api/*)
@@ -315,4 +369,76 @@ void addRoutes(Geruest* serverToAddRoutes) {
         response.setBody(R"({"method": "DELETE", "message": "DELETE request received!"})");
         return response;
     });
+
+#if GERUEST_HAS_CURL
+    // ============================================================
+    // EMAIL TEST ENDPOINT
+    // ============================================================
+    
+    // POST endpoint for sending simple test emails
+    // Test with: curl -X POST http://localhost:8080/api/send-test-email \
+    //   -H "Content-Type: application/json" \
+    //   -d '{"to":"recipient@example.com"}'
+    // Or visit: http://localhost:8080/email-test.html
+    serverToAddRoutes->addRoute("/api/send-test-email", [](const HTTPRequest& req) {
+        HTTPResponse response("200 OK");
+        response.setHeader("Content-Type", "application/json");
+        response.setHeader("Access-Control-Allow-Origin", "*");
+        
+        try {
+            // Parse JSON body
+            geruest::JSONParser parser(req.getBody());
+            
+            std::string toEmail = parser.getString("to");
+            std::string clientIP = req.getClientIP();
+            
+            // Validate input
+            if (toEmail.empty()) {
+                response.setBody(R"({"status":"error","message":"Recipient email address is required"})");
+                return response;
+            }
+            
+            // Sanitize email address for header safety
+            std::string safeToEmail = geruest::EmailSender::sanitizeHeaderValue(toEmail);
+            
+            // Prepare test email content
+            std::string emailSubject = "Test Email from Geruest Server";
+            std::string emailBody = "This is a test email sent from your Geruest server.\n\n";
+            emailBody += "Server: Geruest Framework\n";
+            emailBody += "Timestamp: " + std::to_string(std::time(nullptr)) + "\n";
+            emailBody += "Client IP: " + clientIP + "\n\n";
+            emailBody += "If you received this email, your SMTP configuration is working correctly!\n";
+            
+            // Queue email
+            auto& emailSender = geruest::EmailSender::getInstance();
+            bool queued = emailSender.enqueueEmail(
+                safeToEmail,  // Using sanitized value
+                emailSubject,
+                emailBody,
+                clientIP
+            );
+            
+            if (queued) {
+                response.setBody(R"({
+                    "status":"success",
+                    "message":"Test email sent successfully to )" + toEmail + R"(!",
+                    "queue_size":)" + std::to_string(emailSender.getQueueSize()) + R"(,
+                    "emails_sent":)" + std::to_string(emailSender.getEmailsSent()) + R"(,
+                    "emails_rejected":)" + std::to_string(emailSender.getEmailsRejected()) + R"(
+                })");
+            } else {
+                response.setBody(R"({
+                    "status":"error",
+                    "message":"Rate limit exceeded. Please wait before sending another email."
+                })");
+            }
+            
+        } catch (const std::exception& e) {
+            response.setBody(R"({"status":"error","message":"Invalid request: )" + 
+                           std::string(e.what()) + R"("})");
+        }
+        
+        return response;
+    });
+#endif  // GERUEST_HAS_CURL
 }
