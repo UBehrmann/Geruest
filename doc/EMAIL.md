@@ -55,7 +55,7 @@ SMTP_SERVER=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USERNAME=your-email@gmail.com
 SMTP_PASSWORD=your-app-password
-EMAIL_FROM=your-email@gmail.com
+SMTP_FROM_ADDRESS=your-email@gmail.com
 
 # Spam Protection (Optional)
 EMAIL_MIN_INTERVAL=60              # Minimum seconds between emails from same IP
