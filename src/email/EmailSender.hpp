@@ -109,14 +109,24 @@ class EmailSender {
 
     /**
      * @brief Queue an email for sending (producer)
-     * @param to Recipient email address
-     * @param subject Email subject
+     * @param to Recipient email address (will be sanitized internally)
+     * @param subject Email subject (will be sanitized internally)
      * @param body Email body (plain text or HTML)
      * @param clientIP IP address of the client requesting the email
      * @return true if email was queued, false if rejected due to spam protection
+     * @note Header values (to, subject) are automatically sanitized to prevent SMTP injection
      */
     bool enqueueEmail(const std::string& to, const std::string& subject,
                       const std::string& body, const std::string& clientIP);
+
+    /**
+     * @brief Sanitize a string for use in SMTP headers
+     * @param value The string to sanitize
+     * @return Sanitized string with CR/LF and control characters removed
+     * @note Removes \r, \n, and other control characters to prevent header injection
+     * @note Use this for any user input that goes into email headers (subject, to, etc.)
+     */
+    static std::string sanitizeHeaderValue(const std::string& value);
 
     /**
      * @brief Set the minimum time interval between emails from the same IP

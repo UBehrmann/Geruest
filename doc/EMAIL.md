@@ -212,6 +212,7 @@ geruest::EmailSender::getInstance().enqueueEmail(
 ```cpp
 #include <Geruest.hpp>
 #include <parser/JSONParser.hpp>
+#include <email/EmailSender.hpp>
 
 server.addRoute("/api/contact", [](const geruest::HTTPRequest& req) {
     geruest::HTTPResponse response("200 OK");
@@ -230,17 +231,22 @@ server.addRoute("/api/contact", [](const geruest::HTTPRequest& req) {
         return response;
     }
     
-    // Compose email
+    // IMPORTANT: Sanitize user input that goes into email headers
+    // This prevents SMTP header injection attacks
+    std::string safeName = geruest::EmailSender::sanitizeHeaderValue(name);
+    std::string safeEmail = geruest::EmailSender::sanitizeHeaderValue(email);
+    
+    // Compose email body (can contain user input directly)
     std::string emailBody = 
         "New contact form submission:\n\n"
-        "Name: " + name + "\n"
+        "Name: " + name + "\n"  // Original values OK in body
         "Email: " + email + "\n"
         "Message:\n" + message;
     
-    // Send email
+    // Send email with sanitized header values
     bool sent = geruest::EmailSender::getInstance().enqueueEmail(
         "admin@example.com",
-        "Contact Form: " + name,
+        "Contact Form: " + safeName,  // Use sanitized value in subject
         emailBody,
         req.getClientIP()
     );
@@ -253,6 +259,89 @@ server.addRoute("/api/contact", [](const geruest::HTTPRequest& req) {
     
     return response;
 });
+```
+
+### Security: SMTP Header Injection Prevention
+
+**⚠️ CRITICAL SECURITY WARNING**
+
+The email system automatically sanitizes the `to` and `subject` parameters internally to prevent SMTP header injection attacks. However, for defense in depth, you should **explicitly sanitize any user input** before passing it to `enqueueEmail()`.
+
+**Vulnerability Example (DO NOT USE):**
+```cpp
+// VULNERABLE CODE - DO NOT USE
+std::string userName = parser.getString("name");  // Unsanitized user input
+
+bool sent = EmailSender::getInstance().enqueueEmail(
+    "admin@example.com",
+    "Contact: " + userName,  // Attacker can inject \r\n to add headers!
+    emailBody,
+    req.getClientIP()
+);
+```
+
+**Attack Scenario:**
+An attacker sends `name: "John\r\nBcc: attacker@evil.com\r\nSubject: Stolen"`, resulting in:
+```
+Subject: Contact: John
+Bcc: attacker@evil.com
+Subject: Stolen
+```
+
+This allows attackers to:
+- Add BCC/CC recipients to spy on emails
+- Modify the From address
+- Inject arbitrary SMTP headers
+- Send emails to unintended recipients
+
+**Secure Implementation:**
+```cpp
+// SECURE CODE - Use sanitizeHeaderValue()
+std::string userName = parser.getString("name");
+std::string safeUserName = geruest::EmailSender::sanitizeHeaderValue(userName);
+
+bool sent = EmailSender::getInstance().enqueueEmail(
+    "admin@example.com",
+    "Contact: " + safeUserName,  // Safe from injection
+    emailBody,
+    req.getClientIP()
+);
+```
+
+**What `sanitizeHeaderValue()` does:**
+- Removes `\r` (carriage return)
+- Removes `\n` (line feed)
+- Removes other control characters (ASCII 0-31 except tab)
+- Preserves readable content
+
+**Best Practices:**
+1. **Always sanitize** user input used in email subjects or recipient addresses
+2. **Email body content** doesn't need sanitization (it's not part of SMTP headers)
+3. **Validate email addresses** with regex before using them
+4. **Use allowlists** for recipient addresses when possible
+5. **Log suspicious input** that contains control characters
+
+**Additional Validation Example:**
+```cpp
+#include <regex>
+
+std::string validateEmail(const std::string& email) {
+    static const std::regex emailPattern(
+        R"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})"
+    );
+    
+    if (std::regex_match(email, emailPattern)) {
+        return geruest::EmailSender::sanitizeHeaderValue(email);
+    }
+    return "";  // Invalid email
+}
+
+std::string recipientEmail = validateEmail(userInput);
+if (recipientEmail.empty()) {
+    // Reject invalid email
+    response.setBody(R"({"error": "Invalid email address"})");
+    return response;
+}
 ```
 
 ---
@@ -621,6 +710,17 @@ server.setEmailMinInterval(60);
 server.setEmailMaxPerIP(10);
 ```
 
+### 6. Sanitize User Input
+
+**Always sanitize user input** used in email headers:
+```cpp
+// ALWAYS do this for safety
+std::string safeName = EmailSender::sanitizeHeaderValue(userInput);
+emailSender.enqueueEmail("admin@example.com", "Form: " + safeName, body, ip);
+```
+
+See the [Security: SMTP Header Injection Prevention](#security-smtp-header-injection-prevention) section above for detailed information about this critical security requirement.
+
 ---
 
 ## Next Steps
@@ -645,6 +745,9 @@ bool enqueueEmail(const std::string& to,
                   const std::string& subject,
                   const std::string& body, 
                   const std::string& clientIP);
+
+// Security: Sanitize header values
+static std::string sanitizeHeaderValue(const std::string& value);
 
 // Configuration
 void setMinEmailInterval(int seconds);

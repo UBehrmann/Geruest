@@ -293,10 +293,14 @@ void addRoutes(Geruest* serverToAddRoutes) {
                 return response;
             }
             
+            // IMPORTANT: Sanitize user input used in email headers to prevent SMTP injection
+            std::string safeUserName = geruest::EmailSender::sanitizeHeaderValue(userName);
+            std::string safeUserEmail = geruest::EmailSender::sanitizeHeaderValue(userEmail);
+            
             // Prepare email content
-            std::string emailSubject = "Contact Form: " + userName;
+            std::string emailSubject = "Contact Form: " + safeUserName;
             std::string emailBody = "New contact form submission:\n\n";
-            emailBody += "From: " + userName + " (" + userEmail + ")\n";
+            emailBody += "From: " + userName + " (" + userEmail + ")\n";  // Original values OK in body
             emailBody += "IP: " + clientIP + "\n\n";
             emailBody += "Message:\n" + message + "\n";
             
@@ -304,7 +308,7 @@ void addRoutes(Geruest* serverToAddRoutes) {
             auto& emailSender = geruest::EmailSender::getInstance();
             bool queued = emailSender.enqueueEmail(
                 "admin@example.com",  // Replace with your actual admin email
-                emailSubject,
+                emailSubject,         // Using sanitized value
                 emailBody,
                 clientIP
             );
@@ -394,6 +398,9 @@ void addRoutes(Geruest* serverToAddRoutes) {
                 return response;
             }
             
+            // Sanitize email address for header safety
+            std::string safeToEmail = geruest::EmailSender::sanitizeHeaderValue(toEmail);
+            
             // Prepare test email content
             std::string emailSubject = "Test Email from Geruest Server";
             std::string emailBody = "This is a test email sent from your Geruest server.\n\n";
@@ -405,7 +412,7 @@ void addRoutes(Geruest* serverToAddRoutes) {
             // Queue email
             auto& emailSender = geruest::EmailSender::getInstance();
             bool queued = emailSender.enqueueEmail(
-                toEmail,
+                safeToEmail,  // Using sanitized value
                 emailSubject,
                 emailBody,
                 clientIP

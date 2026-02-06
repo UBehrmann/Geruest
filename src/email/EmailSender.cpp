@@ -12,6 +12,7 @@
 #if GERUEST_HAS_CURL
 
 #include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <iostream>
 
@@ -86,6 +87,25 @@ bool EmailSender::enqueueEmail(const std::string& to, const std::string& subject
     // Notify one worker
     condVar.notify_one();
     return true;
+}
+
+std::string EmailSender::sanitizeHeaderValue(const std::string& value) {
+    std::string sanitized;
+    sanitized.reserve(value.size());
+    
+    for (char c : value) {
+        // Remove carriage return, line feed, and other control characters
+        // that could be used for SMTP header injection
+        if (c != '\r' && c != '\n' && (c >= 32 || c == '\t')) {
+            sanitized += c;
+        }
+        // Replace control characters with space for readability
+        else if (c < 32 && c != '\t') {
+            sanitized += ' ';
+        }
+    }
+    
+    return sanitized;
 }
 
 void EmailSender::setMinEmailInterval(int seconds) {
@@ -259,13 +279,17 @@ bool EmailSender::sendEmail(const Email& email) {
     CURL* curl = curl_easy_init();
     if (!curl) return false;
 
+    // Sanitize header values to prevent SMTP injection attacks
+    std::string sanitizedTo = sanitizeHeaderValue(email.to);
+    std::string sanitizedSubject = sanitizeHeaderValue(email.subject);
+
     std::string from = "From: " + config.fromAddress + "\r\n";
-    std::string to = "To: " + email.to + "\r\n";
-    std::string subject = "Subject: " + email.subject + "\r\n";
+    std::string to = "To: " + sanitizedTo + "\r\n";
+    std::string subject = "Subject: " + sanitizedSubject + "\r\n";
     std::string data = from + to + subject + "\r\n" + email.body + "\r\n";
 
     struct curl_slist* recipients = nullptr;
-    recipients = curl_slist_append(recipients, email.to.c_str());
+    recipients = curl_slist_append(recipients, sanitizedTo.c_str());
 
     // Port 465 uses implicit SSL (smtps://), port 587 uses explicit STARTTLS (smtp://)
     std::string url;
