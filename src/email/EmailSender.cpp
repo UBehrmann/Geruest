@@ -11,6 +11,7 @@
 
 #if GERUEST_HAS_CURL
 
+#include <algorithm>
 #include <cstring>
 #include <iostream>
 
@@ -265,7 +266,7 @@ void EmailSender::cleanupOldIPRecords() {
 static size_t payloadSource(char* ptr, size_t size, size_t nmemb, void* userp) {
     auto* p = static_cast<std::pair<const char*, size_t>*>(userp);
     size_t max = size * nmemb;
-    size_t toCopy = std::min(p->second, max);
+    size_t toCopy = (std::min)(p->second, max);
     memcpy(ptr, p->first, toCopy);
     p->first += toCopy;
     p->second -= toCopy;

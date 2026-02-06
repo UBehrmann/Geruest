@@ -4,6 +4,11 @@ project(Geruest_Unit_Tests VERSION 0.6.2)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Windows-specific: Prevent min/max macros that conflict with std::min/std::max
+if(WIN32)
+    add_compile_definitions(NOMINMAX)
+endif()
+
 # Configure version header (same as main project)
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/../Version.hpp.in"
