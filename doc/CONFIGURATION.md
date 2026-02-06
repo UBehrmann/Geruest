@@ -100,7 +100,9 @@ server.setPort(8080);  // This takes precedence over .env
 | `SMTP_USERNAME`     | string | -        | SMTP authentication username (usually your email)         |
 | `SMTP_PASSWORD`     | string | -        | SMTP authentication password (use app password for Gmail) |
 | `SMTP_FROM_ADDRESS` | string | username | Email "From" address (defaults to username if not set)    |
-| `SMTP_USE_TLS`      | bool   | true     | Enable TLS encryption                                     |
+| `SMTP_USE_TLS`      | bool   | true     | Require TLS encryption; if TLS cannot be established, sending fails (no fallback to plaintext) |
+
+**⚠️ SECURITY WARNING:** When `SMTP_USE_TLS=true` (default), the email system **requires** TLS encryption and will **fail to send** if TLS cannot be established. This prevents silent downgrade attacks where credentials and email content could be transmitted in cleartext. Setting `SMTP_USE_TLS=false` allows unencrypted SMTP connections (insecure - only use for local testing).
 
 ### Email Spam Protection
 

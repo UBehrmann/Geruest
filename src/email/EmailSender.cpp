@@ -308,11 +308,17 @@ bool EmailSender::sendEmail(const Email& email) {
     curl_easy_setopt(curl, CURLOPT_USERNAME, config.username.c_str());
     curl_easy_setopt(curl, CURLOPT_PASSWORD, config.password.c_str());
 
-    // For port 587 with STARTTLS
-    if (config.port == 587) {
-        curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_TRY);
-    } else {
+    // Configure TLS/SSL based on user settings
+    // SECURITY: When TLS is enabled, use CURLUSESSL_ALL to REQUIRE encryption
+    // This prevents silent downgrade attacks where credentials are sent in cleartext
+    if (config.useTLS) {
+        // CURLUSESSL_ALL: Require TLS/SSL for the entire connection
+        // Connection will FAIL if TLS cannot be established (secure behavior)
         curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL);
+    } else {
+        // CURLUSESSL_NONE: Allow plaintext SMTP (insecure, only use for testing)
+        // WARNING: Credentials and email content will be sent unencrypted!
+        curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_NONE);
     }
 
     const char* payload = data.c_str();

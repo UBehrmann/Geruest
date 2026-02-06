@@ -27,11 +27,12 @@ Geruest includes a built-in email sending system with SMTP support, automatic re
 
 The `EmailSender` class provides:
 - **SMTP Support**: Send emails via any SMTP server (ports 465, 587, 25)
-- **TLS/SSL**: Secure email transmission with automatic protocol selection
+- **Required TLS/SSL**: Enforced encryption by default - no silent fallback to plaintext
 - **Queue System**: Asynchronous email sending with worker threads
 - **Auto-Retry**: Failed emails are automatically retried up to 3 times
 - **Spam Protection**: IP-based rate limiting and tracking
 - **Thread-Safe**: Concurrent email sending without race conditions
+- **Security Hardening**: Automatic SMTP header injection prevention
 
 ### System Requirements
 
@@ -392,6 +393,8 @@ std::cout << "Sent: " << sent
 
 ## Provider Setup
 
+**🔒 TLS Security Note:** By default, TLS encryption is **required** for all SMTP connections. The email system will fail to send if TLS cannot be established, preventing credentials from being transmitted in cleartext. This is the secure default behavior.
+
 ### Gmail
 
 **Requirements:**
@@ -613,12 +616,22 @@ server.initEmail(/* ... */);  // Or use server.loadConfig()
 **Symptoms:**
 ```
 [EmailSender ERROR] SMTP Error: SSL certificate problem
+[EmailSender ERROR] SMTP Error: SSL connect error
 ```
 
+**Context:**
+By default, `SMTP_USE_TLS=true` **requires** TLS encryption. The system will **not** fall back to plaintext if TLS fails. This is intentional security behavior to prevent credential disclosure.
+
 **Solutions:**
-- Port 587: Uses STARTTLS (explicit encryption)
-- Port 465: Uses SSL/TLS (implicit encryption)
-- Ensure libcurl has SSL support: `curl --version`
+- **Verify TLS support**: Ensure your SMTP server supports TLS/STARTTLS
+- **Check certificates**: Ensure libcurl has valid CA certificates: `curl --version`
+- **Port selection**:
+  - Port 587: STARTTLS (starts plaintext, upgrades to TLS)
+  - Port 465: Implicit TLS/SSL (encrypted from start)
+- **Test TLS**: `openssl s_client -connect smtp.example.com:587 -starttls smtp`
+- **Development only**: Set `SMTP_USE_TLS=false` for local testing (insecure!)
+
+**Security Note:** If you see TLS errors, do **not** simply disable TLS. This would send your credentials and email content in cleartext. Instead, fix your TLS configuration or use a different SMTP provider.
 
 #### Queue Full Errors
 
@@ -702,7 +715,25 @@ docker run -e SMTP_PASSWORD=$SMTP_PASSWORD myapp
 
 Change SMTP passwords/API keys periodically.
 
-### 5. Enable Spam Protection
+### 5. Require TLS Encryption
+
+**Always use TLS** (default behavior):
+```env
+SMTP_USE_TLS=true  # Default - requires encrypted connection
+```
+
+**Never disable TLS in production:**
+```env
+# ❌ INSECURE - Only for local development/testing
+SMTP_USE_TLS=false  
+```
+
+When `SMTP_USE_TLS=true`, the system **requires** TLS and will **fail** if encryption cannot be established. This prevents:
+- Credential disclosure over cleartext SMTP
+- Email content exposure
+- Silent downgrade attacks where a network attacker forces plaintext communication
+
+### 6. Enable Spam Protection
 
 Always configure rate limiting:
 ```cpp
