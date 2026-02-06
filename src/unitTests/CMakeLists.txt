@@ -17,6 +17,18 @@ enable_testing()
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/..)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)
 
+# Optional: Find CURL for email functionality
+find_package(CURL QUIET)
+if(CURL_FOUND)
+    message(STATUS "CURL library found - Email functionality enabled in tests")
+    set(GERUEST_HAS_CURL TRUE)
+    add_compile_definitions(GERUEST_HAS_CURL=1)
+else()
+    message(STATUS "CURL library not found - Email functionality disabled in tests")
+    set(GERUEST_HAS_CURL FALSE)
+    add_compile_definitions(GERUEST_HAS_CURL=0)
+endif()
+
 # Platform-specific settings
 if(WIN32)
     # Windows-specific libraries
@@ -30,6 +42,7 @@ endif()
 set(GERUEST_SOURCES
     ../Geruest.cpp
     ../auth/BasicAuth.cpp
+    ../config/ConfigLoader.cpp
     ../data/HTTPRequest.cpp
     ../data/HTTPResponse.cpp
     ../parser/JSONParser.cpp
@@ -43,6 +56,11 @@ set(GERUEST_SOURCES
     ../handler/Handler.cpp
 )
 
+# Conditionally add EmailSender if CURL is available
+if(GERUEST_HAS_CURL)
+    list(APPEND GERUEST_SOURCES ../email/EmailSender.cpp)
+endif()
+
 # Create the main unit test executable
 add_executable(
     Geruest_Unit_Tests
@@ -52,6 +70,9 @@ add_executable(
 
 # Link platform-specific libraries
 target_link_libraries(Geruest_Unit_Tests ${PLATFORM_LIBS})
+if(GERUEST_HAS_CURL)
+    target_link_libraries(Geruest_Unit_Tests CURL::libcurl)
+endif()
 
 # Create individual test executables for standalone testing
 add_executable(JSONParser_Tests JSONParser/JSONParser_tests.cpp ../parser/JSONParser.cpp)
