@@ -14,7 +14,6 @@
 #include <filesystem>
 #include "Geruest.hpp"
 #include "email/EmailSender.hpp"
-#include "EnvLoader.hpp"
 
 #define PORT 8080
 #define HOSTNAME "localhost"
@@ -42,55 +41,10 @@ void addRoutes(Geruest* serverToAddRoutes);
 
 int main(int argc, char* argv[]) {
 
-    // Load environment variables from .env file
-    std::cout << "\n=== Environment Configuration ===" << std::endl;
-    
-    // Get the executable's directory
+    // Get the .env file path (same directory as executable)
     std::filesystem::path exePath = std::filesystem::canonical("/proc/self/exe");
     std::filesystem::path exeDir = exePath.parent_path();
-    std::filesystem::path envPath = exeDir / ".." / ".env";
-    std::filesystem::path normalizedEnvPath = std::filesystem::weakly_canonical(envPath);
-    
-    std::cout << "Looking for .env at: " << normalizedEnvPath << std::endl;
-    
-    if (!EnvLoader::load(normalizedEnvPath.string())) {
-        std::cout << "No .env file found, using default values" << std::endl;
-        std::cout << "Copy .env.example to .env and configure your SMTP settings" << std::endl;
-    }
-    // ============================================================
-    // EMAIL SENDER CONFIGURATION (initialize before server)
-    // ============================================================
-    
-    geruest::EmailSender::Config emailConfig;
-    emailConfig.smtpServer = EnvLoader::get("SMTP_SERVER", "smtp.gmail.com");
-    emailConfig.port = EnvLoader::getInt("SMTP_PORT", 587);
-    emailConfig.username = EnvLoader::get("SMTP_USERNAME", "your-email@gmail.com");
-    emailConfig.password = EnvLoader::get("SMTP_PASSWORD", "your-app-password");
-    emailConfig.fromAddress = EnvLoader::get("SMTP_FROM_ADDRESS", "noreply@example.com");
-    emailConfig.useTLS = true;
-    
-    // Initialize email sender
-    geruest::EmailSender::init(emailConfig);
-    auto& emailSender = geruest::EmailSender::getInstance();
-    
-    // Configure spam protection
-    emailSender.setMinEmailInterval(EnvLoader::getInt("EMAIL_MIN_INTERVAL", 60));
-    emailSender.setMaxEmailsPerIP(EnvLoader::getInt("EMAIL_MAX_PER_IP", 10));
-    emailSender.setIPTrackingDuration(EnvLoader::getInt("EMAIL_TRACKING_DURATION", 3600));
-    emailSender.setMaxQueueSize(EnvLoader::getInt("EMAIL_MAX_QUEUE_SIZE", 1000));
-    
-    std::cout << "\n=== Email Sender Configuration ===" << std::endl;
-    std::cout << "SMTP Server: " << emailConfig.smtpServer << ":" << emailConfig.port << std::endl;
-    std::cout << "Username: " << emailConfig.username << std::endl;
-    std::cout << "Password: " << (emailConfig.password.empty() ? "[NOT SET]" : "[" + std::to_string(emailConfig.password.length()) + " chars]") << std::endl;
-    std::cout << "From Address: " << emailConfig.fromAddress << std::endl;
-    std::cout << "Spam Protection:" << std::endl;
-    std::cout << "  Min interval: " << EnvLoader::getInt("EMAIL_MIN_INTERVAL", 60) << "s" << std::endl;
-    std::cout << "  Max per IP: " << EnvLoader::getInt("EMAIL_MAX_PER_IP", 10) << " emails" << std::endl;
-    std::cout << "  Tracking duration: " << EnvLoader::getInt("EMAIL_TRACKING_DURATION", 3600) << "s" << std::endl;
-    std::cout << "===================================\n" << std::endl;
-
-    std::cout << "=================================\n" << std::endl;
+    std::filesystem::path envPath = exeDir / ".env";
 
     server = std::make_unique<Geruest>();
 
@@ -98,86 +52,49 @@ int main(int argc, char* argv[]) {
     std::signal(SIGINT, signalHandler);
     std::signal(SIGTERM, signalHandler);
 
-    server->setPort(PORT);
-    server->setHostname(HOSTNAME);
-    
     // ============================================================
-    // DEVELOPMENT MODE (optional, call before init/start)
+    // SERVER CONFIGURATION - NEW FLEXIBLE APPROACH
     // ============================================================
     
-    // Enable development mode for rapid iteration and debugging
-    // When enabled:
-    // - Log level automatically set to Debug (all logs shown)
-    // - Files generated in-memory only (not saved to disk)
-    // - Comments preserved in HTML/CSS/JS
-    // - Asset merging still works if enabled separately
+    // Load configuration from .env file and environment variables
+    // This loads settings like PORT, HOSTNAME, DEV_MODE, LOG_LEVEL, 
+    // WEBP_CONVERSION, WEBP_QUALITY, MERGE_ASSETS, WORKER_THREADS,
+    // and EMAIL (SMTP_SERVER, SMTP_USERNAME, etc.)
     //
-    // Perfect for active development when files change frequently!
-    // Files are regenerated on each request for immediate feedback.
-    // DISABLE in production for better performance.
+    // Configuration Hierarchy: Code > .env > Environment Variables
+    //
+    // See doc/CONFIGURATION.md for full documentation
+    // See .env.example for all available configuration keys
+    //
+    // Note: .env file should be in the same directory as the executable
     
-    // Uncomment to enable:
-    // server->enableDevMode();
+    std::cout << "\n=== Loading Server Configuration ===" << std::endl;
+    server->loadConfig(envPath.string());
+    std::cout << "=====================================\n" << std::endl;
     
-    // ============================================================
-    // LOG LEVEL CONFIGURATION (can be changed anytime)
-    // ============================================================
+    // The loadConfig() method automatically initializes email sender if
+    // SMTP credentials are provided in .env or environment variables.
+    // You can also initialize email manually (overrides config):
+    //
+    // server->initEmail("smtp.gmail.com", 587, "user@gmail.com", 
+    //                   "app-password", "noreply@example.com", true);
+    // server->setEmailMinInterval(60);
+    // server->setEmailMaxPerIP(10);
+    // server->setEmailTrackingDuration(3600);
+    // server->setEmailMaxQueueSize(1000);
     
-    // Configure log level to control verbosity
-    // Levels: None < Error (framework default) < Warning < Info < Debug
+    // Any explicit setter calls below will OVERRIDE config values
+    // Uncomment these to override .env settings:
     
-    // Recommended for production/Docker to filter out timeout spam:
-    server->setLogLevel(LogLevel::Warning);
-    
-    // Other options:
-    // server->setLogLevel(LogLevel::None);     // Silent mode
-    // server->setLogLevel(LogLevel::Error);    // Only errors (default if not set)
-    // server->setLogLevel(LogLevel::Info);     // All normal logs (info and above)
-    // server->setLogLevel(LogLevel::Debug);    // Verbose debugging
-    
-    std::cout << "\n=== Log Level Configuration ===" << std::endl;
-    std::cout << "Log level: Warning (filters out timeout/connection noise)" << std::endl;
-    std::cout << "  ✓ Errors: YES" << std::endl;
-    std::cout << "  ✓ Warnings: YES" << std::endl;
-    std::cout << "  ✗ Info messages: NO (filtered)" << std::endl;
-    std::cout << "  ✗ Debug messages: NO (filtered)" << std::endl;
-    std::cout << "================================\n" << std::endl;
-    
-    // ============================================================
-    // THREAD POOL CONFIGURATION (must be called before init/start)
-    // ============================================================
-    
-    // Get number of CPU cores
-    unsigned int cpuCores = std::thread::hardware_concurrency();
-    std::cout << "\n=== Thread Pool Configuration ===" << std::endl;
-    std::cout << "Detected CPU cores: " << cpuCores << std::endl;
-    
-    // Choose configuration profile
-    // Uncomment ONE of the following configurations:
-    
-    // PROFILE 1: Default/Conservative (recommended for general use)
-    server->setWorkerThreadCount(cpuCores * 2);  // CPU cores × 2
-    server->setMaxQueueSize(500);                // 500 pending connections
-    std::cout << "Profile: CONSERVATIVE (default)" << std::endl;
-    
-    // PROFILE 2: High-Traffic (for production servers with heavy load)
-    // server->setWorkerThreadCount(32);
-    // server->setMaxQueueSize(2000);
-    // std::cout << "Profile: HIGH-TRAFFIC" << std::endl;
-    
-    // PROFILE 3: Low-Resource (for embedded systems or development)
-    // server->setWorkerThreadCount(4);
-    // server->setMaxQueueSize(100);
-    // std::cout << "Profile: LOW-RESOURCE" << std::endl;
-    
-    // PROFILE 4: Testing (small pool to easily test queue overflow)
-    // server->setWorkerThreadCount(2);
-    // server->setMaxQueueSize(5);
-    // std::cout << "Profile: TESTING (small pool)" << std::endl;
-    
-    std::cout << "Worker threads: " << cpuCores * 2 << std::endl;
-    std::cout << "Max queue size: 500" << std::endl;
-    std::cout << "=================================\n" << std::endl;
+    // server->setPort(8080);                       // Override PORT from .env
+    // server->setHostname("localhost");            // Override HOSTNAME from .env
+    // server->enableDevMode();                     // Override DEV_MODE from .env
+    // server->setLogLevel(LogLevel::Warning);      // Override LOG_LEVEL from .env
+    // server->setWorkerThreadCount(16);            // Override WORKER_THREADS from .env
+    // server->setMaxQueueSize(1000);               // Override MAX_QUEUE_SIZE from .env
+    // server->setWebPConversion(true);             // Override WEBP_CONVERSION from .env
+    // server->setWebPQuality(85);                  // Override WEBP_QUALITY from .env
+    // server->setMergeAssets(true);                // Override MERGE_ASSETS from .env
     
     // ============================================================
     // LANGUAGE CONFIGURATION (optional, must be called before init/start)

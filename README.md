@@ -70,6 +70,7 @@ git clone https://github.com/UBehrmann/Geruest.git && cd Geruest && mkdir build 
 
 - **[Getting Started Guide](doc/GETTING_STARTED.md)** - Installation, requirements, and your first server
 - **[Usage Guide](doc/USAGE_GUIDE.md)** - Local development, Docker deployment, production setup
+- **[Configuration Guide](doc/CONFIGURATION.md)** - .env files, environment variables, configuration hierarchy
 
 ### Core Features
 

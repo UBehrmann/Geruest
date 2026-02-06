@@ -75,6 +75,7 @@ add_library(Geruest STATIC
     src/builders/HTMLBuilder.cpp
     src/builders/JSBuilder.cpp
     src/builders/WebPConverter.cpp
+    src/config/ConfigLoader.cpp
     src/data/HTTPRequest.cpp
     src/data/HTTPResponse.cpp
     src/email/EmailSender.cpp

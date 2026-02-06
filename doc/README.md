@@ -8,6 +8,7 @@ Welcome to the Geruest documentation! This guide will help you get started with 
 
 - [**Getting Started**](GETTING_STARTED.md) - Prerequisites, installation, and your first server
 - [**Usage Guide**](USAGE_GUIDE.md) - Local development, Docker deployment, Windows/Linux setup
+- [**Configuration**](CONFIGURATION.md) - .env files, environment variables, configuration hierarchy
 
 ### Core Features
 

@@ -52,22 +52,6 @@ void EmailSender::stop() {
 
     threads.clear();
     activeWorkers.clear();
-
-    size_t remaining = 0;
-    {
-        std::lock_guard<std::mutex> lock(queueMutex);
-        remaining = emailQueue.size();
-    }
-
-    if (remaining > 0) {
-        sendToLogger("EmailSender: Stopped with " + std::to_string(remaining) + 
-                    " emails still in queue");
-    } else {
-        sendToLogger("EmailSender: Stopped successfully");
-    }
-
-    sendToLogger("EmailSender: Total sent: " + std::to_string(_emailsSent.load()) + 
-                ", Total rejected: " + std::to_string(_emailsRejected.load()));
 }
 
 bool EmailSender::enqueueEmail(const std::string& to, const std::string& subject,
@@ -75,7 +59,6 @@ bool EmailSender::enqueueEmail(const std::string& to, const std::string& subject
     // Check spam protection
     if (!checkSpamProtection(clientIP)) {
         _emailsRejected++;
-        sendToLogger("EmailSender: Email rejected from " + clientIP + " (spam protection)");
         return false;
     }
 
@@ -101,9 +84,6 @@ bool EmailSender::enqueueEmail(const std::string& to, const std::string& subject
 
     // Notify one worker
     condVar.notify_one();
-
-    sendToLogger("EmailSender: Email queued from " + clientIP + " (queue size: " + 
-                std::to_string(getQueueSize()) + ")");
     return true;
 }
 
@@ -139,7 +119,6 @@ size_t EmailSender::getEmailsRejected() const {
 void EmailSender::clearIPTracking() {
     std::lock_guard<std::mutex> lock(_ipTrackingMutex);
     _ipTracking.clear();
-    sendToLogger("EmailSender: IP tracking cleared");
 }
 
 void EmailSender::worker() {
@@ -148,8 +127,6 @@ void EmailSender::worker() {
         std::lock_guard<std::mutex> lock(queueMutex);
         activeWorkers.insert(id);
     }
-
-    sendToLogger("EmailSender: Worker thread started");
 
     while (true) {
         Email email;
@@ -174,15 +151,12 @@ void EmailSender::worker() {
         if (hasEmail) {
             if (sendEmail(email)) {
                 _emailsSent++;
-                sendToLogger("EmailSender: Email sent to " + email.to + 
-                           " from IP " + email.clientIP);
+                sendToLogger("Email sent from " + config.fromAddress + " to " + email.to);
             } else {
                 // Retry logic
                 if (email.retries < 3) {
                     Email retry = email;
                     retry.retries++;
-                    sendToLogger("EmailSender: Retrying email to " + email.to + 
-                               " (attempt " + std::to_string(retry.retries + 1) + "/4)");
                     std::this_thread::sleep_for(std::chrono::seconds(5));
                     
                     std::lock_guard<std::mutex> lock(queueMutex);
@@ -206,7 +180,6 @@ void EmailSender::worker() {
         activeWorkers.erase(id);
     }
 
-    sendToLogger("EmailSender: Worker thread stopped");
 }
 
 bool EmailSender::checkSpamProtection(const std::string& clientIP) {
@@ -285,11 +258,6 @@ void EmailSender::cleanupOldIPRecords() {
             ++it;
         }
     }
-
-    if (removedCount > 0) {
-        sendToLogger("EmailSender: Cleaned up " + std::to_string(removedCount) + 
-                    " old IP records");
-    }
 }
 
 static size_t payloadSource(char* ptr, size_t size, size_t nmemb, void* userp) {
@@ -346,9 +314,6 @@ bool EmailSender::sendEmail(const Email& email) {
     std::pair<const char*, size_t> payloadData = {payload, payloadLeft};
     curl_easy_setopt(curl, CURLOPT_READDATA, &payloadData);
     curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
-    
-    // Enable verbose output for debugging (comment out in production)
-    curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 
     CURLcode res = curl_easy_perform(curl);
     

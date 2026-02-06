@@ -38,6 +38,8 @@
 #include "data/ServerData.hpp"
 #include "handler/Handler.hpp"
 #include "parser/JSONParser.hpp"
+#include "config/ConfigLoader.hpp"
+#include "email/EmailSender.hpp"
 
 // Constants
 #define TIMEOUT_SEC 30
@@ -128,6 +130,43 @@ class Geruest {
      * @see setWebPConversion for detailed behavior description
      */
     void enableWebPConversion();
+
+    /**
+     * @brief Load configuration from .env file and environment variables
+     * 
+     * This method loads configuration values following the hierarchy:
+     * 1. Code (explicit setter calls) - highest priority, never overwritten
+     * 2. .env file values - middle priority
+     * 3. Environment variables (getenv) - lowest priority
+     * 
+     * Supported configuration keys:
+     * - PORT (int): Server port (default: 8080)
+     * - HOSTNAME (string): Server hostname (default: "localhost")
+     * - WEBP_CONVERSION (bool): Enable WebP conversion (default: false)
+     * - WEBP_QUALITY (float): WebP quality 0-100 (default: 75)
+     * - DEV_MODE (bool): Enable development mode (default: false)
+     * - MERGE_ASSETS (bool): Enable asset merging (default: false)
+     * - WORKER_THREADS (size_t): Number of worker threads (default: CPU cores * 2)
+     * - MAX_QUEUE_SIZE (size_t): Maximum connection queue size (default: 500)
+     * - LOG_LEVEL (string): Log level: "none", "error", "warning", "info", "debug" (default: "error")
+     * 
+     * Email Configuration:
+     * - SMTP_SERVER (string): SMTP server hostname
+     * - SMTP_PORT (int): SMTP port (default: 587)
+     * - SMTP_USERNAME (string): SMTP username
+     * - SMTP_PASSWORD (string): SMTP password
+     * - SMTP_FROM_ADDRESS (string): Email from address
+     * - SMTP_USE_TLS (bool): Enable TLS (default: true)
+     * - EMAIL_MIN_INTERVAL (int): Min seconds between emails per IP (default: 60)
+     * - EMAIL_MAX_PER_IP (size_t): Max emails per IP (default: 10)
+     * - EMAIL_TRACKING_DURATION (int): IP tracking duration in seconds (default: 3600)
+     * - EMAIL_MAX_QUEUE_SIZE (size_t): Max email queue size (default: 1000)
+     * 
+     * @param envFilePath Path to .env file (default: ".env")
+     * @note Call this before init() or start()
+     * @note Only values NOT explicitly set via setters will be loaded from config
+     */
+    void loadConfig(const std::string& envFilePath = ".env");
 
     /**
      * @brief Set WebP encoding quality.
@@ -242,6 +281,46 @@ class Geruest {
      */
     void clearProtectedPages();
 
+    // ========== Email Configuration Methods ==========
+
+    /**
+     * @brief Initialize the email sender with SMTP configuration
+     * @param smtpServer SMTP server hostname (e.g., "smtp.gmail.com")
+     * @param smtpPort SMTP port (default: 587 for TLS)
+     * @param username SMTP username
+     * @param password SMTP password (for Gmail, use app-specific password)
+     * @param fromAddress Email address to send from
+     * @param useTLS Enable TLS encryption (default: true)
+     * @note Must be called before using email functionality
+     */
+    void initEmail(const std::string& smtpServer, int smtpPort,
+                   const std::string& username, const std::string& password,
+                   const std::string& fromAddress, bool useTLS = true);
+
+    /**
+     * @brief Set minimum time interval between emails from same IP
+     * @param seconds Minimum seconds between emails (default: 60)
+     */
+    void setEmailMinInterval(int seconds);
+
+    /**
+     * @brief Set maximum number of emails per IP in tracking window
+     * @param count Maximum emails allowed (default: 10)
+     */
+    void setEmailMaxPerIP(size_t count);
+
+    /**
+     * @brief Set how long to track IP activity for spam protection
+     * @param seconds Seconds to track IP (default: 3600 = 1 hour)
+     */
+    void setEmailTrackingDuration(int seconds);
+
+    /**
+     * @brief Set maximum email queue size
+     * @param size Maximum pending emails (default: 1000)
+     */
+    void setEmailMaxQueueSize(size_t size);
+
     // ========== Logging Configuration Methods ==========
 
     /**
@@ -301,6 +380,27 @@ class Geruest {
     // Thread pool configuration
     size_t _workerThreadCount = std::thread::hardware_concurrency() * 2;
     size_t _maxQueueSize = 500;
+
+    // Configuration flags to track values set explicitly via code
+    // Values set via code take precedence over .env and environment variables
+    struct ConfigFlags {
+        bool portSet = false;
+        bool hostnameSet = false;
+        bool webpConversionSet = false;
+        bool webpQualitySet = false;
+        bool devModeSet = false;
+        bool mergeAssetsSet = false;
+        bool workerThreadsSet = false;
+        bool maxQueueSizeSet = false;
+        bool logLevelSet = false;
+        
+        // Email configuration flags
+        bool emailInitialized = false;
+        bool emailMinIntervalSet = false;
+        bool emailMaxPerIPSet = false;
+        bool emailTrackingDurationSet = false;
+        bool emailMaxQueueSizeSet = false;
+    } _configFlags;
 
     // Thread pool components
     std::vector<std::thread> _workerThreads;
