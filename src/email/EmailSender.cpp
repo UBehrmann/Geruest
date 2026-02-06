@@ -26,7 +26,8 @@ void EmailSender::init(const Config& config) {
     std::lock_guard<std::mutex> lock(instanceMutex);
     if (!instance) {
         curl_global_init(CURL_GLOBAL_DEFAULT);
-        instance = new EmailSender(config);
+        static EmailSender singleton(config);
+        instance = &singleton;
     }
 }
 
