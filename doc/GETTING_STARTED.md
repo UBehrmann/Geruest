@@ -1,364 +1,196 @@
-# Getting Started with Geruest
+# Getting Started
 
-Geruest is a modern, lightweight C++17 web framework designed for building high-performance HTTP servers with cross-platform compatibility.
-
-## Table of Contents
-
-- [Requirements](#requirements)
-- [Installation](#installation)
-  - [Linux](#linux)
-  - [Windows (MSVC)](#windows-msvc)
-  - [Windows (MinGW)](#windows-mingw)
-- [Quick Start](#quick-start)
-- [Project Structure](#project-structure)
-- [Your First Server](#your-first-server)
-
----
-
-## Requirements
-
-### System Requirements
-
-- **C++17** compatible compiler
-- **CMake** 3.10 or higher
-- **Operating System**: Linux, Windows, or macOS
-
-### Supported Compilers
-
-| Platform | Compiler | Minimum Version |
-|----------|----------|-----------------|
-| Linux    | GCC      | 7.0+            |
-| Linux    | Clang    | 5.0+            |
-| Windows  | MSVC     | 2017+           |
-| Windows  | MinGW-w64| 7.0+            |
-| macOS    | Clang    | 5.0+            |
-
-### Dependencies
-
-Geruest has **no external dependencies** beyond the C++ standard library. Everything is included:
-
-- **Threading**: `std::thread` (C++11 standard library)
-- **Filesystem**: `std::filesystem` (C++17 standard library)
-- **Network**: Platform-specific socket libraries (included with OS)
-  - Windows: WinSock2 (included with Windows SDK)
-  - Linux/macOS: POSIX sockets (included with OS)
-- **JSON**: Custom implementation (no external libraries)
-
----
+Quick installation and first server setup for Geruest C++ web framework.
 
 ## Installation
 
 ### Linux
-
 ```bash
-# Clone the repository
 git clone https://github.com/yourusername/Geruest.git
 cd Geruest
-
-# Create build directory
-mkdir build && cd build
-
-# Configure with CMake
-cmake .. -DCMAKE_BUILD_TYPE=Release
-
-# Build
-make -j$(nproc)
-
-# Install (optional, may require sudo)
-make install
+chmod +x setup_scripts/linux_setup.sh
+./setup_scripts/linux_setup.sh
 ```
 
-The library will be installed to:
-- Headers: `/usr/local/include/geruest/`
-- Library: `/usr/local/lib/libGeruest.a`
-- CMake config: `/usr/local/lib/cmake/Geruest/`
-
-### Windows (MSVC)
-
+### Windows
 ```powershell
-# Clone the repository
 git clone https://github.com/yourusername/Geruest.git
 cd Geruest
+setup_scripts\windows_setup.bat
+```
 
-# Create build directory
-mkdir build
-cd build
+### Manual Build
 
-# Configure with CMake (Visual Studio generator)
+**Linux/Unix:**
+```bash
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+make -j$(nproc)
+sudo make install
+```
+
+**Windows (MSVC):**
+```powershell
+mkdir build && cd build
 cmake .. -A x64 -DCMAKE_BUILD_TYPE=Release
-
-# Build
 cmake --build . --config Release
-
-# Install
 cmake --install . --config Release
 ```
 
-### Windows (MinGW)
-
-```powershell
-# Clone the repository
-git clone https://github.com/yourusername/Geruest.git
-cd Geruest
-
-# Create build directory
-mkdir build
-cd build
-
-# Configure with CMake (MinGW Makefiles)
-cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
-
-# Build
-cmake --build .
-
-# Install
-cmake --install .
-```
-
-### Using as a Subproject
-
-You can also include Geruest directly in your CMake project:
-
-```cmake
-# In your CMakeLists.txt
-add_subdirectory(path/to/Geruest)
-target_link_libraries(your_target PRIVATE Geruest)
-```
-
----
-
 ## Quick Start
 
-### Minimal Example
-
+**Minimal Server (main.cpp):**
 ```cpp
-#include <Geruest.hpp>
+#include <geruest/Geruest.hpp>
 
 int main() {
-    geruest::Geruest server;
+    using namespace geruest;
     
-    // Configure server
-    server.setPort(8080);
-    server.setHostname("localhost");
+    Geruest server;
     
-    // Add a simple route
-    server.addRoute("/hello", [](const geruest::HTTPRequest& req) {
-        geruest::HTTPResponse response("200 OK");
-        response.setHeader("Content-Type", "text/plain");
-        response.setBody("Hello, World!");
-        return response;
+    server.addRoute("/", [](const HTTPRequest& req) {
+        HTTPResponse res("200 OK");
+        res.setBody("<h1>Hello, World!</h1>");
+        return res;
     });
     
-    // Start the server
-    server.init();
-    server.start();
-    
+    server.start(8080);
     return 0;
 }
 ```
 
-### CMakeLists.txt for Your Project
-
+**CMakeLists.txt:**
 ```cmake
-cmake_minimum_required(VERSION 3.10)
-project(MyWebApp)
-
+cmake_minimum_required(VERSION 3.17)
+project(MyServer)
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Find Geruest (if installed)
 find_package(Geruest REQUIRED)
-
-add_executable(mywebapp main.cpp)
-target_link_libraries(mywebapp PRIVATE Geruest::Geruest)
-
-# On Windows, link WinSock
-if(WIN32)
-    target_link_libraries(mywebapp PRIVATE ws2_32)
-endif()
-
-# Link pthread on Linux
-if(UNIX AND NOT APPLE)
-    target_link_libraries(mywebapp PRIVATE pthread)
-endif()
+add_executable(myserver main.cpp)
+target_link_libraries(myserver PRIVATE Geruest::Geruest)
 ```
 
----
+**Build & Run:**
+```bash
+mkdir build && cd build
+cmake .. && cmake --build .
+./myserver  # Server on http://localhost:8080
+```
 
 ## Project Structure
 
-### Recommended Website Structure
-
+**Recommended Layout:**
 ```
-your_project/
+my_project/
 ├── CMakeLists.txt
 ├── main.cpp
+├── .env                    # Configuration (optional)
 └── website/
+    ├── html/
+    │   └── index.html
     ├── assets/
     │   ├── css/
-    │   │   ├── base.css
-    │   │   └── layout.css
     │   ├── js/
-    │   │   ├── utils.js
-    │   │   └── main.js
-    │   ├── images/
-    │   │   └── logo.png
-    │   └── translations/
-    │       ├── en.json
-    │       └── de.json
-    ├── components/
-    │   ├── header.html
-    │   ├── footer.html
-    │   └── navigation.html
-    └── html/
-        ├── index.html
-        ├── about.html
-        └── contact.html
+    │   └── images/
+    └── components/
+        ├── header.html
+        └── footer.html
 ```
 
-### Directory Purposes
-
-| Directory | Purpose |
-|-----------|---------|
-| `assets/css/` | Stylesheets (auto-merged when enabled) |
-| `assets/js/` | JavaScript files (auto-merged when enabled) |
-| `assets/images/` | Static images |
-| `assets/translations/` | JSON translation files |
-| `components/` | Reusable HTML components (for injection) |
-| `html/` | Main HTML templates |
-
----
-
-## Your First Server
-
-### Complete Example with Static Files
-
+**With Static Files:**
 ```cpp
-#include <Geruest.hpp>
+server.addRoot("/path/to/website");  // Serves all files automatically
+server.start(8080);
+```
+
+## Complete Example
+
+**main.cpp with API routes and static serving:**
+```cpp
+#include <geruest/Geruest.hpp>
 #include <csignal>
-#include <filesystem>
-#include <iostream>
-#include <memory>
+#include <atomic>
 
-using namespace geruest;
+std::atomic<bool> running{true};
 
-// Use unique_ptr for automatic memory management
-std::unique_ptr<Geruest> server;
-
-// Graceful shutdown handler
-void signalHandler(int signum) {
-    std::cout << "Shutting down server..." << std::endl;
-    if (server) server->stop();
+void signalHandler(int signal) {
+    std::cout << "\nShutting down gracefully...\n";
+    running = false;
 }
 
-int main(int argc, char* argv[]) {
-    server = std::make_unique<Geruest>();
+int main() {
+    using namespace geruest;
     
-    // Set up signal handlers for graceful shutdown
-    std::signal(SIGINT, signalHandler);
-    std::signal(SIGTERM, signalHandler);
+    signal(SIGINT, signalHandler);
     
-    // Basic configuration
-    server->setPort(8080);
-    server->setHostname("localhost");
+    Geruest server;
     
-    // Optional: Configure thread pool
-    server->setWorkerThreadCount(8);  // Number of worker threads
-    server->setMaxQueueSize(500);     // Max pending connections
+    // Static files
+    server.addRoot("/var/www/mysite");
     
-    // Optional: Set up languages
-    server->setAvailableLanguages({"en", "de", "fr"});
-    
-    // Optional: Enable CSS/JS merging
-    server->setMergeAssets(true);
-    
-    // Set the website root directory
-    std::filesystem::path websitePath = 
-        std::filesystem::canonical(argv[0]).parent_path() / "website";
-    server->addRoot(websitePath.string());
-    
-    // Add API routes
-    server->addRoute("/api/status", [](const HTTPRequest& req) {
-        HTTPResponse response("200 OK");
-        response.setHeader("Content-Type", "application/json");
-        response.setBody(R"({"status": "running", "version": "1.0.0"})");
-        return response;
+    // API routes
+    server.addRoute("/api/status", [](const HTTPRequest& req) {
+        HTTPResponse res("200 OK");
+        res.setHeader("Content-Type", "application/json");
+        res.setBody(R"({"status":"online","version":"1.0.0"})");
+        return res;
     });
     
-    // Add wildcard route
-    server->addRoute("/api/*", [](const HTTPRequest& req) {
-        HTTPResponse response("200 OK");
-        response.setHeader("Content-Type", "application/json");
-        response.setBody(R"({"message": "API endpoint", "path": ")" + 
-                         req.getPathString() + R"("})");
-        return response;
+    server.addRoute("/api/users", [](const HTTPRequest& req) {
+        HTTPResponse res("200 OK");
+        res.setHeader("Content-Type", "application/json");
+        res.setBody(R"({"users":[]})");
+        return res;
     });
     
-    std::cout << "Starting server on http://localhost:8080" << std::endl;
-    std::cout << "Press Ctrl+C to stop" << std::endl;
+    // CORS for API
+    server.setCORSHeaders({
+        {"Access-Control-Allow-Origin", "*"},
+        {"Access-Control-Allow-Methods", "GET, POST, OPTIONS"}
+    });
     
-    // Initialize and start
-    server->init();
-    server->start();
+    std::cout << "Server running on http://localhost:8080\n";
+    std::cout << "Press Ctrl+C to stop\n";
     
-    // Automatic cleanup when unique_ptr goes out of scope
+    server.start(8080, [&running]() { return running.load(); });
+    
     return 0;
 }
 ```
 
-### Build and Run
-
-```bash
-# Linux
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make
-./mywebapp
-
-# Windows (MSVC)
-mkdir build && cd build
-cmake .. -A x64 -DCMAKE_BUILD_TYPE=Release
-cmake --build . --config Release
-.\Release\mywebapp.exe
-```
-
----
-
 ## Next Steps
 
-- [Usage Guide](USAGE_GUIDE.md) - Detailed usage instructions with Docker examples
-- [Configuration Guide](CONFIGURATION.md) - .env file and environment variables
-- [Email System](EMAIL.md) - SMTP email sending with spam protection
-- [Features](FEATURES.md) - Overview of all features
-- [Data Classes](DATA_CLASSES.md) - HTTPRequest, HTTPResponse, JSONParser documentation
-- [Basic Authentication](BASIC_AUTH.md) - Protect your pages
-- [Translations](TRANSLATIONS.md) - Multi-language support
-- [HTML Injections](HTML_INJECTIONS.md) - Component system
-- [Asset Merging](ASSET_MERGING.md) - CSS/JS optimization
-
----
+1. **Static Serving**: See [USAGE_GUIDE.md](USAGE_GUIDE.md) for `addRoot()` details
+2. **Templates**: Read [HTML_INJECTIONS.md](HTML_INJECTIONS.md) for component system
+3. **Translations**: See [TRANSLATIONS.md](TRANSLATIONS.md) for multi-language support
+4. **Asset Bundling**: Check [ASSET_MERGING.md](ASSET_MERGING.md) for CSS/JS combining
+5. **Authentication**: Read [BASIC_AUTH.md](BASIC_AUTH.md) for password protection
+6. **Configuration**: See [CONFIGURATION.md](CONFIGURATION.md) for `.env` files
+7. **Features Overview**: Browse [FEATURES.md](FEATURES.md) for all capabilities
 
 ## Troubleshooting
 
-### Common Issues
-
-#### "Cannot find Geruest" CMake error
-Make sure you've installed the library or set `CMAKE_PREFIX_PATH`:
+**Library not found:**
 ```bash
-cmake .. -DCMAKE_PREFIX_PATH=/path/to/geruest/install
+# Linux
+export CMAKE_PREFIX_PATH=/path/to/install
+# Or set CMAKE_PREFIX_PATH in CMakeLists.txt
+
+cmake .. -DCMAKE_PREFIX_PATH=/usr/local
 ```
 
-#### "bind: Address already in use"
-Another process is using the port. Either stop it or use a different port:
+**Port already in use:**
 ```cpp
-server->setPort(3000);  // Use a different port
+server.start(8081);  // Try different port
 ```
 
-#### Permission denied on Linux (port 80)
-Ports below 1024 require root privileges. Either:
-- Use a port above 1024 (e.g., 8080)
-- Run with sudo (not recommended for production)
-- Use a reverse proxy like nginx
+**Permission denied (ports < 1024):**
+```bash
+sudo ./myserver           # Run with sudo for port 80/443
+# OR use capability: sudo setcap 'cap_net_bind_service=+ep' ./myserver
+```
 
-#### Windows Firewall blocking connections
-Allow your application through Windows Firewall or use `localhost` for local testing.
+**Cross-platform builds:**
+- Use `#ifdef _WIN32` for Windows-specific code
+- Always test with both MSVC and GCC/Clang
+- Check socket cleanup: `WSACleanup()` on Windows, `close()` on Unix
