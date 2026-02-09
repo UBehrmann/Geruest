@@ -15,8 +15,8 @@ server.setAvailableLanguages({"en", "de", "fr"});
 
 ```html
 <h1>[assets/translations/home.json:title]</h1>
-<input placeholder="[assets/translations/nav.json:search]">
-<a href="/about">[assets/translations/nav.json:about]</a>
+<input placeholder="[assets/translations/navigation.json:search]">
+<a href="/about">[assets/translations/navigation.json:about]</a>
 ```
 
 ## Translation Files
@@ -61,8 +61,8 @@ Components work with translations:
 ```html
 <!-- components/header.html -->
 <nav>
-    <a href="/">[assets/translations/nav.json:home]</a>
-    <a href="/about">[assets/translations/nav.json:about]</a>
+    <a href="/">[assets/translations/navigation.json:home]</a>
+    <a href="/about">[assets/translations/navigation.json:about]</a>
 </nav>
 
 <!-- html/index.html -->

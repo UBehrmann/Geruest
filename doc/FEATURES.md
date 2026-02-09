@@ -11,8 +11,7 @@
 | **Translations** | Multi-language with JSON files | `setAvailableLanguages()` |
 | **CORS** | Preflight/CORS headers | Manual headers |
 | **Basic Auth** | SHA-256 password protection | `BasicAuth` |
-| **HTTPS/TLS** | SSL/TLS encryption | `enableTLS()` |
-| **Email/SMTP** | Send emails via SMTP | `EmailService` |
+| **Email/SMTP** | Send emails via SMTP (with TLS) | `EmailService` |
 | **JSON Parsing** | String-based JSON handling | `JSONParser` |
 | **WebP Conversion** | Auto-convert images to WebP | `WebPConverter` |
 | **Configuration** | `.env` and environment config | `ConfigLoader` |
@@ -94,23 +93,16 @@ BasicAuth auth;
 auth.addUser("admin", BasicAuth::hashPassword("secret123"));
 
 server.addRoute("/admin", [&auth](const HTTPRequest& req) {
-    if (!auth.authenticate(req)) {
-        return auth.respondUnauthorized("Admin Area");
+    if (!auth.authenticate(req.getPathString(), req.getHeader("Authorization"))) {
+        return responseUnauthorizedBasicAuth("Admin Area");
     }
-    return HTTPResponse("200 OK", "Admin Dashboard");
+    HTTPResponse response("200 OK");
+    response.setBody("Admin Dashboard");
+    return response;
 });
 ```
 
-**Always use HTTPS with authentication!**
-
-## HTTPS/TLS
-
-```cpp
-server.enableTLS("cert.pem", "key.pem");
-server.setPort(443);
-server.init();
-server.start();
-```
+**Note:** This framework does not provide built-in HTTPS/TLS support. For production deployments with authentication, use a reverse proxy (nginx, Apache, Caddy) to handle TLS termination.
 
 ## Email Service
 

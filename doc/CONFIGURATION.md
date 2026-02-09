@@ -5,7 +5,7 @@ Priority-based configuration with `.env` files and programmatic overrides.
 ## Configuration Priority
 
 **Highest → Lowest:**
-1. **`.env` File** (workspace root)
+1. **`.env` File** (current working directory, or explicit path passed to `loadEnvFile()`)
 2. **Environment Variables** (`export VAR=value`)
 3. **Defaults** (second parameter in `get*()` methods)
 
@@ -226,10 +226,12 @@ int main() {
     );
     
     server.addRoute("/admin", [&auth](const HTTPRequest& req) {
-        if (!auth.authenticate(req)) {
-            return auth.respondUnauthorized("Admin");
+        if (!auth.authenticate(req.getPathString(), req.getHeader("Authorization"))) {
+            return responseUnauthorizedBasicAuth("Admin");
         }
-        return responseOK("Admin Dashboard");
+        HTTPResponse response = responseOK();
+        response.setBody("Admin Dashboard");
+        return response;
     });
     
     server.init();
@@ -240,7 +242,7 @@ int main() {
 
 ## Troubleshooting
 
-- **Values not loading**: Check `.env` is in workspace root (where executable runs)
+- **Values not loading**: Check `.env` is in the current working directory (where the process runs) or provide an explicit path to `loadConfig()`/`loadEnvFile()`
 - **Type conversion errors**: Invalid values return the default parameter, not errors
 - **Priority confusion**: .env file takes precedence over environment variables
 - **Missing required keys**: Use `ConfigLoader::has()` to check existence before retrieval
