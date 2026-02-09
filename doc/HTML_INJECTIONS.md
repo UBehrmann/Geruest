@@ -47,8 +47,8 @@ Components work with translations:
 <!-- components/header.html -->
 <header>
     <nav>
-        <a href="/">[nav_home]</a>
-        <a href="/about">[nav_about]</a>
+        <a href="/">[assets/translations/navigation.json:home]</a>
+        <a href="/about">[assets/translations/navigation.json:about]</a>
     </nav>
 </header>
 ```
