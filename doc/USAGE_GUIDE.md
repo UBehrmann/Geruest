@@ -8,7 +8,7 @@ Deploy and run Geruest servers.
 ```bash
 sudo apt-get install -y build-essential cmake git
 cd Geruest && mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Debug && make -j$(nproc) && make install
+cmake .. -DCMAKE_BUILD_TYPE=Debug && make -j$(nproc) && sudo make install
 ```
 
 **Windows (MSVC):** `cmake .. -A x64 && cmake --build . --config Release`  
