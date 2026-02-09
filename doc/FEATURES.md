@@ -9,13 +9,13 @@
 | **Templates** | Component injection `{file}`, translations `[key]` | `ContentBuilder` |
 | **Asset Merging** | Combine CSS/JS files from file maps | `AssetMerger` |
 | **Translations** | Multi-language with JSON files | `setAvailableLanguages()` |
-| **CORS** | Preflight/CORS headers | `setCORSHeaders()` |
+| **CORS** | Preflight/CORS headers | Manual headers |
 | **Basic Auth** | SHA-256 password protection | `BasicAuth` |
 | **HTTPS/TLS** | SSL/TLS encryption | `enableTLS()` |
 | **Email/SMTP** | Send emails via SMTP | `EmailService` |
 | **JSON Parsing** | String-based JSON handling | `JSONParser` |
 | **WebP Conversion** | Auto-convert images to WebP | `WebPConverter` |
-| **Configuration** | `.env` and programmatic config | `configManager` |
+| **Configuration** | `.env` and environment config | `ConfigLoader` |
 
 ## Routing
 
@@ -73,16 +73,22 @@ URLs get language prefixes: `/about` → `/en/about`, `/de/about`, `/fr/about`
 ## CORS Support
 
 ```cpp
-server.setCORSHeaders({
-    {"Access-Control-Allow-Origin", "*"},
-    {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE"}
+// Add CORS headers to individual responses
+server.addRoute("/api/data", [](const HTTPRequest& req) {
+    HTTPResponse res("200 OK");
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.setBody(R"({"data": []})");
+    return res;
 });
 ```
 
 ## Basic Authentication
 
 ```cpp
-#include <geruest/auth/BasicAuth.hpp>
+#include <auth/BasicAuth.hpp>
 
 BasicAuth auth;
 auth.addUser("admin", BasicAuth::hashPassword("secret123"));
@@ -101,13 +107,15 @@ server.addRoute("/admin", [&auth](const HTTPRequest& req) {
 
 ```cpp
 server.enableTLS("cert.pem", "key.pem");
-server.start(443);
+server.setPort(443);
+server.init();
+server.start();
 ```
 
 ## Email Service
 
 ```cpp
-#include <geruest/email/EmailService.hpp>
+#include <email/EmailService.hpp>
 
 EmailService email(serverData, "smtp.gmail.com", 587, "user@gmail.com", "app-password");
 email.sendEmail("to@example.com", "Subject", "Message body");
@@ -130,7 +138,7 @@ std::string output = json.build();  // {"status":"success","code":200}
 ## WebP Conversion
 
 ```cpp
-#include <geruest/builders/WebPConverter.hpp>
+#include <builders/WebPConverter.hpp>
 
 WebPConverter::convertToWebP("input.png", "output.webp", 90);  // Quality: 90%
 ```
@@ -139,25 +147,30 @@ WebPConverter::convertToWebP("input.png", "output.webp", 90);  // Quality: 90%
 
 **`.env` file:**
 ```env
-SERVER_PORT=8080
-TLS_ENABLED=true
-SMTP_HOST=smtp.gmail.com
+PORT=8080
+DEV_MODE=false
+SMTP_SERVER=smtp.gmail.com
 ```
 
-**Programmatic:**
+**Reading configuration:**
 ```cpp
-configManager.set("SERVER_PORT", "8080");
-int port = configManager.getInt("SERVER_PORT", 80);  // Default: 80
+geruest::ConfigLoader::loadEnvFile(".env");
+int port = geruest::ConfigLoader::getInt("PORT", 8080);  // Default: 8080
 ```
 
 ## Advanced Patterns
 
 **Graceful Shutdown:**
 ```cpp
-std::atomic<bool> running{true};
-signal(SIGINT, [](int) { running = false; });
+std::unique_ptr<Geruest> server = std::make_unique<Geruest>();
 
-server.start(8080, [&running]() { return running.load(); });
+std::signal(SIGINT, [](int) { 
+    if (server) server->stop(); 
+});
+
+server->setPort(8080);
+server->init();
+server->start();
 ```
 
 **Custom Error Pages:**

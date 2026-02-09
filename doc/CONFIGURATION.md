@@ -5,57 +5,67 @@ Priority-based configuration with `.env` files and programmatic overrides.
 ## Configuration Priority
 
 **Highest → Lowest:**
-1. **Programmatic** (`configManager.set()`)
+1. **`.env` File** (workspace root)
 2. **Environment Variables** (`export VAR=value`)
-3. **`.env` File** (workspace root)
-4. **Defaults** (second parameter in `get*()` methods)
+3. **Defaults** (second parameter in `get*()` methods)
+
+**Note:** For `Geruest` server configuration, values explicitly set via setters (e.g., `server.setPort()`) take precedence over all configuration sources.
 
 ## .env File Format
 
 ```env
 # Server Configuration
-SERVER_PORT=8080
-SERVER_HOST=0.0.0.0
-TLS_ENABLED=true
-TLS_CERT_PATH=/etc/ssl/cert.pem
-TLS_KEY_PATH=/etc/ssl/key.pem
+PORT=8080
+HOSTNAME=0.0.0.0
+WORKER_THREADS=16
+MAX_QUEUE_SIZE=500
+LOG_LEVEL=error
+
+# Feature Flags
+DEV_MODE=false
+MERGE_ASSETS=true
+WEBP_CONVERSION=true
+WEBP_QUALITY=75
 
 # SMTP Configuration
-SMTP_HOST=smtp.gmail.com
+SMTP_SERVER=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USER=user@gmail.com
-SMTP_PASS=app-password
+SMTP_USERNAME=user@gmail.com
+SMTP_PASSWORD=app-password
+SMTP_FROM_ADDRESS=noreply@example.com
 SMTP_USE_TLS=true
 
-# Security
+# Email Spam Protection
+EMAIL_MIN_INTERVAL=60
+EMAIL_MAX_PER_IP=10
+EMAIL_TRACKING_DURATION=3600
+EMAIL_MAX_QUEUE_SIZE=1000
+
+# Security (application-specific, not read by Geruest)
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD_HASH=5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8
-
-# Development
-DEV_MODE=false
-LOG_LEVEL=INFO
 ```
 
 ## API Reference
 
 ```cpp
-#include <geruest/config/ConfigurationManager.hpp>
+#include <config/ConfigLoader.hpp>
+
+// Load .env file (optional - can also use server.loadConfig())
+geruest::ConfigLoader::loadEnvFile(".env");
 
 // Read values (with defaults)
-int port = configManager.getInt("SERVER_PORT", 80);
-float timeout = configManager.getFloat("REQUEST_TIMEOUT", 30.0);
-bool tlsEnabled = configManager.getBool("TLS_ENABLED", false);
-std::string host = configManager.getString("SERVER_HOST", "127.0.0.1");
-
-// Set values (overrides everything)
-configManager.set("SERVER_PORT", "8080");
-configManager.set("TLS_ENABLED", "true");
+int port = geruest::ConfigLoader::getInt("PORT", 8080);
+float webpQuality = geruest::ConfigLoader::getFloat("WEBP_QUALITY", 75.0);
+bool devMode = geruest::ConfigLoader::getBool("DEV_MODE", false);
+std::string host = geruest::ConfigLoader::get("HOSTNAME", "localhost");
+size_t queueSize = geruest::ConfigLoader::getSizeT("MAX_QUEUE_SIZE", 500);
 
 // Check existence
-bool hasKey = configManager.has("SMTP_HOST");
+bool hasKey = geruest::ConfigLoader::has("SMTP_SERVER");
 
-// Get all keys
-auto keys = configManager.getAllKeys();  // Returns std::vector<std::string>
+// Clear all loaded .env values
+geruest::ConfigLoader::clear();
 ```
 
 ## Common Patterns
@@ -63,44 +73,63 @@ auto keys = configManager.getAllKeys();  // Returns std::vector<std::string>
 ### Server Configuration
 
 ```cpp
-int port = configManager.getInt("SERVER_PORT", 8080);
-std::string host = configManager.getString("SERVER_HOST", "0.0.0.0");
+using namespace geruest;
 
-if (configManager.getBool("TLS_ENABLED", false)) {
-    server.enableTLS(
-        configManager.getString("TLS_CERT_PATH"),
-        configManager.getString("TLS_KEY_PATH")
-    );
-    server.start(port);
-}
+int port = ConfigLoader::getInt("PORT", 8080);
+std::string host = ConfigLoader::get("HOSTNAME", "0.0.0.0");
+size_t workers = ConfigLoader::getSizeT("WORKER_THREADS", 16);
+
+// Option 1: Manual configuration
+server.setPort(port);
+server.setHostname(host);
+server.setWorkerThreadCount(workers);
+
+// Option 2: Auto-load from .env (only loads unset values)
+// This reads all Geruest-specific keys automatically
+server.loadConfig(".env");
+
+server.init();
+server.start();
 ```
 
 ### SMTP Setup
 
 ```cpp
-if (configManager.has("SMTP_HOST")) {
-    EmailService email(
-        serverData,
-        configManager.getString("SMTP_HOST"),
-        configManager.getInt("SMTP_PORT", 587),
-        configManager.getString("SMTP_USER"),
-        configManager.getString("SMTP_PASS")
-    );
+using namespace geruest;
+
+// Option 1: Auto-initialize via server.loadConfig() (recommended)
+Geruest server;
+server.loadConfig(".env");  // Automatically initializes email if SMTP_* keys present
+
+// Option 2: Manual initialization (overrides config)
+if (ConfigLoader::has("SMTP_SERVER")) {
+    EmailSender::Config emailConfig;
+    emailConfig.smtpServer = ConfigLoader::get("SMTP_SERVER");
+    emailConfig.port = ConfigLoader::getInt("SMTP_PORT", 587);
+    emailConfig.username = ConfigLoader::get("SMTP_USERNAME");
+    emailConfig.password = ConfigLoader::get("SMTP_PASSWORD");
+    emailConfig.fromAddress = ConfigLoader::get("SMTP_FROM_ADDRESS", emailConfig.username);
+    emailConfig.useTLS = ConfigLoader::getBool("SMTP_USE_TLS", true);
+    EmailSender::init(emailConfig);
 }
 ```
 
 ### Authentication
 
 ```cpp
+using namespace geruest;
+
 BasicAuth auth;
-std::string passwordHash = configManager.getString("ADMIN_PASSWORD_HASH");
+std::string passwordHash = ConfigLoader::get("ADMIN_PASSWORD_HASH");
 auth.addUser("admin", passwordHash);  // Pre-hashed password from .env
 ```
 
 ### Development Mode
 
 ```cpp
-bool devMode = configManager.getBool("DEV_MODE", false);
+using namespace geruest;
+
+bool devMode = ConfigLoader::getBool("DEV_MODE", false);
 
 if (devMode) {
     sendToLogger("Development mode enabled");
@@ -117,8 +146,10 @@ echo ".env" >> .gitignore
 
 **Use environment variables in production:**
 ```bash
-export SERVER_PORT=443
-export TLS_ENABLED=true
+export PORT=8080
+export HOSTNAME=0.0.0.0
+export DEV_MODE=false
+export LOG_LEVEL=error
 ./my_server
 ```
 
@@ -146,9 +177,11 @@ services:
   app:
     image: myapp
     environment:
-      - SERVER_PORT=8080
-      - TLS_ENABLED=true
-      - SMTP_HOST=smtp.gmail.com
+      - PORT=8080
+      - HOSTNAME=0.0.0.0
+      - SMTP_SERVER=smtp.gmail.com
+      - SMTP_USERNAME=${SMTP_USERNAME}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
     env_file:
       - .env.production
 ```
@@ -156,51 +189,51 @@ services:
 ## Type Conversion Rules
 
 ```cpp
-// parseInt(), parseFloat() - throws on invalid input
-getInt("PORT", 80);      // "8080" → 8080, "invalid" throws
-getFloat("TIMEOUT", 1.5); // "3.14" → 3.14f
-getBool("ENABLED", false); // "true"/"1" → true, "false"/"0" → false
-getString("NAME", "");    // Returns raw string value
+// Type conversion with defaults on invalid input
+ConfigLoader::getInt("PORT", 8080);          // "8080" → 8080, "invalid" → 8080 (default)
+ConfigLoader::getFloat("WEBP_QUALITY", 75.0); // "85.5" → 85.5f, "invalid" → 75.0
+ConfigLoader::getBool("DEV_MODE", false);     // "true"/"1"/"yes"/"on" → true (case-insensitive)
+                                              // "false"/"0"/"no"/"off" → false
+ConfigLoader::get("HOSTNAME", "localhost");   // Returns raw string value
+ConfigLoader::getSizeT("WORKER_THREADS", 8);  // "16" → 16, "invalid" → 8
 ```
 
 ## Complete Example
 
 ```cpp
-#include <geruest/Geruest.hpp>
-#include <geruest/config/ConfigurationManager.hpp>
-#include <geruest/auth/BasicAuth.hpp>
+#include <Geruest.hpp>
+#include <config/ConfigLoader.hpp>
+#include <auth/BasicAuth.hpp>
 
 int main() {
     using namespace geruest;
     
-    // Configuration already loaded from .env automatically
-    int port = configManager.getInt("SERVER_PORT", 8080);
-    bool tlsEnabled = configManager.getBool("TLS_ENABLED", false);
-    
+    // Option 1: Auto-load all Geruest configuration (recommended)
     Geruest server;
+    server.loadConfig(".env");  // Reads PORT, HOSTNAME, SMTP_*, etc.
     
-    if (tlsEnabled) {
-        server.enableTLS(
-            configManager.getString("TLS_CERT_PATH"),
-            configManager.getString("TLS_KEY_PATH")
-        );
-    }
+    // Option 2: Manual configuration (overrides .env)
+    // ConfigLoader::loadEnvFile(".env");
+    // server.setPort(ConfigLoader::getInt("PORT", 8080));
+    // server.setHostname(ConfigLoader::get("HOSTNAME", "0.0.0.0"));
+    // server.setWorkerThreadCount(ConfigLoader::getSizeT("WORKER_THREADS", 8));
     
-    // Auth from config
+    // Application-specific config (not read by Geruest)
     BasicAuth auth;
     auth.addUser(
-        configManager.getString("ADMIN_USERNAME", "admin"),
-        configManager.getString("ADMIN_PASSWORD_HASH")
+        ConfigLoader::get("ADMIN_USERNAME", "admin"),
+        ConfigLoader::get("ADMIN_PASSWORD_HASH")
     );
     
     server.addRoute("/admin", [&auth](const HTTPRequest& req) {
         if (!auth.authenticate(req)) {
             return auth.respondUnauthorized("Admin");
         }
-        return HTTPResponse("200 OK", "Admin Dashboard");
+        return responseOK("Admin Dashboard");
     });
     
-    server.start(port);
+    server.init();
+    server.start();
     return 0;
 }
 ```
@@ -208,6 +241,7 @@ int main() {
 ## Troubleshooting
 
 - **Values not loading**: Check `.env` is in workspace root (where executable runs)
-- **Type conversion errors**: Ensure `.env` values match expected types
-- **Overrides not working**: Remember priority order (programmatic > env vars > .env)
-- **Missing required keys**: Use `has()` to check existence before `get*()`
+- **Type conversion errors**: Invalid values return the default parameter, not errors
+- **Priority confusion**: .env file takes precedence over environment variables
+- **Missing required keys**: Use `ConfigLoader::has()` to check existence before retrieval
+- **Server config not loading**: Call `server.loadConfig()` before `init()` or `start()`

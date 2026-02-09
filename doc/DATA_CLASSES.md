@@ -6,19 +6,19 @@ Access incoming HTTP request data.
 
 **Core Methods:**
 ```cpp
-std::string getMethod();           // GET, POST, etc.
-std::string getPathString();       // Full path (/api/users)
-std::string getPath(size_t idx);   // Path segment at index
-std::string getClientIP();         // Client IP address
-std::string getBody();             // Request body
+const std::string& getMethod() const;           // GET, POST, etc.
+const std::string& getPathString() const;       // Full path (/api/users)
+std::string getPath(size_t idx) const;          // Path segment at index
+const std::string& getClientIP() const;         // Client IP address
+const std::string& getBody() const;             // Request body
 
 // Query parameters
-bool hasParam(const std::string& name);
-std::string getParam(const std::string& name);
+bool hasParam(const std::string& name) const;
+std::string getParam(const std::string& name) const;
 
 // Headers (case-insensitive)
-bool hasHeader(const std::string& name);
-std::string getHeader(const std::string& name);
+bool hasHeader(std::string_view name) const;
+std::string getHeader(std::string_view name) const;
 ```
 
 **Example:**

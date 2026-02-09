@@ -103,7 +103,7 @@ SMTP_SERVER=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USERNAME=your-email@gmail.com
 SMTP_PASSWORD=your-app-password  # Generate at myaccount.google.com/apppasswords
-EMAIL_FROM=your-email@gmail.com
+SMTP_FROM_ADDRESS=your-email@gmail.com
 ```
 **Note:** Requires 2FA enabled and App Password (not regular password).
 
@@ -113,7 +113,7 @@ SMTP_SERVER=smtp.sendgrid.net
 SMTP_PORT=587
 SMTP_USERNAME=apikey  # Literally "apikey"
 SMTP_PASSWORD=your-sendgrid-api-key
-EMAIL_FROM=verified@yourdomain.com  # Must be verified in SendGrid
+SMTP_FROM_ADDRESS=verified@yourdomain.com  # Must be verified in SendGrid
 ```
 
 ### AWS SES
@@ -122,7 +122,7 @@ SMTP_SERVER=email-smtp.us-east-1.amazonaws.com  # Region-specific
 SMTP_PORT=587
 SMTP_USERNAME=your-smtp-username  # SES console SMTP credentials
 SMTP_PASSWORD=your-smtp-password
-EMAIL_FROM=verified@yourdomain.com
+SMTP_FROM_ADDRESS=verified@yourdomain.com
 ```
 
 ### Outlook/Office 365
@@ -131,7 +131,7 @@ SMTP_SERVER=smtp.office365.com
 SMTP_PORT=587
 SMTP_USERNAME=your-email@outlook.com
 SMTP_PASSWORD=your-password
-EMAIL_FROM=your-email@outlook.com
+SMTP_FROM_ADDRESS=your-email@outlook.com
 ```
 
 ### Custom SMTP
@@ -140,7 +140,7 @@ SMTP_SERVER=mail.yourdomain.com
 SMTP_PORT=587  # 587=STARTTLS, 465=SSL/TLS, 25=plaintext (blocked by most ISPs)
 SMTP_USERNAME=user@yourdomain.com
 SMTP_PASSWORD=your-password
-EMAIL_FROM=noreply@yourdomain.com
+SMTP_FROM_ADDRESS=noreply@yourdomain.com
 ```
 
 ## Features

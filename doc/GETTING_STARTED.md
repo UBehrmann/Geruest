@@ -41,12 +41,14 @@ cmake --install . --config Release
 
 **Minimal Server (main.cpp):**
 ```cpp
-#include <geruest/Geruest.hpp>
+#include <Geruest.hpp>
 
 int main() {
     using namespace geruest;
     
     Geruest server;
+    server.setPort(8080);
+    server.setHostname("localhost");
     
     server.addRoute("/", [](const HTTPRequest& req) {
         HTTPResponse res("200 OK");
@@ -54,7 +56,8 @@ int main() {
         return res;
     });
     
-    server.start(8080);
+    server.init();
+    server.start();
     return 0;
 }
 ```
@@ -100,59 +103,62 @@ my_project/
 **With Static Files:**
 ```cpp
 server.addRoot("/path/to/website");  // Serves all files automatically
-server.start(8080);
+server.setPort(8080);
+server.init();
+server.start();
 ```
 
 ## Complete Example
 
 **main.cpp with API routes and static serving:**
 ```cpp
-#include <geruest/Geruest.hpp>
+#include <Geruest.hpp>
 #include <csignal>
-#include <atomic>
+#include <memory>
 
-std::atomic<bool> running{true};
+std::unique_ptr<geruest::Geruest> server;
 
 void signalHandler(int signal) {
     std::cout << "\nShutting down gracefully...\n";
-    running = false;
+    if (server) {
+        server->stop();
+    }
 }
 
 int main() {
     using namespace geruest;
     
-    signal(SIGINT, signalHandler);
+    std::signal(SIGINT, signalHandler);
     
-    Geruest server;
+    server = std::make_unique<Geruest>();
     
     // Static files
-    server.addRoot("/var/www/mysite");
+    server->addRoot("/var/www/mysite");
     
     // API routes
-    server.addRoute("/api/status", [](const HTTPRequest& req) {
+    server->addRoute("/api/status", [](const HTTPRequest& req) {
         HTTPResponse res("200 OK");
         res.setHeader("Content-Type", "application/json");
+        res.setHeader("Access-Control-Allow-Origin", "*");
         res.setBody(R"({"status":"online","version":"1.0.0"})");
         return res;
     });
     
-    server.addRoute("/api/users", [](const HTTPRequest& req) {
+    server->addRoute("/api/users", [](const HTTPRequest& req) {
         HTTPResponse res("200 OK");
         res.setHeader("Content-Type", "application/json");
+        res.setHeader("Access-Control-Allow-Origin", "*");
         res.setBody(R"({"users":[]})");
         return res;
-    });
-    
-    // CORS for API
-    server.setCORSHeaders({
-        {"Access-Control-Allow-Origin", "*"},
-        {"Access-Control-Allow-Methods", "GET, POST, OPTIONS"}
     });
     
     std::cout << "Server running on http://localhost:8080\n";
     std::cout << "Press Ctrl+C to stop\n";
     
-    server.start(8080, [&running]() { return running.load(); });
+    server->setPort(8080);
+    server->setHostname("localhost");
+    server->init();
+    server->start();
     
     return 0;
 }
@@ -181,7 +187,9 @@ cmake .. -DCMAKE_PREFIX_PATH=/usr/local
 
 **Port already in use:**
 ```cpp
-server.start(8081);  // Try different port
+server.setPort(8081);  // Try different port
+server.init();
+server.start();
 ```
 
 **Permission denied (ports < 1024):**
