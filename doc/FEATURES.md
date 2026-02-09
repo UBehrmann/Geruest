@@ -1,537 +1,191 @@
 # Features Overview
 
-Geruest provides a comprehensive set of features for building modern web servers. This document gives an overview of all features with usage examples.
+## Quick Reference
 
-## Table of Contents
+| Feature | Description | Key Method/Header |
+|---------|-------------|-------------------|
+| **Routing** | Exact paths, wildcards (`/api/*`, `/users/*/profile`) | `addRoute()` |
+| **Static Files** | Auto-serve files from root directories | `addRoot()` |
+| **Templates** | Component injection `{file}`, translations `[key]` | `ContentBuilder` |
+| **Asset Merging** | Combine CSS/JS files from file maps | `AssetMerger` |
+| **Translations** | Multi-language with JSON files | `setAvailableLanguages()` |
+| **CORS** | Preflight/CORS headers | Manual headers |
+| **Basic Auth** | SHA-256 password protection | `BasicAuth` |
+| **Email/SMTP** | Send emails via SMTP (with TLS) | `EmailService` |
+| **JSON Parsing** | String-based JSON handling | `JSONParser` |
+| **WebP Conversion** | Auto-convert images to WebP | `WebPConverter` |
+| **Configuration** | `.env` and environment config | `ConfigLoader` |
 
-- [Routing System](#routing-system)
-- [Static File Serving](#static-file-serving)
-- [Thread Pool](#thread-pool)
-- [Multi-Language Support](#multi-language-support)
-- [Asset Merging](#asset-merging)
-- [HTML Component Injection](#html-component-injection)
-- [Translation Injection](#translation-injection)
-- [Basic Authentication](#basic-authentication)
-- [JSON Parser](#json-parser)
-- [Graceful Shutdown](#graceful-shutdown)
-
----
-
-## Routing System
-
-Geruest supports both exact routes and wildcard pattern matching.
-
-### Exact Routes
+## Routing
 
 ```cpp
-// Simple GET route
-server.addRoute("/hello", [](const HTTPRequest& req) {
-    HTTPResponse response("200 OK");
-    response.setHeader("Content-Type", "text/plain");
-    response.setBody("Hello, World!");
-    return response;
-});
-
-// JSON API endpoint
+// Exact match (O(1) lookup)
 server.addRoute("/api/users", [](const HTTPRequest& req) {
-    HTTPResponse response("200 OK");
-    response.setHeader("Content-Type", "application/json");
-    response.setHeader("Access-Control-Allow-Origin", "*");
-    response.setBody(R"({"users": [{"id": 1, "name": "John"}]})");
-    return response;
+    HTTPResponse res("200 OK");
+    res.setBody(R"({"users":[]})");
+    return res;
 });
+
+// Wildcards (O(n) pattern matching)
+server.addRoute("/users/*/profile", routeHandler);  // /users/123/profile
+server.addRoute("/api/*", apiHandler);              // /api/anything
 ```
-
-### Wildcard Routes
-
-Wildcards use `*` to match any characters in a path segment.
-
-```cpp
-// Match any path under /api/
-server.addRoute("/api/*", [](const HTTPRequest& req) {
-    HTTPResponse response("200 OK");
-    response.setHeader("Content-Type", "application/json");
-    response.setBody(R"({"path": ")" + req.getPathString() + R"("})");
-    return response;
-});
-// Matches: /api/users, /api/posts/123, /api/anything
-
-// User profile pattern: /users/{id}/profile
-server.addRoute("/users/*/profile", [](const HTTPRequest& req) {
-    HTTPResponse response("200 OK");
-    response.setHeader("Content-Type", "application/json");
-    response.setBody(R"({"profile": true, "path": ")" + req.getPathString() + R"("})");
-    return response;
-});
-// Matches: /users/123/profile, /users/john/profile
-
-// File extension pattern
-server.addRoute("/downloads/*.zip", [](const HTTPRequest& req) {
-    HTTPResponse response("200 OK");
-    response.setBody("ZIP download requested");
-    return response;
-});
-// Matches: /downloads/file.zip, /downloads/archive.zip
-
-// Multiple wildcards
-server.addRoute("/static/*/images/*", [](const HTTPRequest& req) {
-    HTTPResponse response("200 OK");
-    response.setBody("Static image requested");
-    return response;
-});
-// Matches: /static/v1/images/logo.png, /static/v2/images/header.jpg
-```
-
-### Route Priority
-
-1. **Exact routes** are checked first (O(1) hash lookup)
-2. **Wildcard routes** are checked second (O(n) pattern matching)
-3. **Static files** are served if no route matches
-4. **404 response** if nothing matches
-
-### HTTP Methods
-
-The request method is available via `req.getMethod()`:
-
-```cpp
-server.addRoute("/api/resource", [](const HTTPRequest& req) {
-    std::string method = req.getMethod();
-    
-    if (method == "GET") {
-        return responseOK();
-    } else if (method == "POST") {
-        // Handle POST
-        std::string body = req.getBody();
-        return responseCreated();
-    } else if (method == "PUT") {
-        return responseOK();
-    } else if (method == "DELETE") {
-        return responseNoContent();
-    }
-    
-    return responseMethodNotAllowed();
-});
-```
-
----
 
 ## Static File Serving
 
-Set a root directory and Geruest automatically serves files from it.
-
 ```cpp
-server.addRoot("/path/to/website");
+server.addRoot("/var/www/website");  // Auto-serve files
+// Serves: /assets/styles.css, /images/logo.png, etc.
 ```
 
-### Supported Content Types
+## Template System
 
-| Extension    | Content-Type           |
-| ------------ | ---------------------- |
-| `.html`      | text/html              |
-| `.css`       | text/css               |
-| `.js`        | application/javascript |
-| `.json`      | application/json       |
-| `.png`       | image/png              |
-| `.jpg/.jpeg` | image/jpeg             |
-| `.gif`       | image/gif              |
-| `.svg`       | image/svg+xml          |
-| `.webp`      | image/webp             |
-| `.ico`       | image/x-icon           |
-| `.woff`      | font/woff              |
-| `.woff2`     | font/woff2             |
-| `.ttf`       | font/ttf               |
-| `.pdf`       | application/pdf        |
+```html
+<!-- Component injection -->
+{components/header.html}
+{components/footer.html}
 
-### URL to File Mapping
-
-| URL Request        | Served File                      |
-| ------------------ | -------------------------------- |
-| `/`                | `/html/index.html`               |
-| `/about`           | `/html/about.html`               |
-| `style.css`        | `/assets/css/style.css`          |
-| `subdir/style.css` | `/assets/css/subdir/style.css`   |
-| `script.js`        | `/assets/js/script.js`           |
-| `subdir/script.js` | `/assets/js/subdir/script.js`    |
-| `logo.png`         | `/assets/images/logo.png`        |
-| `subdir/logo.png`  | `/assets/images/subdir/logo.png` |
-
----
-
-## Thread Pool
-
-Geruest uses a thread pool for handling concurrent connections efficiently.
-
-### Configuration
-
-```cpp
-// Set number of worker threads (default: CPU cores × 2)
-server.setWorkerThreadCount(16);
-
-// Set maximum pending connection queue size (default: 500)
-server.setMaxQueueSize(1000);
+<!-- Translations -->
+<h1>[assets/translations/home.json:title]</h1>
 ```
-
-### Recommended Configurations
-
-| Scenario     | Workers | Queue Size |
-| ------------ | ------- | ---------- |
-| Development  | 4       | 100        |
-| General use  | CPU × 2 | 500        |
-| High traffic | 32+     | 2000+      |
-| Embedded     | 2-4     | 50-100     |
-
-### How It Works
-
-1. Main thread accepts incoming connections
-2. Connections are queued
-3. Worker threads pick up connections from the queue
-4. Each worker processes one request at a time
-5. Workers are reused for subsequent requests
-
----
-
-## Multi-Language Support
-
-Geruest supports automatic language routing and translation.
-
-### Setup
-
-```cpp
-// Set available languages (first is default)
-server.setAvailableLanguages({"en", "de", "fr"});
-```
-
-### How It Works
-
-1. URLs are automatically prefixed with language codes
-2. `href="/about"` becomes `href="/en/about"` 
-3. Template pages are processed with language-specific translations
-4. New language specific pages are generated under `/lang_code/` folders
-5. Static assets (CSS, JS, images) are not prefixed
-
-### Directory Structure
-
-```
-website/
-├── html/
-│   ├── index.html         # Template (shared)
-│   ├── en/
-│   │   └── index.html     # Generated for English
-│   ├── de/
-│   │   └── index.html     # Generated for German
-│   └── fr/
-│       └── index.html     # Generated for French
-└── assets/
-    └── translations/
-        ├── en.json
-        ├── de.json
-        └── fr.json
-```
-
-See [TRANSLATIONS.md](TRANSLATIONS.md) for detailed documentation.
-
----
 
 ## Asset Merging
 
-Automatically merge multiple CSS and JS files into single files per page.
-
-### Enable Asset Merging
-
-```cpp
-server.setMergeAssets(true);  // Must be called before init()
-```
-
-### How It Works
-
-**Before (multiple HTTP requests):**
-```html
-<link rel="stylesheet" href="base.css">
-<link rel="stylesheet" href="layout.css">
-<link rel="stylesheet" href="page.css">
-
-<script src="utils.js"></script>
-<script src="api.js"></script>
-<script src="main.js"></script>
-```
-
-**After (single HTTP requests):**
-```html
-<link rel="stylesheet" href="/index.css">
-<script src="/index.js"></script>
-```
-
-### Benefits
-
-- Reduces HTTP requests (6 → 2 in example above)
-- Automatic - no configuration files needed
-- Files are regenerated when HTML templates change
-
-### Important Notes
-
-⚠️ **JavaScript Scope Warning**: JavaScript files are directly concatenated without scope isolation. Ensure your code manages variable and function naming to prevent conflicts between merged files. Consider using:
-- Module patterns (ES6 modules, namespaces)
-- Unique prefixes for global variables
-- Immediate execution patterns if needed per-file
-
-See [ASSET_MERGING.md](ASSET_MERGING.md) for detailed documentation.
-
----
-
-## HTML Component Injection
-
-Include reusable HTML components in your templates.
-
-### Syntax
-
-Use curly braces `{component_path}` to include components:
-
-```html
-<!DOCTYPE html>
-<html>
-<head>
-    <title>My Page</title>
-</head>
-<body>
-    {components/header.html}
-    
-    <main>
-        <h1>Welcome</h1>
-        <p>Page content here</p>
-    </main>
-    
-    {components/footer.html}
-</body>
-</html>
-```
-
-### Component Files
-
-```html
-<!-- components/header.html -->
-<header>
-    <nav>
-        <a href="/">Home</a>
-        <a href="/about">About</a>
-        <a href="/contact">Contact</a>
-    </nav>
-</header>
-```
-
-```html
-<!-- components/footer.html -->
-<footer>
-    <p>&copy; 2025 My Company</p>
-</footer>
-```
-
-See [HTML_INJECTIONS.md](HTML_INJECTIONS.md) for detailed documentation.
-
----
-
-## Translation Injection
-
-Inject translated strings from JSON files.
-
-### Syntax
-
-Use square brackets `[path/to/file.json:key]`:
-
-```html
-<h1>[assets/translations/main.json:welcome_title]</h1>
-<p>[assets/translations/main.json:welcome_message]</p>
-```
-
-### Translation Files
-
+**`files_maps/css_file_map.json`:**
 ```json
-// assets/translations/main.json
 {
-    "en": {
-        "welcome_title": "Welcome!",
-        "welcome_message": "Thanks for visiting our site."
-    },
-    "de": {
-        "welcome_title": "Willkommen!",
-        "welcome_message": "Danke für Ihren Besuch."
-    }
+    "bundle_name": "main.css",
+    "files": ["reset.css", "layout.css"]
 }
 ```
 
-See [TRANSLATIONS.md](TRANSLATIONS.md) for detailed documentation.
+Automatic path normalization: `/css/main.css`, `/assets/css/main.css` → same bundle
 
----
+## Multi-Language
+
+```cpp
+server.setAvailableLanguages({"en", "de", "fr"});  // First = default
+```
+
+URLs get language prefixes: `/about` → `/en/about`, `/de/about`, `/fr/about`
+
+## CORS Support
+
+```cpp
+// Add CORS headers to individual responses
+server.addRoute("/api/data", [](const HTTPRequest& req) {
+    HTTPResponse res("200 OK");
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.setBody(R"({"data": []})");
+    return res;
+});
+```
 
 ## Basic Authentication
 
-Protect specific pages with HTTP Basic Authentication.
-
-### Setup
-
 ```cpp
-// Enable authentication
-server.setBasicAuthEnabled(true);
+#include <auth/BasicAuth.hpp>
 
-// Add users
-server.addBasicAuthUser("admin", "secret123");
-server.addBasicAuthUser("editor", "password456");
+BasicAuth auth;
+auth.addUser("admin", BasicAuth::hashPassword("secret123"));
 
-// Protect pages
-server.addProtectedPage("/admin");
-server.addProtectedPage("/api/admin");
-server.addProtectedPage("/dashboard");
+server.addRoute("/admin", [&auth](const HTTPRequest& req) {
+    if (!auth.authenticate(req.getPathString(), req.getHeader("Authorization"))) {
+        return responseUnauthorizedBasicAuth("Admin Area");
+    }
+    HTTPResponse response("200 OK");
+    response.setBody("Admin Dashboard");
+    return response;
+});
 ```
 
-### How It Works
+**Note:** This framework does not provide built-in HTTPS/TLS support. For production deployments with authentication, use a reverse proxy (nginx, Apache, Caddy) to handle TLS termination.
 
-1. User requests protected page
-2. Server sends `401 Unauthorized` with `WWW-Authenticate` header
-3. Browser shows login dialog
-4. User credentials are sent as Base64-encoded `Authorization` header
-5. Server validates credentials (SHA-256 hashed passwords)
-6. Access granted or denied
-
-### Features
-
-- SHA-256 password hashing
-- Pre-hashed password support for config files
-- Path-based protection
-- Automatic bypass when disabled
-
-See [BASIC_AUTH.md](BASIC_AUTH.md) for detailed documentation.
-
----
-
-## JSON Parser
-
-Built-in JSON parser with type-safe accessors.
-
-### Parsing JSON
+## Email Service
 
 ```cpp
-#include "parser/JSONParser.hpp"
+#include <email/EmailService.hpp>
 
-// From string
-JSONParser json(R"({"name": "John", "age": 30, "active": true})");
-
-// From file
-JSONParser* json = getJSONFromFile("config.json");
+EmailService email(serverData, "smtp.gmail.com", 587, "user@gmail.com", "app-password");
+email.sendEmail("to@example.com", "Subject", "Message body");
 ```
 
-### Getting Values
-
-```cpp
-std::string name = json.getString("name");     // "John"
-int age = json.getInt("age");                  // 30
-bool active = json.getBool("active");          // true
-double price = json.getDouble("price");        // 19.99
-
-// Nested objects
-JSONParser user = json.getObject("user");
-std::string email = user.getString("email");
-
-// Arrays
-std::vector<std::string> tags = json.getStringArray("tags");
-std::vector<int> numbers = json.getIntArray("numbers");
-std::vector<JSONParser> items = json.getArrayOfJSON("items");
-```
-
-### Creating JSON
+## JSON Processing
 
 ```cpp
 JSONParser json;
+json.parse(R"({"name":"John","age":30})");
+std::string name = json.getString("name");
+int age = json.getInt("age");
 
-json.setString("name", "John");
-json.setInt("age", 30);
-json.setBool("active", true);
-json.setDouble("price", 19.99);
-
-// Arrays
-json.setStringArray("tags", {"cpp", "web", "server"});
-json.setIntArray("scores", {95, 87, 92});
-
-// Output
-std::string output = json.toString();
-// {"name":"John","age":30,"active":true,"price":19.99,...}
+// Building JSON
+json.setString("status", "success");
+json.setInt("code", 200);
+std::string output = json.build();  // {"status":"success","code":200}
 ```
 
-See [DATA_CLASSES.md](DATA_CLASSES.md) for complete API reference.
-
----
-
-## Graceful Shutdown
-
-Properly shut down the server when receiving signals.
-
-### Signal Handler Setup
+## WebP Conversion
 
 ```cpp
-#include <csignal>
+#include <builders/WebPConverter.hpp>
 
-std::unique_ptr<Geruest> server;
-
-void signalHandler(int signum) {
-    std::cout << "Interrupt signal (" << signum << ") received.\n";
-    if (server) {
-        server->stop();
-    }
-}
-
-int main() {
-    server = std::make_unique<Geruest>();
-    
-    // Register signal handlers
-    std::signal(SIGINT, signalHandler);   // Ctrl+C
-    std::signal(SIGTERM, signalHandler);  // Termination request
-    
-    server->setPort(8080);
-    server->init();
-    server->start();  // Blocks until stop() is called
-    
-    // Automatic cleanup when unique_ptr goes out of scope
-    return 0;
-}
+WebPConverter::convertToWebP("input.png", "output.webp", 90);  // Quality: 90%
 ```
 
-### Shutdown Process
+## Configuration System
 
-1. Signal received (SIGINT/SIGTERM)
-2. `server->stop()` called
-3. Server stops accepting new connections
-4. Worker threads finish current requests
-5. Thread pool shuts down
-6. Socket is closed
-7. `start()` returns
+**`.env` file:**
+```env
+PORT=8080
+DEV_MODE=false
+SMTP_SERVER=smtp.gmail.com
+```
 
-### Checking Server Status
-
+**Reading configuration:**
 ```cpp
-if (server->isRunning()) {
-    std::cout << "Server is running" << std::endl;
-}
+geruest::ConfigLoader::loadEnvFile(".env");
+int port = geruest::ConfigLoader::getInt("PORT", 8080);  // Default: 8080
 ```
 
----
+## Advanced Patterns
 
-## Feature Comparison
+**Graceful Shutdown:**
+```cpp
+std::unique_ptr<Geruest> server = std::make_unique<Geruest>();
 
-| Feature         | Default   | Configurable              |
-| --------------- | --------- | ------------------------- |
-| Port            | 8080      | `setPort()`               |
-| Hostname        | localhost | `setHostname()`           |
-| Worker Threads  | CPU × 2   | `setWorkerThreadCount()`  |
-| Queue Size      | 500       | `setMaxQueueSize()`       |
-| Languages       | None      | `setAvailableLanguages()` |
-| Asset Merging   | Off       | `setMergeAssets()`        |
-| Basic Auth      | Off       | `setBasicAuthEnabled()`   |
-| Comment Removal | On        | Via ServerData            |
+std::signal(SIGINT, [](int) { 
+    if (server) server->stop(); 
+});
 
----
+server->setPort(8080);
+server->init();
+server->start();
+```
 
-## Next Steps
+**Custom Error Pages:**
+```cpp
+server.set404Handler([](const HTTPRequest& req) {
+    HTTPResponse res("404 Not Found");
+    res.setBody("<h1>Page Not Found</h1>");
+    return res;
+});
+```
 
-- [Data Classes](DATA_CLASSES.md) - HTTPRequest, HTTPResponse, JSONParser reference
-- [HTML Injections](HTML_INJECTIONS.md) - Component system details
-- [Translations](TRANSLATIONS.md) - Multi-language system
-- [Basic Authentication](BASIC_AUTH.md) - Security setup
-- [Asset Merging](ASSET_MERGING.md) - CSS/JS optimization
+**Request Logging:**
+```cpp
+server.addRoute("/api/*", [](const HTTPRequest& req) {
+    sendToLoggerAPI(req.getMethod() + " " + req.getPath());
+    // ... handle request ...
+});
+```
+
+## Performance Tips
+
+- **Route Lookup**: Prefer exact routes over wildcards (O(1) vs O(n))
+- **Static Files**: Bypass routing entirely for better performance
+- **Asset Merging**: Reduces HTTP requests dramatically
+- **WebP**: Smaller image sizes, faster loading
+- **Threading**: One thread per connection, handles concurrency automatically

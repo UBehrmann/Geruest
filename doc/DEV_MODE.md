@@ -6,7 +6,7 @@ Development mode is designed to streamline the development process by providing 
 ## Usage
 
 ```cpp
-#include <geruest/Geruest.hpp>
+#include <Geruest.hpp>
 
 int main() {
     geruest::Geruest server;
