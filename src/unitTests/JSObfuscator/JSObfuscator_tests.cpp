@@ -245,7 +245,8 @@ function authenticate(username, password) {
     std::string level2 = obf2.obfuscate(original);
     EXPECT_GT(obfuscated.length(), level2.length());
     
-    std::regex deadCodePattern(R"(if\(false\)\{var\s+[a-zA-Z]+=[0-9]+;\})");
+    // Dead code pattern verification - variable names can contain alphanumeric characters
+    std::regex deadCodePattern(R"(if\(false\)\{var\s+[a-zA-Z][a-zA-Z0-9]*=[0-9]+;\})");
     EXPECT_TRUE(std::regex_search(obfuscated, deadCodePattern));
 }
 
@@ -293,8 +294,9 @@ TEST(JSObfuscatorTest, DeadCodeRandomness) {
     EXPECT_TRUE(contains(result1, "if(false)"));
     EXPECT_TRUE(contains(result2, "if(false)"));
     
-    // Dead code pattern verification
-    std::regex varPattern(R"(if\(false\)\{var\s+[a-zA-Z]+=[0-9]+;\})");
+    // Dead code pattern verification - variable names can contain alphanumeric characters
+    // Pattern: if(false){var [letter][alphanumeric*]=[digits];}
+    std::regex varPattern(R"(if\(false\)\{var\s+[a-zA-Z][a-zA-Z0-9]*=[0-9]+;\})");
     std::smatch match1;
     
     bool found1 = std::regex_search(result1, match1, varPattern);

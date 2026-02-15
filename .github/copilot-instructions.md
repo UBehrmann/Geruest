@@ -182,7 +182,7 @@ sendToLoggerPages("GET /index.html - 200 OK");         // Page request logging
 
 ### Testing Strategy
 ```bash
-# All Unit Tests (Recommended - runs all 84 tests)
+# All Unit Tests (Recommended - runs all 174 tests)
 cd src/unitTests/build && ctest --output-on-failure
 
 # Individual Test Modules
@@ -192,6 +192,9 @@ cd src/unitTests/build && ctest --output-on-failure
 ./build/FileManagement_Tests    # 9 tests
 ./build/ContentBuilder_Tests    # 8 tests
 ./build/JSObfuscator_Tests      # 14 tests
+./build/BasicAuth_Tests         # 34 tests
+./build/ConfigLoader_Tests      # 56 tests
+./build/AssetMerger_Tests       # 18 tests
 
 # Example Application
 # Serves on port 80 with graceful shutdown (Ctrl+C)

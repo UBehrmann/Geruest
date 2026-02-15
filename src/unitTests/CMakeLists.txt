@@ -118,6 +118,26 @@ add_executable(JSObfuscator_Tests
 )
 target_link_libraries(JSObfuscator_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
+add_executable(BasicAuth_Tests 
+    BasicAuth/BasicAuth_tests.cpp 
+    ../auth/BasicAuth.cpp
+)
+target_link_libraries(BasicAuth_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+
+add_executable(ConfigLoader_Tests 
+    ConfigLoader/ConfigLoader_tests.cpp 
+    ../config/ConfigLoader.cpp
+)
+target_link_libraries(ConfigLoader_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+
+add_executable(AssetMerger_Tests 
+    AssetMerger/AssetMerger_tests.cpp 
+    ../builders/AssetMerger.cpp
+    ../builders/WebPConverter.cpp
+    ../FileManagement/FileManagement.cpp
+)
+target_link_libraries(AssetMerger_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+
 # Add tests to CTest using Google Test discovery
 include(GoogleTest)
 gtest_discover_tests(JSONParser_Tests)
@@ -126,11 +146,14 @@ gtest_discover_tests(HTTPResponse_Tests)
 gtest_discover_tests(FileManagement_Tests)
 gtest_discover_tests(ContentBuilder_Tests)
 gtest_discover_tests(JSObfuscator_Tests)
+gtest_discover_tests(BasicAuth_Tests)
+gtest_discover_tests(ConfigLoader_Tests)
+gtest_discover_tests(AssetMerger_Tests)
 
 # Custom target to run all tests
 add_custom_target(run_tests
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-    DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests
+    DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests
     COMMENT "Running all unit tests via CTest"
 )
 
