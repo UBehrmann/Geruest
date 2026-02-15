@@ -8,6 +8,7 @@
 | **Static Files** | Auto-serve files from root directories | `addRoot()` |
 | **Templates** | Component injection `{file}`, translations `[key]` | `ContentBuilder` |
 | **Asset Merging** | Combine CSS/JS files from file maps | `AssetMerger` |
+| **JS Obfuscation** | Make JavaScript harder to analyze | `setObfuscationLevel()` |
 | **Translations** | Multi-language with JSON files | `setAvailableLanguages()` |
 | **CORS** | Preflight/CORS headers | Manual headers |
 | **Basic Auth** | SHA-256 password protection | `BasicAuth` |
@@ -60,6 +61,33 @@ server.addRoot("/var/www/website");  // Auto-serve files
 ```
 
 Automatic path normalization: `/css/main.css`, `/assets/css/main.css` → same bundle
+
+## JavaScript Obfuscation
+
+Protect your JavaScript code from casual analysis and copying:
+
+```cpp
+server.setObfuscationLevel(2);  // 0=off, 1=basic, 2=medium, 3=advanced
+server.setObfuscationCacheExpiry(7);  // Days to cache (default: 7)
+
+// Exclude external libraries
+server.addObfuscationExclusion("jquery.min.js");
+server.addObfuscationExclusion("bootstrap.min.js");
+```
+
+**Obfuscation Levels:**
+- **Level 0**: Disabled (default)
+- **Level 1**: Name mangling + whitespace removal
+- **Level 2**: Level 1 + string/number encoding
+- **Level 3**: Level 2 + dead code + control flow obfuscation
+
+**Key Features:**
+- ✅ Automatic caching with expiry
+- ✅ Respects dev mode (auto-disables)
+- ✅ Works with asset merging
+- ✅ Excluded files not merged or obfuscated
+
+See [OBFUSCATION.md](OBFUSCATION.md) for complete documentation.
 
 ## Multi-Language
 

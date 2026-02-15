@@ -54,6 +54,9 @@ class ServerData {
     bool _devMode = false;          // Development mode (no file caching, verbose logging)
     bool _webpConversion = false;   // Automatic PNG/JPG to WebP conversion
     float _webpQuality = 75.0f;     // WebP encoding quality (0-100, default 75%)
+    unsigned int _obfuscationLevel = 0;  // JS obfuscation level (0=disabled, 1-3=increasing complexity)
+    int _obfuscationCacheExpiryDays = 7;  // Days to keep obfuscated files cached
+    std::vector<std::string> _obfuscationExclusions;  // Files excluded from obfuscation and merging
     std::vector<std::string> _availableLanguages;
     std::string _defaultLanguage;
     BasicAuth _basicAuth;
@@ -367,6 +370,71 @@ class ServerData {
      */
     bool shouldLog(LogLevel level) const {
         return static_cast<int>(level) <= static_cast<int>(_logLevel.load(std::memory_order_relaxed));
+    }
+
+    /**
+     * Set JavaScript obfuscation level
+     * @param level 0=disabled (default), 1=basic, 2=medium, 3=advanced
+     * @note Only applies when dev mode is off
+     */
+    void setObfuscationLevel(unsigned int level) { _obfuscationLevel = level; }
+
+    /**
+     * Get current obfuscation level
+     * @return Current obfuscation level (0-3)
+     */
+    unsigned int getObfuscationLevel() const { return _obfuscationLevel; }
+
+    /**
+     * Set cache expiry time for obfuscated files
+     * @param days Number of days to keep obfuscated files (default: 7)
+     */
+    void setObfuscationCacheExpiry(int days) { _obfuscationCacheExpiryDays = days; }
+
+    /**
+     * Get cache expiry time
+     * @return Number of days before cached obfuscated files expire
+     */
+    int getObfuscationCacheExpiry() const { return _obfuscationCacheExpiryDays; }
+
+    /**
+     * Add a file to obfuscation exclusion list
+     * Files in this list will not be obfuscated or merged
+     * @param filename Exact filename to exclude (e.g., "jquery.min.js")
+     */
+    void addObfuscationExclusion(const std::string& filename) {
+        _obfuscationExclusions.push_back(filename);
+    }
+
+    /**
+     * Check if a file is excluded from obfuscation
+     * @param filename Filename to check
+     * @return true if file is in exclusion list
+     */
+    bool isObfuscationExcluded(const std::string& filename) const {
+        for (const auto& excluded : _obfuscationExclusions) {
+            if (filename == excluded || filename.find(excluded) != std::string::npos) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Get all obfuscation exclusions
+     * @return Vector of excluded filenames
+     */
+    const std::vector<std::string>& getObfuscationExclusions() const {
+        return _obfuscationExclusions;
+    }
+
+    /**
+     * Check if obfuscation should be applied
+     * Returns false if dev mode is on or obfuscation level is 0
+     * @return true if obfuscation should be applied
+     */
+    bool shouldObfuscate() const {
+        return !_devMode && _obfuscationLevel > 0;
     }
 };
 

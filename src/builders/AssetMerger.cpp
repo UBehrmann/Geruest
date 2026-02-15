@@ -17,8 +17,9 @@ namespace fs = std::filesystem;
 
 namespace geruest {
 
-AssetMerger::AssetMerger(const std::string& serverRoot, bool removeComments)
-    : _serverRoot(serverRoot), _removeComments(removeComments) {
+AssetMerger::AssetMerger(const std::string& serverRoot, bool removeComments,
+                         const std::vector<std::string>& exclusions)
+    : _serverRoot(serverRoot), _removeComments(removeComments), _exclusions(exclusions) {
 }
 
 std::string AssetMerger::loadFile(const std::string& filePath) {
@@ -132,6 +133,19 @@ std::string AssetMerger::removeJsComments(const std::string& content) {
     }
 
     return result;
+}
+
+bool AssetMerger::isExcluded(const std::string& filename) const {
+    // Extract just the filename from path
+    size_t lastSlash = filename.find_last_of("/\\");
+    std::string basename = (lastSlash != std::string::npos) ? filename.substr(lastSlash + 1) : filename;
+    
+    for (const auto& excluded : _exclusions) {
+        if (basename == excluded) {
+            return true;
+        }
+    }
+    return false;
 }
 
 std::string AssetMerger::resolveAssetPath(const std::string& href, const std::string& assetType) {
@@ -273,10 +287,15 @@ MergeResult AssetMerger::processHtml(const std::string& htmlContent, const std::
     // Extract JS references
     auto jsRefs = extractJsReferences(htmlContent);
     
-    // Collect local CSS files (skip external URLs)
+    // Collect local CSS files (skip external URLs and excluded files)
     std::vector<std::string> localCssFiles;
     for (const auto& ref : cssRefs) {
         if (!ref.isExternal) {
+            // Check if file is excluded
+            if (isExcluded(ref.href)) {
+                continue;  // Skip excluded files
+            }
+            
             std::string filePath = resolveAssetPath(ref.href, "css");
             if (fs::exists(filePath)) {
                 localCssFiles.push_back(filePath);
@@ -295,10 +314,15 @@ MergeResult AssetMerger::processHtml(const std::string& htmlContent, const std::
         }
     }
     
-    // Collect local JS files (skip external URLs)
+    // Collect local JS files (skip external URLs and excluded files)
     std::vector<std::string> localJsFiles;
     for (const auto& ref : jsRefs) {
         if (!ref.isExternal) {
+            // Check if file is excluded
+            if (isExcluded(ref.href)) {
+                continue;  // Skip excluded files
+            }
+            
             std::string filePath = resolveAssetPath(ref.href, "js");
             if (fs::exists(filePath)) {
                 localJsFiles.push_back(filePath);

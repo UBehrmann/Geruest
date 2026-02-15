@@ -1,16 +1,5 @@
 @PACKAGE_INIT@
 
-include(CMakeFindDependencyMacro)
-
-# Find required dependencies
-find_dependency(Threads REQUIRED)
-
-# Find optional WebP dependency if it was used when building Geruest
-if(@GERUEST_HAS_WEBP@)
-    find_dependency(WebP QUIET)
-    if(NOT WebP_FOUND)
-        message(STATUS "Geruest: WebP library not found - WebP conversion will be disabled at runtime")
-    endif()
-endif()
-
 include("${CMAKE_CURRENT_LIST_DIR}/GeruestTargets.cmake")
+
+check_required_components(Geruest)

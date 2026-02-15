@@ -23,6 +23,13 @@ Geruest (German for "scaffold") is a lightweight C++ web framework designed to s
   - Automatically scan HTML templates for CSS/JS includes
   - Merge multiple files into single bundled files per page
   - Reduces HTTP requests and eliminates manual JSON mapping
+- **JavaScript Obfuscation** (NEW v0.6.7)
+  - Protect your JavaScript code from casual analysis
+  - 3 obfuscation levels: basic, medium, advanced
+  - Automatic caching with configurable expiry
+  - Exclude external libraries from obfuscation
+  - Works seamlessly with asset merging
+  - Respects development mode (auto-disables for debugging)
 - Security
   - Logic bomb for bots?
   - Rate limiting

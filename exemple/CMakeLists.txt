@@ -61,6 +61,7 @@ set(GERUEST_SOURCES
     ../src/builders/CSSBuilder.cpp
     ../src/builders/HTMLBuilder.cpp
     ../src/builders/JSBuilder.cpp
+    ../src/builders/JSObfuscator.cpp
     ../src/builders/WebPConverter.cpp
     ../src/config/ConfigLoader.cpp
     ../src/data/HTTPRequest.cpp

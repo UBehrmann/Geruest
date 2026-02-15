@@ -134,6 +134,55 @@ class Geruest {
     void enableWebPConversion();
 
     /**
+     * @brief Set JavaScript obfuscation level
+     * 
+     * Controls the level of obfuscation applied to JavaScript files:
+     * - Level 0: Disabled (default) - no obfuscation
+     * - Level 1: Basic - variable/function name mangling + whitespace removal
+     * - Level 2: Medium - Level 1 + string encoding + number obfuscation
+     * - Level 3: Advanced - Level 2 + dead code injection + control flow obfuscation
+     * 
+     * Obfuscation behavior:
+     * - Only applies when dev mode is OFF (dev mode disables obfuscation)
+     * - Obfuscated files are cached on disk for performance
+     * - Cache respects expiry time (default: 7 days)
+     * - Excluded files (via addObfuscationExclusion) are never obfuscated or merged
+     * 
+     * @param level Obfuscation level (0-3, default: 0)
+     * @note Must be called before init() or start()
+     */
+    void setObfuscationLevel(unsigned int level);
+
+    /**
+     * @brief Set cache expiry time for obfuscated JavaScript files
+     * 
+     * Determines how long obfuscated JS files are kept on disk before
+     * being regenerated. Uses file modification time for checking.
+     * 
+     * @param days Number of days to cache obfuscated files (default: 7)
+     * @note Applies only when obfuscation level > 0 and dev mode is off
+     */
+    void setObfuscationCacheExpiry(int days);
+
+    /**
+     * @brief Exclude a JavaScript file from obfuscation and merging
+     * 
+     * Files added to the exclusion list will:
+     * - NOT be obfuscated (served as-is)
+     * - NOT be merged with other JS files
+     * - Be served individually when requested
+     * 
+     * Use this for:
+     * - External libraries (jquery.min.js, bootstrap.min.js, etc.)
+     * - Already minified/obfuscated code
+     * - Third-party scripts that might break if modified
+     * 
+     * @param filename Exact filename to exclude (e.g., "jquery.min.js")
+     * @note Matching is exact - filename must match exactly
+     */
+    void addObfuscationExclusion(const std::string& filename);
+
+    /**
      * @brief Load configuration from .env file and environment variables
      * 
      * This method loads configuration values following the hierarchy:
