@@ -4,13 +4,13 @@ This directory contains comprehensive unit tests for the Geruest C++ web framewo
 
 ## Test Structure
 
+All tests use Google Test framework with individual executables for each module.
+
 ```
 unitTests/
-├── unit_tests.cpp                     # Main test runner
-├── CMakeLists.txt                     # Build configuration
+├── CMakeLists.txt                     # Build configuration (Google Test)
 ├── JSONParser/                        # JSONParser tests
 │   ├── JSONParser_tests.cpp
-│   ├── testFunctions.hpp
 │   └── *.json                         # Test data files
 ├── HTTPRequest/                       # HTTPRequest tests
 │   └── HTTPRequest_tests.cpp
@@ -18,8 +18,10 @@ unitTests/
 │   └── HTTPResponse_tests.cpp
 ├── FileManagement/                    # FileManagement tests
 │   └── FileManagement_tests.cpp
-└── ContentBuilder/                    # ContentBuilder tests
-    └── ContentBuilder_tests.cpp
+├── ContentBuilder/                    # ContentBuilder tests
+│   └── ContentBuilder_tests.cpp
+└── JSObfuscator/                      # JSObfuscator tests
+    └── JSObfuscator_tests.cpp
 ```
 
 ## Building and Running Tests
@@ -53,31 +55,40 @@ cmake --build . --config Release
 
 #### Run All Tests
 ```bash
-# Run the complete test suite
-./Geruest_Unit_Tests         # (Linux)
-.\Release\Geruest_Unit_Tests.exe  # (Windows MSVC)
-.\Geruest_Unit_Tests.exe     # (Windows MinGW)
+# Navigate to build directory
+cd build
 
-# Or use CTest for detailed output
+# Run all tests via CTest (recommended)
+ctest --output-on-failure
+
+# Or with verbose output
 ctest --output-on-failure --verbose
 ```
 
 #### Run Individual Test Suites
 ```bash
-# JSONParser tests only
+# From the build directory
+
+# JSONParser tests only (38 tests)
 ./JSONParser_Tests
 
-# HTTPRequest tests only
+# HTTPRequest tests only (6 tests)
 ./HTTPRequest_Tests
 
-# HTTPResponse tests only  
+# HTTPResponse tests only (8 tests)
 ./HTTPResponse_Tests
 
-# FileManagement tests only
+# FileManagement tests only (9 tests)
 ./FileManagement_Tests
 
-# ContentBuilder tests only
+# ContentBuilder tests only (8 tests)
 ./ContentBuilder_Tests
+
+# JSObfuscator tests only (14 tests)
+./JSObfuscator_Tests
+
+# Run specific test with filter
+./JSONParser_Tests --gtest_filter=JSONParserTest.SimpleKeyStrings
 ```
 
 ## Test Modules

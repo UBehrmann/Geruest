@@ -15,7 +15,7 @@ mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug && make -j$(nproc)
 mkdir build && cd build && cmake .. -A x64 -DCMAKE_BUILD_TYPE=Debug && cmake --build .
 
 # Test
-cd src/unitTests && mkdir build && cd build && cmake .. && make && ./Geruest_Unit_Tests
+cd src/unitTests && mkdir build && cd build && cmake .. && make && ctest --output-on-failure
 ```
 
 ## Code Style

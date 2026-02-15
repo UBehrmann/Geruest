@@ -5,18 +5,17 @@
  * @brief Unit tests for the ContentBuilder class and its subclasses
  */
 
-#include <iostream>
-#include <cassert>
+#include <gtest/gtest.h>
 #include <string>
 #include <filesystem>
+#include <fstream>
 #include "../../builders/ContentBuilder.hpp"
 #include "../../builders/HTMLBuilder.hpp"
 #include "../../builders/CSSBuilder.hpp"
 #include "../../builders/JSBuilder.hpp"
 #include "../../data/ServerData.hpp"
 
-namespace geruest {
-namespace test {
+using namespace geruest;
 
 const std::string TEST_ROOT = "test_content_root";
 
@@ -87,7 +86,27 @@ void setup_test_environment() {
     jsMapFile.close();
 }
 
-void test_contentbuilder_load_file() {
+void cleanup_test_environment() {
+    if (std::filesystem::exists(TEST_ROOT)) {
+        std::filesystem::remove_all(TEST_ROOT);
+    }
+}
+
+// Test fixture for ContentBuilder tests
+class ContentBuilderTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        // Clean up before each test
+        cleanup_test_environment();
+    }
+
+    void TearDown() override {
+        // Clean up after each test
+        cleanup_test_environment();
+    }
+};
+
+TEST_F(ContentBuilderTest, LoadFile) {
     setup_test_environment();
     
     std::string testFile = TEST_ROOT + "/html/test.html";
@@ -97,55 +116,55 @@ void test_contentbuilder_load_file() {
     ContentBuilder builder(testFile, serverData);
     std::string content = builder.file();
     
-    assert(!content.empty());
-    assert(content.find("<html>") != std::string::npos);
-    assert(content.find("{header}") != std::string::npos);
-    assert(content.find("[welcome_title]") != std::string::npos);
+    EXPECT_FALSE(content.empty());
+    EXPECT_NE(content.find("<html>"), std::string::npos);
+    EXPECT_NE(content.find("{header}"), std::string::npos);
+    EXPECT_NE(content.find("[welcome_title]"), std::string::npos);
 }
 
-void test_contentbuilder_remove_html_comments() {
+TEST_F(ContentBuilderTest, RemoveHtmlComments) {
     // Note: removeCommentsFromString is protected, so we can't test it directly
     // This would need to be tested through integration with HTMLBuilder
     std::string htmlContent = "<html><!-- Comment1 --><body><!-- Comment2 -->Content</body></html>";
     // std::string result = ContentBuilder::removeCommentsFromString(htmlContent, "html");
     
     // For now, just verify the test structure
-    assert(!htmlContent.empty());
+    EXPECT_FALSE(htmlContent.empty());
 }
 
-void test_contentbuilder_remove_css_comments() {
+TEST_F(ContentBuilderTest, RemoveCssComments) {
     // Note: removeCommentsFromString is protected, so we can't test it directly
     // This would need to be tested through integration with CSSBuilder
     std::string cssContent = "/* Comment1 */ body { margin: 0; } /* Comment2 */ h1 { color: red; }";
     // std::string result = ContentBuilder::removeCommentsFromString(cssContent, "css");
     
     // For now, just verify the test structure
-    assert(!cssContent.empty());
+    EXPECT_FALSE(cssContent.empty());
 }
 
-void test_contentbuilder_remove_js_comments() {
+TEST_F(ContentBuilderTest, RemoveJsComments) {
     // Note: removeCommentsFromString is protected, so we can't test it directly  
     // This would need to be tested through integration with JSBuilder
     std::string jsContent = "// Line comment\nconsole.log('test');\n/* Block comment */\nfunction test() {}";
     // std::string result = ContentBuilder::removeCommentsFromString(jsContent, "js");
     
     // For now, just verify the test structure
-    assert(!jsContent.empty());
+    EXPECT_FALSE(jsContent.empty());
 }
 
-void test_contentbuilder_basic_functionality() {
+TEST_F(ContentBuilderTest, BasicFunctionality) {
     setup_test_environment();
     
     std::string testFile = TEST_ROOT + "/html/test.html";
     ServerData serverData = createTestServerData(true);
     ContentBuilder builder(testFile, serverData);
     
-    assert(builder.size() > 0);
-    assert(!builder.file().empty());
-    assert(builder.sizeString() == std::to_string(builder.size()));
+    EXPECT_GT(builder.size(), 0);
+    EXPECT_FALSE(builder.file().empty());
+    EXPECT_EQ(builder.sizeString(), std::to_string(builder.size()));
 }
 
-void test_contentbuilder_with_comments_disabled() {
+TEST_F(ContentBuilderTest, WithCommentsDisabled) {
     setup_test_environment();
     
     std::string testFile = TEST_ROOT + "/html/test.html";
@@ -154,10 +173,10 @@ void test_contentbuilder_with_comments_disabled() {
     
     std::string content = builder.file();
     // Should still contain comments
-    assert(content.find("<!-- This is a comment -->") != std::string::npos);
+    EXPECT_NE(content.find("<!-- This is a comment -->"), std::string::npos);
 }
 
-void test_contentbuilder_with_comments_enabled() {
+TEST_F(ContentBuilderTest, WithCommentsEnabled) {
     setup_test_environment();
     
     std::string testFile = TEST_ROOT + "/html/test.html";
@@ -169,85 +188,14 @@ void test_contentbuilder_with_comments_enabled() {
     // Note: The base ContentBuilder may not process HTML comments by default
 }
 
-void test_contentbuilder_nonexistent_file() {
+TEST_F(ContentBuilderTest, NonexistentFile) {
     ServerData serverData = createTestServerData(true);
     ContentBuilder builder("nonexistent.html", serverData);
     
     // Should handle gracefully
-    assert(builder.size() == 0);
-    assert(builder.file().empty());
+    EXPECT_EQ(builder.size(), 0);
+    EXPECT_TRUE(builder.file().empty());
 }
 
 // Note: Testing HTMLBuilder, CSSBuilder, and JSBuilder would require more complex setup
 // and may depend on JSON parsing functionality. These are integration tests.
-
-void cleanup_test_environment() {
-    if (std::filesystem::exists(TEST_ROOT)) {
-        std::filesystem::remove_all(TEST_ROOT);
-    }
-}
-
-/**
- * @brief Run all ContentBuilder unit tests
- * @return true if all tests pass, false otherwise
- */
-bool runContentBuilderTests() {
-    std::cout << "=== Running ContentBuilder Tests ===" << std::endl;
-    
-    bool allPassed = true;
-    int testCount = 0;
-    int passedCount = 0;
-
-    // Helper lambda to run a test and track results
-    auto runTest = [&](void (*testFunc)(), const std::string& testName) {
-        testCount++;
-        try {
-            testFunc();
-            std::cout << "✓ " << testName << " passed" << std::endl;
-            passedCount++;
-        } catch (const std::exception& e) {
-            std::cout << "✗ " << testName << " failed: " << e.what() << std::endl;
-            allPassed = false;
-        } catch (...) {
-            std::cout << "✗ " << testName << " failed: Unknown error" << std::endl;
-            allPassed = false;
-        }
-    };
-
-    // Run all test functions
-    runTest(test_contentbuilder_load_file, "test_contentbuilder_load_file");
-    runTest(test_contentbuilder_remove_html_comments, "test_contentbuilder_remove_html_comments");
-    runTest(test_contentbuilder_remove_css_comments, "test_contentbuilder_remove_css_comments");
-    runTest(test_contentbuilder_remove_js_comments, "test_contentbuilder_remove_js_comments");
-    runTest(test_contentbuilder_basic_functionality, "test_contentbuilder_basic_functionality");
-    runTest(test_contentbuilder_with_comments_disabled, "test_contentbuilder_with_comments_disabled");
-    runTest(test_contentbuilder_with_comments_enabled, "test_contentbuilder_with_comments_enabled");
-    runTest(test_contentbuilder_nonexistent_file, "test_contentbuilder_nonexistent_file");
-
-    // Cleanup
-    cleanup_test_environment();
-
-    std::cout << std::endl;
-    std::cout << "=== ContentBuilder Test Results ===" << std::endl;
-    std::cout << "Tests run: " << testCount << std::endl;
-    std::cout << "Tests passed: " << passedCount << std::endl;
-    std::cout << "Tests failed: " << (testCount - passedCount) << std::endl;
-    
-    if (allPassed) {
-        std::cout << "✓ All ContentBuilder tests passed!" << std::endl;
-    } else {
-        std::cout << "✗ Some ContentBuilder tests failed!" << std::endl;
-    }
-    
-    return allPassed;
-}
-
-} // namespace test
-} // namespace geruest
-
-// Main function for running ContentBuilder tests standalone
-#ifndef RUNNING_MAIN_TESTS
-int main() {
-    return geruest::test::runContentBuilderTests() ? 0 : 1;
-}
-#endif

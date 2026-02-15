@@ -15,6 +15,17 @@ configure_file(
     "${CMAKE_CURRENT_BINARY_DIR}/include/geruest/Version.hpp"
 )
 
+# Fetch Google Test
+include(FetchContent)
+FetchContent_Declare(
+  googletest
+  URL https://github.com/google/googletest/archive/refs/tags/v1.15.2.zip
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+# For Windows: Prevent overriding the parent project's compiler/linker settings
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+
 # Enable testing
 enable_testing()
 
@@ -67,35 +78,24 @@ if(GERUEST_HAS_CURL)
     list(APPEND GERUEST_SOURCES ../email/EmailSender.cpp)
 endif()
 
-# Create the main unit test executable
-add_executable(
-    Geruest_Unit_Tests
-    unit_tests.cpp
-    ${GERUEST_SOURCES}
-)
-
-# Link platform-specific libraries
-target_link_libraries(Geruest_Unit_Tests ${PLATFORM_LIBS})
-if(GERUEST_HAS_CURL)
-    target_link_libraries(Geruest_Unit_Tests CURL::libcurl)
-endif()
-
-# Create individual test executables for standalone testing
+# Create individual test executables
+# Note: No longer building a combined Geruest_Unit_Tests executable
+# All tests are run via individual executables or ctest
 add_executable(JSONParser_Tests JSONParser/JSONParser_tests.cpp ../parser/JSONParser.cpp)
-target_link_libraries(JSONParser_Tests ${PLATFORM_LIBS})
+target_link_libraries(JSONParser_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
 add_executable(HTTPRequest_Tests HTTPRequest/HTTPRequest_tests.cpp ../data/HTTPRequest.cpp)
-target_link_libraries(HTTPRequest_Tests ${PLATFORM_LIBS})
+target_link_libraries(HTTPRequest_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
 add_executable(HTTPResponse_Tests 
     HTTPResponse/HTTPResponse_tests.cpp 
     ../data/HTTPResponse.cpp 
     ../data/HTTPRequest.cpp
 )
-target_link_libraries(HTTPResponse_Tests ${PLATFORM_LIBS})
+target_link_libraries(HTTPResponse_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
 add_executable(FileManagement_Tests FileManagement/FileManagement_tests.cpp ../FileManagement/FileManagement.cpp)
-target_link_libraries(FileManagement_Tests ${PLATFORM_LIBS})
+target_link_libraries(FileManagement_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
 add_executable(ContentBuilder_Tests 
     ContentBuilder/ContentBuilder_tests.cpp 
@@ -110,37 +110,28 @@ add_executable(ContentBuilder_Tests
     ../parser/JSONParser.cpp
     ../FileManagement/FileManagement.cpp
 )
-target_link_libraries(ContentBuilder_Tests ${PLATFORM_LIBS})
+target_link_libraries(ContentBuilder_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
 add_executable(JSObfuscator_Tests 
     JSObfuscator/JSObfuscator_tests.cpp 
     ../builders/JSObfuscator.cpp
 )
-target_link_libraries(JSObfuscator_Tests ${PLATFORM_LIBS})
+target_link_libraries(JSObfuscator_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
-# Add tests to CTest
-add_test(NAME JSONParser_Tests COMMAND JSONParser_Tests)
-add_test(NAME HTTPRequest_Tests COMMAND HTTPRequest_Tests)
-add_test(NAME HTTPResponse_Tests COMMAND HTTPResponse_Tests)
-add_test(NAME FileManagement_Tests COMMAND FileManagement_Tests)
-add_test(NAME ContentBuilder_Tests COMMAND ContentBuilder_Tests)
-add_test(NAME JSObfuscator_Tests COMMAND JSObfuscator_Tests)
-add_test(NAME All_Unit_Tests COMMAND Geruest_Unit_Tests)
-
-# Set test properties
-set_tests_properties(JSONParser_Tests PROPERTIES TIMEOUT 30)
-set_tests_properties(HTTPRequest_Tests PROPERTIES TIMEOUT 30)
-set_tests_properties(HTTPResponse_Tests PROPERTIES TIMEOUT 30)
-set_tests_properties(FileManagement_Tests PROPERTIES TIMEOUT 30)
-set_tests_properties(ContentBuilder_Tests PROPERTIES TIMEOUT 60)
-set_tests_properties(JSObfuscator_Tests PROPERTIES TIMEOUT 30)
-set_tests_properties(All_Unit_Tests PROPERTIES TIMEOUT 300)
+# Add tests to CTest using Google Test discovery
+include(GoogleTest)
+gtest_discover_tests(JSONParser_Tests)
+gtest_discover_tests(HTTPRequest_Tests)
+gtest_discover_tests(HTTPResponse_Tests)
+gtest_discover_tests(FileManagement_Tests)
+gtest_discover_tests(ContentBuilder_Tests)
+gtest_discover_tests(JSObfuscator_Tests)
 
 # Custom target to run all tests
 add_custom_target(run_tests
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-    DEPENDS Geruest_Unit_Tests JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests
-    COMMENT "Running all unit tests"
+    DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests
+    COMMENT "Running all unit tests via CTest"
 )
 
 # Copy test data files to build directory

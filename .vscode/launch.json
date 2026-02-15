@@ -44,47 +44,6 @@
             }
         },
         {
-            "name": "Run All Unit Tests (MSVC)",
-            "type": "cppvsdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/src/unitTests/build/Release/Geruest_Unit_Tests.exe",
-            "args": [],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}/src/unitTests",
-            "environment": [],
-            "console": "integratedTerminal",
-            "preLaunchTask": "Build Unit Tests (MSVC)"
-        },
-        {
-            "name": "Run All Unit Tests (Unix/MinGW)",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/src/unitTests/build/Geruest_Unit_Tests.exe",
-            "args": [],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}/src/unitTests",
-            "environment": [],
-            "externalConsole": false,
-            "MIMode": "gdb",
-            "miDebuggerPath": "gdb.exe",
-            "setupCommands": [
-                {
-                    "description": "Enable pretty-printing for gdb",
-                    "text": "-enable-pretty-printing",
-                    "ignoreFailures": true
-                }
-            ],
-            "preLaunchTask": "Build Unit Tests (Unix/MinGW)",
-            "windows": {
-                "program": "${workspaceFolder}/src/unitTests/build/Geruest_Unit_Tests.exe",
-                "miDebuggerPath": "gdb.exe"
-            },
-            "linux": {
-                "program": "${workspaceFolder}/src/unitTests/build/Geruest_Unit_Tests",
-                "miDebuggerPath": "gdb"
-            }
-        },
-        {
             "name": "Debug JSONParser Tests (MSVC)",
             "type": "cppvsdbg",
             "request": "launch",
@@ -164,27 +123,6 @@
                 }
             ],
             "preLaunchTask": "Compile Example (Unix/MinGW)"
-        },
-        {
-            "name": "Run All Unit Tests (Linux)",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/src/unitTests/build/Geruest_Unit_Tests",
-            "args": [],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}/src/unitTests",
-            "environment": [],
-            "externalConsole": false,
-            "MIMode": "gdb",
-            "miDebuggerPath": "gdb",
-            "setupCommands": [
-                {
-                    "description": "Enable pretty-printing for gdb",
-                    "text": "-enable-pretty-printing",
-                    "ignoreFailures": true
-                }
-            ],
-            "preLaunchTask": "Build Unit Tests (Unix/MinGW)"
         },
         {
             "name": "Debug JSONParser Tests (Linux)",

@@ -5,90 +5,112 @@
  * @brief Unit tests for the FileManagement class
  */
 
-#include <iostream>
-#include <cassert>
+#include <gtest/gtest.h>
 #include <string>
 #include <filesystem>
+#include <fstream>
 #include "../../FileManagement/FileManagement.hpp"
 
-namespace geruest {
-namespace test {
+using namespace geruest;
 
 const std::string TEST_DIR = "test_files";
 const std::string TEST_FILE = TEST_DIR + "/test.txt";
 const std::string TEST_CONTENT = "This is test content for FileManagement tests.";
 
-void test_create_folder() {
-    // Clean up first
-    if (std::filesystem::exists(TEST_DIR)) {
-        std::filesystem::remove_all(TEST_DIR);
+// Test fixture for FileManagement tests
+class FileManagementTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        // Clean up before each test
+        if (std::filesystem::exists(TEST_DIR)) {
+            std::filesystem::remove_all(TEST_DIR);
+        }
     }
-    
+
+    void TearDown() override {
+        // Clean up after each test
+        if (std::filesystem::exists(TEST_DIR)) {
+            std::filesystem::remove_all(TEST_DIR);
+        }
+    }
+};
+
+TEST_F(FileManagementTest, CreateFolder) {
     bool result = FileManagement::createFolder(TEST_DIR);
-    assert(result == true);
-    assert(std::filesystem::exists(TEST_DIR));
-    assert(std::filesystem::is_directory(TEST_DIR));
+    EXPECT_TRUE(result);
+    EXPECT_TRUE(std::filesystem::exists(TEST_DIR));
+    EXPECT_TRUE(std::filesystem::is_directory(TEST_DIR));
 }
 
-void test_create_existing_folder() {
-    // Folder should already exist from previous test
+TEST_F(FileManagementTest, CreateExistingFolder) {
+    // Create folder first
+    FileManagement::createFolder(TEST_DIR);
+    
+    // Try to create it again
     bool result = FileManagement::createFolder(TEST_DIR);
     // Should still return true for existing folders
-    assert(result == true);
+    EXPECT_TRUE(result);
 }
 
-void test_create_file() {
+TEST_F(FileManagementTest, CreateFile) {
+    // Create parent directory first
+    FileManagement::createFolder(TEST_DIR);
+    
     bool result = FileManagement::createFile(TEST_FILE);
-    assert(result == true);
-    assert(std::filesystem::exists(TEST_FILE));
+    EXPECT_TRUE(result);
+    EXPECT_TRUE(std::filesystem::exists(TEST_FILE));
 }
 
-void test_file_exists() {
+TEST_F(FileManagementTest, FileExists) {
+    // Create parent directory and file
+    FileManagement::createFolder(TEST_DIR);
+    FileManagement::createFile(TEST_FILE);
+    
     bool exists = FileManagement::fileExists(TEST_FILE);
-    assert(exists == true);
+    EXPECT_TRUE(exists);
     
     bool notExists = FileManagement::fileExists("nonexistent_file.txt");
-    assert(notExists == false);
+    EXPECT_FALSE(notExists);
 }
 
-void test_save_file() {
+TEST_F(FileManagementTest, SaveFile) {
     bool result = FileManagement::saveFile(TEST_FILE, TEST_CONTENT);
-    assert(result == true);
+    EXPECT_TRUE(result);
     
     // Verify file was saved correctly
     std::ifstream file(TEST_FILE);
-    assert(file.is_open());
+    EXPECT_TRUE(file.is_open());
     
     std::string content;
     std::getline(file, content, '\0'); // Read entire file
     file.close();
     
-    assert(content == TEST_CONTENT);
+    EXPECT_EQ(content, TEST_CONTENT);
 }
 
-void test_load_file_content() {
+TEST_F(FileManagementTest, LoadFileContent) {
     // Save known content first
     FileManagement::saveFile(TEST_FILE, "Test content for loading");
     
     // This tests the ContentBuilder's loadFile method indirectly
     // since FileManagement doesn't have a loadFile method
     std::ifstream file(TEST_FILE);
-    assert(file.is_open());
+    EXPECT_TRUE(file.is_open());
     
     std::string content;
     std::getline(file, content, '\0');
     file.close();
     
-    assert(content == "Test content for loading");
+    EXPECT_EQ(content, "Test content for loading");
 }
 
-void test_save_file_with_path_creation() {
+TEST_F(FileManagementTest, SaveFileWithPathCreation) {
     std::string deepPath = TEST_DIR + "/subdir/deep/test_deep.txt";
     
     // This should create the directory structure and the file
     bool result = FileManagement::saveFile(deepPath, "Deep content");
-    assert(result == true);
-    assert(std::filesystem::exists(deepPath));
+    EXPECT_TRUE(result);
+    EXPECT_TRUE(std::filesystem::exists(deepPath));
     
     // Verify content
     std::ifstream file(deepPath);
@@ -96,21 +118,21 @@ void test_save_file_with_path_creation() {
     std::getline(file, content, '\0');
     file.close();
     
-    assert(content == "Deep content");
+    EXPECT_EQ(content, "Deep content");
 }
 
-void test_delete_file() {
+TEST_F(FileManagementTest, DeleteFile) {
     // Create a file to delete
     std::string fileToDelete = TEST_DIR + "/to_delete.txt";
     FileManagement::saveFile(fileToDelete, "Delete me");
-    assert(std::filesystem::exists(fileToDelete));
+    EXPECT_TRUE(std::filesystem::exists(fileToDelete));
     
     // Delete the file
     FileManagement::deleteFile(fileToDelete);
-    assert(!std::filesystem::exists(fileToDelete));
+    EXPECT_FALSE(std::filesystem::exists(fileToDelete));
 }
 
-void test_create_file_invalid_path() {
+TEST_F(FileManagementTest, CreateFileInvalidPath) {
     // Try to create file in non-existent directory without creating path
     std::string invalidPath = "/invalid/nonexistent/path/file.txt";
     
@@ -124,76 +146,3 @@ void test_create_file_invalid_path() {
         // Exception handling is acceptable for invalid paths
     }
 }
-
-// Cleanup function
-void cleanup_test_files() {
-    if (std::filesystem::exists(TEST_DIR)) {
-        std::filesystem::remove_all(TEST_DIR);
-    }
-}
-
-/**
- * @brief Run all FileManagement unit tests
- * @return true if all tests pass, false otherwise
- */
-bool runFileManagementTests() {
-    std::cout << "=== Running FileManagement Tests ===" << std::endl;
-    
-    bool allPassed = true;
-    int testCount = 0;
-    int passedCount = 0;
-
-    // Helper lambda to run a test and track results
-    auto runTest = [&](void (*testFunc)(), const std::string& testName) {
-        testCount++;
-        try {
-            testFunc();
-            std::cout << "✓ " << testName << " passed" << std::endl;
-            passedCount++;
-        } catch (const std::exception& e) {
-            std::cout << "✗ " << testName << " failed: " << e.what() << std::endl;
-            allPassed = false;
-        } catch (...) {
-            std::cout << "✗ " << testName << " failed: Unknown error" << std::endl;
-            allPassed = false;
-        }
-    };
-
-    // Run all test functions
-    runTest(test_create_folder, "test_create_folder");
-    runTest(test_create_existing_folder, "test_create_existing_folder");
-    runTest(test_create_file, "test_create_file");
-    runTest(test_file_exists, "test_file_exists");
-    runTest(test_save_file, "test_save_file");
-    runTest(test_load_file_content, "test_load_file_content");
-    runTest(test_save_file_with_path_creation, "test_save_file_with_path_creation");
-    runTest(test_delete_file, "test_delete_file");
-    runTest(test_create_file_invalid_path, "test_create_file_invalid_path");
-
-    // Cleanup
-    cleanup_test_files();
-
-    std::cout << std::endl;
-    std::cout << "=== FileManagement Test Results ===" << std::endl;
-    std::cout << "Tests run: " << testCount << std::endl;
-    std::cout << "Tests passed: " << passedCount << std::endl;
-    std::cout << "Tests failed: " << (testCount - passedCount) << std::endl;
-    
-    if (allPassed) {
-        std::cout << "✓ All FileManagement tests passed!" << std::endl;
-    } else {
-        std::cout << "✗ Some FileManagement tests failed!" << std::endl;
-    }
-    
-    return allPassed;
-}
-
-} // namespace test
-} // namespace geruest
-
-// Main function for running FileManagement tests standalone
-#ifndef RUNNING_MAIN_TESTS
-int main() {
-    return geruest::test::runFileManagementTests() ? 0 : 1;
-}
-#endif

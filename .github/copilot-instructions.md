@@ -182,17 +182,20 @@ sendToLoggerPages("GET /index.html - 200 OK");         // Page request logging
 
 ### Testing Strategy
 ```bash
-# Unit Tests (Individual Components)
-./build/Release/JSONParser_Tests.exe
-./build/Release/HTTPRequest_Tests.exe
-./build/Release/ContentBuilder_Tests.exe
+# All Unit Tests (Recommended - runs all 84 tests)
+cd src/unitTests/build && ctest --output-on-failure
 
-# Integration Tests
-./build/Release/Geruest_Unit_Tests.exe
+# Individual Test Modules
+./build/JSONParser_Tests        # 38 tests
+./build/HTTPRequest_Tests       # 6 tests
+./build/HTTPResponse_Tests      # 8 tests
+./build/FileManagement_Tests    # 9 tests
+./build/ContentBuilder_Tests    # 8 tests
+./build/JSObfuscator_Tests      # 14 tests
 
 # Example Application
 # Serves on port 80 with graceful shutdown (Ctrl+C)
-./exemple/build/Release/exemple.exe
+./exemple/build/exemple
 ```
 
 ### Content Builder System
