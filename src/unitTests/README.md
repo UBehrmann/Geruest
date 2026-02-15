@@ -4,13 +4,13 @@ This directory contains comprehensive unit tests for the Geruest C++ web framewo
 
 ## Test Structure
 
+All tests use Google Test framework with individual executables for each module.
+
 ```
 unitTests/
-├── unit_tests.cpp                     # Main test runner
-├── CMakeLists.txt                     # Build configuration
+├── CMakeLists.txt                     # Build configuration (Google Test)
 ├── JSONParser/                        # JSONParser tests
 │   ├── JSONParser_tests.cpp
-│   ├── testFunctions.hpp
 │   └── *.json                         # Test data files
 ├── HTTPRequest/                       # HTTPRequest tests
 │   └── HTTPRequest_tests.cpp
@@ -18,8 +18,10 @@ unitTests/
 │   └── HTTPResponse_tests.cpp
 ├── FileManagement/                    # FileManagement tests
 │   └── FileManagement_tests.cpp
-└── ContentBuilder/                    # ContentBuilder tests
-    └── ContentBuilder_tests.cpp
+├── ContentBuilder/                    # ContentBuilder tests
+│   └── ContentBuilder_tests.cpp
+└── JSObfuscator/                      # JSObfuscator tests
+    └── JSObfuscator_tests.cpp
 ```
 
 ## Building and Running Tests
@@ -53,36 +55,54 @@ cmake --build . --config Release
 
 #### Run All Tests
 ```bash
-# Run the complete test suite
-./Geruest_Unit_Tests         # (Linux)
-.\Release\Geruest_Unit_Tests.exe  # (Windows MSVC)
-.\Geruest_Unit_Tests.exe     # (Windows MinGW)
+# Navigate to build directory
+cd build
 
-# Or use CTest for detailed output
+# Run all tests via CTest (recommended)
+ctest --output-on-failure
+
+# Or with verbose output
 ctest --output-on-failure --verbose
 ```
 
 #### Run Individual Test Suites
 ```bash
-# JSONParser tests only
+# From the build directory
+
+# JSONParser tests only (38 tests)
 ./JSONParser_Tests
 
-# HTTPRequest tests only
+# HTTPRequest tests only (6 tests)
 ./HTTPRequest_Tests
 
-# HTTPResponse tests only  
+# HTTPResponse tests only (8 tests)
 ./HTTPResponse_Tests
 
-# FileManagement tests only
+# FileManagement tests only (9 tests)
 ./FileManagement_Tests
 
-# ContentBuilder tests only
+# ContentBuilder tests only (8 tests)
 ./ContentBuilder_Tests
+
+# JSObfuscator tests only (14 tests)
+./JSObfuscator_Tests
+
+# BasicAuth tests only (34 tests)
+./BasicAuth_Tests
+
+# ConfigLoader tests only (56 tests)
+./ConfigLoader_Tests
+
+# AssetMerger tests only (18 tests)
+./AssetMerger_Tests
+
+# Run specific test with filter
+./JSONParser_Tests --gtest_filter=JSONParserTest.SimpleKeyStrings
 ```
 
 ## Test Modules
 
-### 1. JSONParser Tests
+### 1. JSONParser Tests (38 tests)
 - **Location**: `JSONParser/JSONParser_tests.cpp`
 - **Test Data**: Various `.json` files for different scenarios
 - **Coverage**: 
@@ -92,7 +112,7 @@ ctest --output-on-failure --verbose
   - File I/O operations
   - Error handling for invalid JSON
 
-### 2. HTTPRequest Tests  
+### 2. HTTPRequest Tests (6 tests)
 - **Location**: `HTTPRequest/HTTPRequest_tests.cpp`
 - **Coverage**:
   - HTTP method parsing (GET, POST, etc.)
@@ -101,7 +121,7 @@ ctest --output-on-failure --verbose
   - Query parameter handling
   - URL decoding
 
-### 3. HTTPResponse Tests
+### 3. HTTPResponse Tests (8 tests)
 - **Location**: `HTTPResponse/HTTPResponse_tests.cpp` 
 - **Coverage**:
   - Response construction
@@ -110,7 +130,7 @@ ctest --output-on-failure --verbose
   - Predefined response functions
   - CORS header generation
 
-### 4. FileManagement Tests
+### 4. FileManagement Tests (9 tests)
 - **Location**: `FileManagement/FileManagement_tests.cpp`
 - **Coverage**:
   - File creation and deletion
@@ -119,13 +139,56 @@ ctest --output-on-failure --verbose
   - File content saving/loading
   - Path handling and validation
 
-### 5. ContentBuilder Tests
+### 5. ContentBuilder Tests (8 tests)
 - **Location**: `ContentBuilder/ContentBuilder_tests.cpp`
 - **Coverage**:
   - File loading functionality
   - Comment removal (HTML, CSS, JS)
   - Content building pipeline
   - Template processing capabilities
+
+### 6. JSObfuscator Tests (14 tests)
+- **Location**: `JSObfuscator/JSObfuscator_tests.cpp`
+- **Coverage**:
+  - Code obfuscation levels (1-3)
+  - String encoding and encryption
+  - Variable and function name mangling
+  - Dead code injection
+  - Syntax preservation
+
+### 7. BasicAuth Tests (34 tests)
+- **Location**: `BasicAuth/BasicAuth_tests.cpp`
+- **Coverage**:
+  - User management (add/remove/clear users)
+  - Protected page management
+  - Password hashing (SHA-256)
+  - Credential verification
+  - Authorization header parsing (Base64 decode)
+  - Authentication flow logic
+  - Edge cases (empty credentials, special characters)
+
+### 8. ConfigLoader Tests (56 tests)
+- **Location**: `ConfigLoader/ConfigLoader_tests.cpp`
+- **Coverage**:
+  - .env file loading and parsing
+  - Environment variable fallback
+  - Type conversions (int, float, bool, size_t)
+  - Default value handling
+  - Comment and whitespace handling
+  - Configuration hierarchy (code > .env > env > default)
+  - Multiple file loads
+  - Edge cases (equals signs in values, empty keys)
+
+### 9. AssetMerger Tests (18 tests)
+- **Location**: `AssetMerger/AssetMerger_tests.cpp`
+- **Coverage**:
+  - CSS file merging and bundling
+  - JavaScript file merging and bundling
+  - External URL filtering (CDN links preserved)
+  - HTML tag modification and replacement
+  - Path resolution and subdirectory handling
+  - Asset tag attribute handling
+  - Multiple file merging scenarios
 
 ## CI/CD Integration
 

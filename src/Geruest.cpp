@@ -118,10 +118,31 @@ void Geruest::setWebPQuality(float quality) {
 #if GERUEST_HAS_WEBP
     serverData.setWebPQuality(quality);
     _configFlags.webpQualitySet = true;
-    sendToLogger("WebP quality set to " + std::to_string(static_cast<int>(serverData.getWebPQuality())) + "%");
+    std::ostringstream oss;
+    oss << "WebP quality set to " << quality << "%";
+    sendToLogger(oss.str());
 #else
-    sendToLoggerError("WebP quality cannot be set - library not available (GERUEST_HAS_WEBP=0)");
+    sendToLoggerError("WebP quality cannot be set - WebP conversion not available (GERUEST_HAS_WEBP=0)");
 #endif
+}
+
+void Geruest::setObfuscationLevel(unsigned int level) {
+    serverData.setObfuscationLevel(level);
+    if (level > 0) {
+        sendToLogger("JS obfuscation enabled (level " + std::to_string(level) + ")");
+    } else {
+        sendToLogger("JS obfuscation disabled");
+    }
+}
+
+void Geruest::setObfuscationCacheExpiry(int days) {
+    serverData.setObfuscationCacheExpiry(days);
+    sendToLogger("Obfuscation cache expiry set to " + std::to_string(days) + " days");
+}
+
+void Geruest::addObfuscationExclusion(const std::string& filename) {
+    serverData.addObfuscationExclusion(filename);
+    sendToLogger("Added obfuscation exclusion: " + filename);
 }
 
 void Geruest::enableDevMode() {

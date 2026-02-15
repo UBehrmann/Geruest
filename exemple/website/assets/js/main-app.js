@@ -32,8 +32,10 @@ async function sendRequest(method, url, body = null) {
     }
 }
 
-// Exact route handlers
-document.getElementById('getBtn').onclick = () => {
+// Wait for DOM to be fully loaded before attaching event handlers
+document.addEventListener('DOMContentLoaded', () => {
+    // Exact route handlers
+    document.getElementById('getBtn').onclick = () => {
     sendRequest('GET', '/api/get');
 };
 
@@ -119,3 +121,5 @@ document.getElementById('noMatchBtn2').onclick = () => {
 document.getElementById('noMatchBtn3').onclick = () => {
     sendRequest('GET', '/nonexistent/path');
 };
+
+}); // End of DOMContentLoaded event listener

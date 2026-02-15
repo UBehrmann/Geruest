@@ -345,7 +345,8 @@ std::string HtmlBuilder::getPageNameFromPath(const std::string& filePath) {
 
 void HtmlBuilder::processAssetMerging(const std::string& pageName) {
     // Create AssetMerger and process the HTML
-    AssetMerger merger(root, _serverData.getRemoveComments());
+    AssetMerger merger(root, _serverData.getRemoveComments(), 
+                      _serverData.getObfuscationExclusions());
     MergeResult result = merger.processHtml(builtFile, pageName);
     
     // Update the HTML content with merged asset references

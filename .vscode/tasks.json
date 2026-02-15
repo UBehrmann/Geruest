@@ -593,34 +593,30 @@
         {
             "label": "Run All Unit Tests (MSVC)",
             "type": "shell",
-            "command": ".\\Release\\Geruest_Unit_Tests.exe",
+            "command": "ctest",
+            "args": ["--output-on-failure"],
             "options": {
-                "cwd": "${workspaceFolder}/src/unitTests"
+                "cwd": "${workspaceFolder}/src/unitTests/build"
             },
             "group": "test",
             "dependsOn": [
                 "Build Unit Tests (MSVC)"
             ],
-            "detail": "Run all unit tests (MSVC build)"
+            "detail": "Run all unit tests via CTest (MSVC build)"
         },
         {
             "label": "Run All Unit Tests (Unix/MinGW)",
             "type": "shell",
-            "command": ".\\build\\Geruest_Unit_Tests.exe",
+            "command": "ctest",
+            "args": ["--output-on-failure"],
             "options": {
-                "cwd": "${workspaceFolder}/src/unitTests"
+                "cwd": "${workspaceFolder}/src/unitTests/build"
             },
             "group": "test",
             "dependsOn": [
                 "Build Unit Tests (Unix/MinGW)"
             ],
-            "detail": "Run all unit tests (MinGW build on Windows or GCC build on Linux)",
-            "windows": {
-                "command": ".\\build\\Geruest_Unit_Tests.exe"
-            },
-            "linux": {
-                "command": "./build/Geruest_Unit_Tests"
-            }
+            "detail": "Run all unit tests via CTest (Unix/MinGW/Linux)"
         },
         {
             "label": "Run JSONParser Tests (MSVC)",

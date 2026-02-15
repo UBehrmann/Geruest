@@ -39,11 +39,7 @@ jobs:
       - name: Run Unit Tests
         run: |
           cd src/unitTests/build
-          ./JSONParser_Tests
-          ./HTTPRequest_Tests
-          ./HTTPResponse_Tests
-          ./FileManagement_Tests
-          ./ContentBuilder_Tests
+          ctest --output-on-failure --verbose
 
   build-windows-mingw:
     runs-on: windows-latest
@@ -76,11 +72,7 @@ jobs:
         shell: msys2 {0}
         run: |
           cd src/unitTests/build
-          ./JSONParser_Tests.exe
-          ./HTTPRequest_Tests.exe
-          ./HTTPResponse_Tests.exe
-          ./FileManagement_Tests.exe
-          ./ContentBuilder_Tests.exe
+          ctest --output-on-failure --verbose
 
   build-windows-msvc:
     runs-on: windows-latest
@@ -109,9 +101,5 @@ jobs:
 
       - name: Run Unit Tests
         run: |
-          cd src/unitTests/build/Release
-          ./JSONParser_Tests.exe
-          ./HTTPRequest_Tests.exe
-          ./HTTPResponse_Tests.exe
-          ./FileManagement_Tests.exe
-          ./ContentBuilder_Tests.exe
+          cd src/unitTests/build
+          ctest --output-on-failure --verbose -C Release

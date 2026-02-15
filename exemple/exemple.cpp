@@ -150,6 +150,56 @@ int main(int argc, char* argv[]) {
     std::cout << "===================================\n" << std::endl;
 
     // ============================================================
+    // JAVASCRIPT OBFUSCATION CONFIGURATION (optional, must be called before init/start)
+    // ============================================================
+    
+    // Enable JavaScript obfuscation to protect your code from casual analysis
+    // When enabled, JavaScript files are obfuscated to make them harder to read
+    // while maintaining functionality.
+    //
+    // Obfuscation Levels:
+    // - Level 0: Disabled (default) - no obfuscation
+    // - Level 1: Basic - variable/function name mangling + whitespace removal
+    // - Level 2: Medium - Level 1 + string encoding + number obfuscation
+    // - Level 3: Advanced - Level 2 + dead code + control flow obfuscation
+    //
+    // Default: 0 (disabled)
+    //
+    // Key Features:
+    // - Automatic caching with configurable expiry (default: 7 days)
+    // - Respects dev mode (automatically disables obfuscation for easier debugging)
+    // - Works seamlessly with asset merging
+    // - Excluded files are not obfuscated or merged
+    //
+    // Benefits:
+    // - Protects intellectual property from casual copying
+    // - Makes reverse engineering more difficult
+    // - Deters script kiddies and automated tools
+    //
+    // IMPORTANT: Only applies when dev mode is OFF
+    // Dev mode automatically disables obfuscation for easier debugging
+    
+    server->setObfuscationLevel(1);        // Enable medium obfuscation (recommended)
+    server->setObfuscationCacheExpiry(7);  // Keep cached obfuscated files for 7 days
+    
+    // Exclude external libraries from obfuscation and merging
+    // External libraries should be served as-is to avoid breaking them
+    server->addObfuscationExclusion("jquery.min.js");
+    server->addObfuscationExclusion("bootstrap.min.js");
+    server->addObfuscationExclusion("lodash.js");
+    
+    std::cout << "=== JavaScript Obfuscation Configuration ===" << std::endl;
+    std::cout << "Obfuscation level: 2 (Medium)" << std::endl;
+    std::cout << "Cache expiry: 7 days" << std::endl;
+    std::cout << "  ✓ Variables/functions will be mangled" << std::endl;
+    std::cout << "  ✓ Whitespace removed (minification)" << std::endl;
+    std::cout << "  ✓ Strings encoded with hex escapes" << std::endl;
+    std::cout << "  ✓ Numbers obfuscated" << std::endl;
+    std::cout << "  ✓ Excluded libraries: jquery.min.js, bootstrap.min.js, lodash.js" << std::endl;
+    std::cout << "  ℹ Disabled in dev mode for easier debugging" << std::endl;
+    std::cout << "============================================\n" << std::endl;
+
+    // ============================================================
     // WEBP CONVERSION CONFIGURATION (optional, must be called before init/start)
     // ============================================================
     

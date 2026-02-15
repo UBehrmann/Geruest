@@ -54,8 +54,10 @@ public:
      * Constructor
      * @param serverRoot The root directory of the website
      * @param removeComments Whether to remove comments from merged assets
+     * @param exclusions List of filenames to exclude from merging
      */
-    AssetMerger(const std::string& serverRoot, bool removeComments = true);
+    AssetMerger(const std::string& serverRoot, bool removeComments = true, 
+                const std::vector<std::string>& exclusions = {});
 
     /**
      * Process HTML content to extract and merge CSS/JS assets
@@ -96,6 +98,14 @@ public:
 private:
     std::string _serverRoot;
     bool _removeComments;
+    std::vector<std::string> _exclusions;
+
+    /**
+     * Check if a file should be excluded from merging
+     * @param filename The filename to check
+     * @return true if file is excluded
+     */
+    bool isExcluded(const std::string& filename) const;
 
     /**
      * Load a file's content
