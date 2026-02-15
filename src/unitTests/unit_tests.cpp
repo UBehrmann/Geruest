@@ -17,6 +17,7 @@
 #include "HTTPResponse/HTTPResponse_tests.cpp"
 #include "FileManagement/FileManagement_tests.cpp"
 #include "ContentBuilder/ContentBuilder_tests.cpp"
+#include "JSObfuscator/JSObfuscator_tests.cpp"
 
 int main() {
     std::cout << "=======================================" << std::endl;
@@ -71,6 +72,16 @@ int main() {
     // Run ContentBuilder tests
     totalModules++;
     if (geruest::test::runContentBuilderTests()) {
+        passedModules++;
+    } else {
+        allTestsPassed = false;
+    }
+
+    std::cout << std::endl;
+
+    // Run JSObfuscator tests
+    totalModules++;
+    if (geruest::test::runJSObfuscatorTests()) {
         passedModules++;
     } else {
         allTestsPassed = false;

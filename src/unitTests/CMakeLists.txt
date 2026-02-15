@@ -57,6 +57,7 @@ set(GERUEST_SOURCES
     ../builders/HTMLBuilder.cpp
     ../builders/CSSBuilder.cpp
     ../builders/JSBuilder.cpp
+    ../builders/JSObfuscator.cpp
     ../builders/WebPConverter.cpp
     ../handler/Handler.cpp
 )
@@ -104,11 +105,18 @@ add_executable(ContentBuilder_Tests
     ../builders/HTMLBuilder.cpp
     ../builders/CSSBuilder.cpp
     ../builders/JSBuilder.cpp
+    ../builders/JSObfuscator.cpp
     ../builders/WebPConverter.cpp
     ../parser/JSONParser.cpp
     ../FileManagement/FileManagement.cpp
 )
 target_link_libraries(ContentBuilder_Tests ${PLATFORM_LIBS})
+
+add_executable(JSObfuscator_Tests 
+    JSObfuscator/JSObfuscator_tests.cpp 
+    ../builders/JSObfuscator.cpp
+)
+target_link_libraries(JSObfuscator_Tests ${PLATFORM_LIBS})
 
 # Add tests to CTest
 add_test(NAME JSONParser_Tests COMMAND JSONParser_Tests)
@@ -116,6 +124,7 @@ add_test(NAME HTTPRequest_Tests COMMAND HTTPRequest_Tests)
 add_test(NAME HTTPResponse_Tests COMMAND HTTPResponse_Tests)
 add_test(NAME FileManagement_Tests COMMAND FileManagement_Tests)
 add_test(NAME ContentBuilder_Tests COMMAND ContentBuilder_Tests)
+add_test(NAME JSObfuscator_Tests COMMAND JSObfuscator_Tests)
 add_test(NAME All_Unit_Tests COMMAND Geruest_Unit_Tests)
 
 # Set test properties
@@ -124,12 +133,13 @@ set_tests_properties(HTTPRequest_Tests PROPERTIES TIMEOUT 30)
 set_tests_properties(HTTPResponse_Tests PROPERTIES TIMEOUT 30)
 set_tests_properties(FileManagement_Tests PROPERTIES TIMEOUT 30)
 set_tests_properties(ContentBuilder_Tests PROPERTIES TIMEOUT 60)
+set_tests_properties(JSObfuscator_Tests PROPERTIES TIMEOUT 30)
 set_tests_properties(All_Unit_Tests PROPERTIES TIMEOUT 300)
 
 # Custom target to run all tests
 add_custom_target(run_tests
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-    DEPENDS Geruest_Unit_Tests JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests
+    DEPENDS Geruest_Unit_Tests JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests
     COMMENT "Running all unit tests"
 )
 
