@@ -67,7 +67,22 @@ private:
     std::string injectDeadCode(const std::string& code);
     std::string obfuscateControlFlow(const std::string& code);
 
+    // Token types for the simple JS tokenizer
+    enum class TokenType {
+        CODE,           // Normal code (identifiers, operators, etc.)
+        STRING_LITERAL, // "...", '...', `...`
+        LINE_COMMENT,   // // ...
+        BLOCK_COMMENT   // /* ... */
+    };
+
+    struct Token {
+        TokenType type;
+        std::string text;
+    };
+
     // Helper functions
+    std::vector<Token> tokenize(const std::string& code);
+    static std::string escapeForRegex(const std::string& str);
     std::string generateRandomName(int length = 8);
     std::vector<std::string> extractIdentifiers(const std::string& code);
     bool isReservedKeyword(const std::string& word);

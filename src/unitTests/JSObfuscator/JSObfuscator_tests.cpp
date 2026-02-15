@@ -275,7 +275,9 @@ manager.addUser("John!", "john@example.com");
     
     EXPECT_TRUE(contains(obfuscated, "class"));
     EXPECT_FALSE(contains(obfuscated, "UserManager"));
-    EXPECT_FALSE(contains(obfuscated, "addUser"));
+    // addUser appears as member access (manager.addUser) so it is preserved
+    EXPECT_TRUE(contains(obfuscated, ".addUser"));
+    // getUser only appears as method definition (no dot prefix), so it is mangled
     EXPECT_FALSE(contains(obfuscated, "getUser"));
     EXPECT_FALSE(contains(obfuscated, "\"John!\""));
     EXPECT_FALSE(contains(obfuscated, "\"john@example.com\""));
@@ -317,4 +319,83 @@ TEST(JSObfuscatorTest, HexEncodingOnlyForSpecialChars) {
     std::string result2 = obfuscator.obfuscate(withSpecial);
     // Should have hex encoding for comma and exclamation
     EXPECT_TRUE(contains(result2, "\\x"));
+}
+
+TEST(JSObfuscatorTest, PreservesStringContents) {
+    JSObfuscator obfuscator(1);
+    // Identifiers inside strings must NOT be mangled
+    std::string original = R"(
+var myVar = "myVar is a variable";
+var myFunc = 'another myVar ref';
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+
+    // The variable name in code should be mangled
+    EXPECT_FALSE(contains(obfuscated, "myVar=")) << "Code identifier should be mangled";
+    // But the exact string literal contents should be preserved
+    EXPECT_TRUE(contains(obfuscated, "myVar is a variable"))
+        << "String literal content must not be mangled";
+    EXPECT_TRUE(contains(obfuscated, "another myVar ref"))
+        << "Single-quoted string content must not be mangled";
+}
+
+TEST(JSObfuscatorTest, PreservesComments) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+// myVar is declared here
+var myVar = 10;
+/* myVar is used below */
+console.log(myVar);
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+
+    // The identifier "myVar" in code should be mangled (no longer appears
+    // as a standalone assignment like "myVar=")
+    EXPECT_FALSE(contains(obfuscated, "myVar="));
+    // But "myVar" inside comments must survive (not be mangled).
+    // removeWhitespace collapses formatting, so check that the comment
+    // words still appear somewhere in the output.
+    EXPECT_TRUE(contains(obfuscated, "//"))
+        << "Line comment marker should be present";
+    EXPECT_TRUE(contains(obfuscated, "myVar is declared"))
+        << "Identifiers inside line comments must not be mangled";
+    EXPECT_TRUE(contains(obfuscated, "myVar is used"))
+        << "Identifiers inside block comments must not be mangled";
+}
+
+TEST(JSObfuscatorTest, PreservesMemberAccessIdentifiers) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+var obj = {};
+obj.myProperty = 42;
+console.log(obj.myProperty);
+window.alert("done");
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+
+    // 'obj' is a free identifier and should be mangled
+    EXPECT_FALSE(contains(obfuscated, "var obj"));
+    // Properties after '.' should NOT be mangled
+    EXPECT_TRUE(contains(obfuscated, ".myProperty"))
+        << "Member-access property should not be mangled";
+    // Built-in methods after '.' should also stay intact
+    EXPECT_TRUE(contains(obfuscated, ".log"));
+    EXPECT_TRUE(contains(obfuscated, ".alert"));
+}
+
+TEST(JSObfuscatorTest, DollarSignIdentifiers) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+var $price = 100;
+var _count = 5;
+var total$ = $price * _count;
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+
+    // Identifiers with $ and _ should be mangled without regex errors
+    EXPECT_FALSE(contains(obfuscated, "$price"));
+    EXPECT_FALSE(contains(obfuscated, "_count"));
+    EXPECT_FALSE(contains(obfuscated, "total$"));
+    // Syntax should still be valid
+    EXPECT_TRUE(contains(obfuscated, "*"));
 }

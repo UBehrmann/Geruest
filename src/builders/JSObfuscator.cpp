@@ -115,40 +115,169 @@ std::string JSObfuscator::removeWhitespace(const std::string& code) {
     return result;
 }
 
+std::vector<JSObfuscator::Token> JSObfuscator::tokenize(const std::string& code) {
+    std::vector<Token> tokens;
+    std::string current;
+    size_t i = 0;
+
+    auto flushCode = [&]() {
+        if (!current.empty()) {
+            tokens.push_back({TokenType::CODE, current});
+            current.clear();
+        }
+    };
+
+    while (i < code.size()) {
+        char c = code[i];
+
+        // --- line comment ---
+        if (c == '/' && i + 1 < code.size() && code[i + 1] == '/') {
+            flushCode();
+            std::string comment;
+            while (i < code.size() && code[i] != '\n') {
+                comment += code[i++];
+            }
+            if (i < code.size()) comment += code[i++]; // include the newline
+            tokens.push_back({TokenType::LINE_COMMENT, comment});
+            continue;
+        }
+
+        // --- block comment ---
+        if (c == '/' && i + 1 < code.size() && code[i + 1] == '*') {
+            flushCode();
+            std::string comment;
+            comment += code[i++]; // '/'
+            comment += code[i++]; // '*'
+            while (i < code.size()) {
+                if (code[i] == '*' && i + 1 < code.size() && code[i + 1] == '/') {
+                    comment += code[i++]; // '*'
+                    comment += code[i++]; // '/'
+                    break;
+                }
+                comment += code[i++];
+            }
+            tokens.push_back({TokenType::BLOCK_COMMENT, comment});
+            continue;
+        }
+
+        // --- string literal (double-quote, single-quote, backtick) ---
+        if (c == '"' || c == '\'' || c == '`') {
+            flushCode();
+            char quote = c;
+            std::string str;
+            str += code[i++]; // opening quote
+            while (i < code.size()) {
+                if (code[i] == '\\') {
+                    str += code[i++]; // backslash
+                    if (i < code.size()) str += code[i++]; // escaped char
+                    continue;
+                }
+                if (code[i] == quote) {
+                    str += code[i++]; // closing quote
+                    break;
+                }
+                str += code[i++];
+            }
+            tokens.push_back({TokenType::STRING_LITERAL, str});
+            continue;
+        }
+
+        current += code[i++];
+    }
+    flushCode();
+    return tokens;
+}
+
+std::string JSObfuscator::escapeForRegex(const std::string& str) {
+    static const std::string metacharacters = R"(\^$.|?*+()[]{}-)";
+    std::string escaped;
+    escaped.reserve(str.size() * 2);
+    for (char c : str) {
+        if (metacharacters.find(c) != std::string::npos) {
+            escaped += '\\';
+        }
+        escaped += c;
+    }
+    return escaped;
+}
+
 std::string JSObfuscator::mangleNames(const std::string& code) {
-    // Simple name mangling: replace identifiers with short random names
-    // This is a simplified implementation
+    // Tokenize the source so we can skip strings and comments
+    std::vector<Token> tokens = tokenize(code);
+
+    // 1) Collect identifiers that appear in CODE tokens,
+    //    skipping those preceded by '.' (member access).
     std::unordered_map<std::string, std::string> nameMap;
-    std::string result = code;
-    
-    // Extract identifiers (simplified regex for demonstration)
-    std::regex identifierRegex(R"(\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b)");
-    std::smatch match;
-    
-    auto searchStart = code.cbegin();
-    std::vector<std::pair<std::string, size_t>> identifiers;
-    
-    while (std::regex_search(searchStart, code.cend(), match, identifierRegex)) {
-        std::string identifier = match[1].str();
-        if (!isReservedKeyword(identifier)) {
-            identifiers.push_back({identifier, static_cast<size_t>(std::distance(code.cbegin(), match[1].first))});
+    std::regex identifierRegex(R"(([.]?)\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b)");
+
+    for (const auto& tok : tokens) {
+        if (tok.type != TokenType::CODE) continue;
+
+        auto searchStart = tok.text.cbegin();
+        std::smatch match;
+        while (std::regex_search(searchStart, tok.text.cend(), match, identifierRegex)) {
+            std::string dotPrefix = match[1].str();
+            std::string identifier = match[2].str();
+
+            // Skip member-access identifiers (preceded by '.') and reserved words
+            if (dotPrefix.empty() && !isReservedKeyword(identifier)) {
+                if (nameMap.find(identifier) == nameMap.end()) {
+                    nameMap[identifier] = generateRandomName(6);
+                }
+            }
+            searchStart = match.suffix().first;
         }
-        searchStart = match.suffix().first;
     }
-    
-    // Replace identifiers with mangled names (from end to start to preserve positions)
-    std::reverse(identifiers.begin(), identifiers.end());
-    
-    for (const auto& [identifier, pos] : identifiers) {
-        if (nameMap.find(identifier) == nameMap.end()) {
-            nameMap[identifier] = generateRandomName(6);
+
+    // 2) Replace identifiers only inside CODE tokens, using position-based
+    //    replacement to avoid lookbehind (unsupported by std::regex).
+    std::string result;
+    result.reserve(code.size());
+
+    for (const auto& tok : tokens) {
+        if (tok.type != TokenType::CODE) {
+            // Preserve strings, comments verbatim
+            result += tok.text;
+            continue;
         }
-        
-        std::string mangledName = nameMap[identifier];
-        std::regex wordBoundaryRegex("\\b" + identifier + "\\b");
-        result = std::regex_replace(result, wordBoundaryRegex, mangledName);
+
+        // Walk through the code segment and replace identifiers
+        // that are NOT preceded by '.'
+        const std::string& segment = tok.text;
+        std::string replaced;
+        replaced.reserve(segment.size());
+
+        std::regex idRegex(R"(\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b)");
+        std::sregex_iterator it(segment.begin(), segment.end(), idRegex);
+        std::sregex_iterator endIt;
+        size_t lastPos = 0;
+
+        while (it != endIt) {
+            const std::smatch& m = *it;
+            size_t matchStart = static_cast<size_t>(m.position());
+            size_t matchLen = static_cast<size_t>(m.length());
+            std::string identifier = m[1].str();
+
+            // Append text before the match
+            replaced += segment.substr(lastPos, matchStart - lastPos);
+
+            // Check if preceded by '.' (member access)
+            bool isMemberAccess = (matchStart > 0 && segment[matchStart - 1] == '.');
+
+            if (!isMemberAccess && nameMap.find(identifier) != nameMap.end()) {
+                replaced += nameMap[identifier];
+            } else {
+                replaced += identifier;
+            }
+
+            lastPos = matchStart + matchLen;
+            ++it;
+        }
+        // Append remaining text after last match
+        replaced += segment.substr(lastPos);
+        result += replaced;
     }
-    
+
     return result;
 }
 
@@ -266,19 +395,24 @@ std::string JSObfuscator::generateRandomName(int length) {
 
 std::vector<std::string> JSObfuscator::extractIdentifiers(const std::string& code) {
     std::vector<std::string> identifiers;
-    std::regex identifierRegex(R"(\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b)");
-    
-    auto searchStart = code.cbegin();
-    std::smatch match;
-    
-    while (std::regex_search(searchStart, code.cend(), match, identifierRegex)) {
-        std::string identifier = match[1].str();
-        if (!isReservedKeyword(identifier)) {
-            identifiers.push_back(identifier);
+    std::vector<Token> tokens = tokenize(code);
+    std::regex identifierRegex(R"(([.])?)" R"(\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b)");
+
+    for (const auto& tok : tokens) {
+        if (tok.type != TokenType::CODE) continue;
+
+        auto searchStart = tok.text.cbegin();
+        std::smatch match;
+        while (std::regex_search(searchStart, tok.text.cend(), match, identifierRegex)) {
+            std::string dotPrefix = match[1].str();
+            std::string identifier = match[2].str();
+            if (dotPrefix.empty() && !isReservedKeyword(identifier)) {
+                identifiers.push_back(identifier);
+            }
+            searchStart = match.suffix().first;
         }
-        searchStart = match.suffix().first;
     }
-    
+
     return identifiers;
 }
 
