@@ -88,6 +88,8 @@ private:
     bool isReservedKeyword(const std::string& word);
     std::string encodeStringLiteral(const std::string& str);
     std::string createNumberExpression(int num);
+    std::string processTemplateLiteral(const std::string& templateLiteral, 
+                                       const std::unordered_map<std::string, std::string>& nameMap);
 };
 
 }  // namespace geruest

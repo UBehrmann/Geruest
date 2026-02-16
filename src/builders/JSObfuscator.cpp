@@ -201,6 +201,78 @@ std::string JSObfuscator::escapeForRegex(const std::string& str) {
     return escaped;
 }
 
+std::string JSObfuscator::processTemplateLiteral(const std::string& templateLiteral,
+                                                 const std::unordered_map<std::string, std::string>& nameMap) {
+    // Template literals are in the form: `text ${expr} more text ${expr2}`
+    // We need to find ${...} expressions and replace variable names inside them
+    
+    std::string result;
+    result.reserve(templateLiteral.size());
+    
+    size_t pos = 0;
+    while (pos < templateLiteral.size()) {
+        // Look for ${
+        size_t exprStart = templateLiteral.find("${", pos);
+        
+        if (exprStart == std::string::npos) {
+            // No more expressions, copy rest of the string
+            result += templateLiteral.substr(pos);
+            break;
+        }
+        
+        // Copy everything before the expression
+        result += templateLiteral.substr(pos, exprStart - pos);
+        result += "${";
+        
+        // Find the matching }
+        size_t exprEnd = templateLiteral.find("}", exprStart + 2);
+        if (exprEnd == std::string::npos) {
+            // Malformed template literal, copy rest as-is
+            result += templateLiteral.substr(exprStart + 2);
+            break;
+        }
+        
+        // Extract the expression content
+        std::string expression = templateLiteral.substr(exprStart + 2, exprEnd - (exprStart + 2));
+        
+        // Replace identifiers in the expression using the name map
+        std::regex idRegex(R"(\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b)");
+        std::sregex_iterator it(expression.begin(), expression.end(), idRegex);
+        std::sregex_iterator endIt;
+        size_t lastExprPos = 0;
+        
+        while (it != endIt) {
+            const std::smatch& m = *it;
+            size_t matchStart = static_cast<size_t>(m.position());
+            size_t matchLen = static_cast<size_t>(m.length());
+            std::string identifier = m[1].str();
+            
+            // Append text before the match
+            result += expression.substr(lastExprPos, matchStart - lastExprPos);
+            
+            // Check if preceded by '.' (member access)
+            bool isMemberAccess = (matchStart > 0 && expression[matchStart - 1] == '.');
+            
+            if (!isMemberAccess && nameMap.find(identifier) != nameMap.end()) {
+                result += nameMap.at(identifier);
+            } else {
+                result += identifier;
+            }
+            
+            lastExprPos = matchStart + matchLen;
+            ++it;
+        }
+        
+        // Append remaining text after last match in expression
+        result += expression.substr(lastExprPos);
+        result += "}";
+        
+        pos = exprEnd + 1;
+    }
+    
+    return result;
+}
+
 std::string JSObfuscator::mangleNames(const std::string& code) {
     // Tokenize the source so we can skip strings and comments
     std::vector<Token> tokens = tokenize(code);
@@ -236,8 +308,17 @@ std::string JSObfuscator::mangleNames(const std::string& code) {
 
     for (const auto& tok : tokens) {
         if (tok.type != TokenType::CODE) {
-            // Preserve strings, comments verbatim
-            result += tok.text;
+            // Check if it's a template literal (starts and ends with backtick)
+            if (tok.type == TokenType::STRING_LITERAL && 
+                tok.text.size() >= 2 && 
+                tok.text[0] == '`' && 
+                tok.text[tok.text.size() - 1] == '`') {
+                // Process template literal to replace variables inside ${...}
+                result += processTemplateLiteral(tok.text, nameMap);
+            } else {
+                // Preserve strings, comments verbatim
+                result += tok.text;
+            }
             continue;
         }
 
