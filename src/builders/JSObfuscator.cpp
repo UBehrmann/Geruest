@@ -82,7 +82,21 @@ static const std::unordered_set<std::string> RESERVED_KEYWORDS = {
     "escape", "unescape",
     // Node.js globals (for SSR/bundlers)
     "require", "exports", "module", "process", "Buffer", "global",
-    "__dirname", "__filename", "setImmediate", "clearImmediate"
+    "__dirname", "__filename", "setImmediate", "clearImmediate",
+    // Common API property names (used in object literals for API calls)
+    // Fetch API options
+    "method", "headers", "body", "mode", "credentials", "cache", "redirect", 
+    "referrer", "referrerPolicy", "integrity", "keepalive", "signal",
+    // HTTP Response properties
+    "status", "statusText", "ok", "redirected", "type", "url",
+    // Common object properties
+    "length", "name", "value", "message", "code", "stack", "cause",
+    // Event properties
+    "target", "currentTarget", "bubbles", "cancelable", "composed",
+    "defaultPrevented", "eventPhase", "isTrusted", "timeStamp",
+    // DOM element properties (commonly used in configs)
+    "id", "className", "classList", "style", "attributes", "children",
+    "tagName", "innerHTML", "outerHTML", "textContent", "nodeType", "nodeName"
 };
 
 // Pre-compiled regex patterns for performance (compiled once, reused throughout)

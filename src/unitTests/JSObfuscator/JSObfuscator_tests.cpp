@@ -717,3 +717,65 @@ const ref = new WeakRef(obj);
     EXPECT_FALSE(contains(obfuscated, "const item=") || contains(obfuscated, "const item ="));
     EXPECT_FALSE(contains(obfuscated, "const bigNum=") || contains(obfuscated, "const bigNum ="));
 }
+
+TEST(JSObfuscatorTest, FetchAPIPropertyNamesPreserved) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+async function submitForm(data) {
+    const response = await fetch('/api/submit', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data),
+        credentials: 'include',
+        mode: 'cors',
+        cache: 'no-cache',
+        redirect: 'follow'
+    });
+    
+    const result = await response.json();
+    
+    if (response.ok) {
+        console.log('Status:', response.status);
+        console.log('URL:', response.url);
+        return result;
+    } else {
+        throw new Error(result.message || 'Request failed');
+    }
+}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    
+    // Critical: Fetch API option property names MUST be preserved
+    EXPECT_TRUE(contains(obfuscated, "method"))
+        << "Fetch option 'method' must be preserved";
+    EXPECT_TRUE(contains(obfuscated, "headers"))
+        << "Fetch option 'headers' must be preserved";
+    EXPECT_TRUE(contains(obfuscated, "body"))
+        << "Fetch option 'body' must be preserved";
+    EXPECT_TRUE(contains(obfuscated, "credentials"))
+        << "Fetch option 'credentials' must be preserved";
+    EXPECT_TRUE(contains(obfuscated, "mode"))
+        << "Fetch option 'mode' must be preserved";
+    EXPECT_TRUE(contains(obfuscated, "cache"))
+        << "Fetch option 'cache' must be preserved";
+    EXPECT_TRUE(contains(obfuscated, "redirect"))
+        << "Fetch option 'redirect' must be preserved";
+    
+    // Response properties must be preserved
+    EXPECT_TRUE(contains(obfuscated, "ok"))
+        << "Response property 'ok' must be preserved";
+    EXPECT_TRUE(contains(obfuscated, "status"))
+        << "Response property 'status' must be preserved";
+    EXPECT_TRUE(contains(obfuscated, "url"))
+        << "Response property 'url' must be preserved";
+    EXPECT_TRUE(contains(obfuscated, "message"))
+        << "Common property 'message' must be preserved";
+    
+    // User-defined names should be mangled
+    EXPECT_FALSE(contains(obfuscated, "submitForm"));
+    EXPECT_FALSE(contains(obfuscated, "data"));
+    EXPECT_FALSE(contains(obfuscated, "response"));
+    EXPECT_FALSE(contains(obfuscated, "result"));
+}
