@@ -973,3 +973,80 @@ function selectValue(cond) {
     EXPECT_FALSE(contains(obfuscated, "selectValue"));
     EXPECT_FALSE(contains(obfuscated, "cond"));
 }
+
+// ============================================================
+//  Number obfuscation – decimal literals and numbers in strings
+// ============================================================
+
+TEST(JSObfuscatorTest, DecimalLiteralsNotCorrupted) {
+    JSObfuscator obfuscator(2);
+    // Decimal fractions must remain syntactically valid after obfuscation.
+    // The regex must not replace the fractional or integer part independently.
+    std::string original = R"(
+var opacity = 0.55;
+var scale = 1.0;
+var ratio = 0.28;
+var fraction = 0.90;
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+
+    // After obfuscation the decimal dots must still sit between digits,
+    // never followed by "0x" or "(" which would indicate the fractional
+    // part was replaced with a hex literal or arithmetic expression.
+    EXPECT_FALSE(matchesRegex(obfuscated, R"(\.\()" ))
+        << "Fractional part must not be replaced with an expression: " << obfuscated;
+    EXPECT_FALSE(matchesRegex(obfuscated, R"(\.0x)" ))
+        << "Fractional part must not be replaced with a hex literal: " << obfuscated;
+
+    // The original decimal literals should survive intact
+    EXPECT_TRUE(contains(obfuscated, "0.55"))
+        << "0.55 must not be corrupted: " << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "1.0"))
+        << "1.0 must not be corrupted: " << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "0.28"))
+        << "0.28 must not be corrupted: " << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "0.90"))
+        << "0.90 must not be corrupted: " << obfuscated;
+}
+
+TEST(JSObfuscatorTest, NumbersInsideStringsNotObfuscated) {
+    JSObfuscator obfuscator(2);
+    // Numbers inside string literals must not be touched by obfuscateNumbers.
+    std::string original = R"(
+var percent = "100%";
+var cls = "duration-500";
+var label = "Step 3 of 10";
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+
+    // The string contents are hex-encoded by encodeStrings first,
+    // but the digit characters should stay as literal digits (alphanumeric
+    // chars are preserved by encodeStringLiteral).
+    EXPECT_TRUE(contains(obfuscated, "100"))
+        << "Digits inside strings must not be replaced: " << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "500"))
+        << "Digits inside strings must not be replaced: " << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "10"))
+        << "Digits inside strings must not be replaced: " << obfuscated;
+
+    // Must NOT contain hex/expression replacements of those numbers inside strings
+    EXPECT_FALSE(matchesRegex(obfuscated, R"(".*0x64.*")"))
+        << "100 inside a string must not become 0x64: " << obfuscated;
+}
+
+TEST(JSObfuscatorTest, StandaloneIntegersStillObfuscated) {
+    JSObfuscator obfuscator(2);
+    // Plain integer literals in code should still be obfuscated.
+    std::string original = R"(
+var timeout = 5000;
+var width = 768;
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+
+    // The original integer literals should no longer appear as-is
+    // (they may become hex, arithmetic, or bitshift expressions).
+    EXPECT_FALSE(contains(obfuscated, "5000"))
+        << "5000 should be obfuscated: " << obfuscated;
+    EXPECT_FALSE(contains(obfuscated, "768"))
+        << "768 should be obfuscated: " << obfuscated;
+}

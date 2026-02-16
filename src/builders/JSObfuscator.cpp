@@ -524,30 +524,59 @@ std::string JSObfuscator::encodeStrings(const std::string& code) {
 }
 
 std::string JSObfuscator::obfuscateNumbers(const std::string& code) {
-    std::string result = code;
-    
-    // Find number literals and replace with expressions
+    // Tokenize first so we only touch CODE tokens (skip strings, comments).
+    std::vector<Token> tokens = tokenize(code);
     std::regex numberRegex(R"(\b(\d+)\b)");
-    std::smatch match;
-    
-    // Process from end to start to preserve positions
-    std::vector<std::pair<size_t, size_t>> positions;
-    std::vector<int> numbers;
-    
-    auto searchStart = code.cbegin();
-    while (std::regex_search(searchStart, code.cend(), match, numberRegex)) {
-        size_t pos = std::distance(code.cbegin(), match[1].first);
-        positions.push_back({pos, match[1].length()});
-        numbers.push_back(std::stoi(match[1].str()));
-        searchStart = match.suffix().first;
+
+    std::string result;
+    result.reserve(code.size());
+
+    for (const auto& tok : tokens) {
+        if (tok.type != TokenType::CODE) {
+            // Preserve string literals and comments verbatim
+            result += tok.text;
+            continue;
+        }
+
+        const std::string& segment = tok.text;
+
+        // Collect replaceable integer literal positions within this token
+        std::vector<std::pair<size_t, size_t>> positions;
+        std::vector<int> numbers;
+
+        auto searchStart = segment.cbegin();
+        std::smatch match;
+        while (std::regex_search(searchStart, segment.cend(), match, numberRegex)) {
+            size_t pos = static_cast<size_t>(std::distance(segment.cbegin(), match[1].first));
+            size_t len = match[1].length();
+            size_t endPos = pos + len;
+
+            // Skip fractional part of a decimal literal  (e.g. "55" in "0.55")
+            bool isDecimalFraction = (pos > 0 && segment[pos - 1] == '.');
+
+            // Skip integer part of a decimal literal  (e.g. "0" in "0.55")
+            bool isDecimalInteger = (endPos < segment.size() && segment[endPos] == '.'
+                                     && endPos + 1 < segment.size()
+                                     && std::isdigit(static_cast<unsigned char>(segment[endPos + 1])));
+
+            if (!isDecimalFraction && !isDecimalInteger) {
+                positions.push_back({pos, len});
+                numbers.push_back(std::stoi(match[1].str()));
+            }
+
+            searchStart = match.suffix().first;
+        }
+
+        // Replace from end to start to preserve earlier positions
+        std::string tokenResult = segment;
+        for (int i = static_cast<int>(positions.size()) - 1; i >= 0; --i) {
+            std::string expression = createNumberExpression(numbers[i]);
+            tokenResult.replace(positions[i].first, positions[i].second, expression);
+        }
+
+        result += tokenResult;
     }
-    
-    // Replace from end to start
-    for (int i = static_cast<int>(positions.size()) - 1; i >= 0; --i) {
-        std::string expression = createNumberExpression(numbers[i]);
-        result.replace(positions[i].first, positions[i].second, expression);
-    }
-    
+
     return result;
 }
 
@@ -660,7 +689,12 @@ std::string JSObfuscator::createNumberExpression(int num) {
             if (num % 2 == 0 && num > 2) {
                 return "(" + std::to_string(num / 2) + "*2)";
             }
-            return std::to_string(num);
+            // Odd or small – fall back to hex
+            {
+                std::ostringstream oss;
+                oss << "0x" << std::hex << num;
+                return oss.str();
+            }
         case 2:
             // Bitshift (for powers of 2)
             if (num > 1 && (num & (num - 1)) == 0) {
@@ -672,9 +706,18 @@ std::string JSObfuscator::createNumberExpression(int num) {
                 }
                 return "(1<<" + std::to_string(shift) + ")";
             }
-            return std::to_string(num);
+            // Not a power of 2 – fall back to hex
+            {
+                std::ostringstream oss;
+                oss << "0x" << std::hex << num;
+                return oss.str();
+            }
         default:
-            return std::to_string(num);
+            {
+                std::ostringstream oss;
+                oss << "0x" << std::hex << num;
+                return oss.str();
+            }
     }
 }
 
