@@ -327,6 +327,33 @@ TEST(JSObfuscatorTest, HexEncodingOnlyForSpecialChars) {
     EXPECT_TRUE(contains(result2, "\\x"));
 }
 
+TEST(JSObfuscatorTest, FilenamesNotObfuscated) {
+    JSObfuscator obfuscator(2);
+
+    // Filenames, paths, and URLs should remain readable after encoding.
+    // Characters / . - _ ~ are common in filenames and must not be hex-encoded.
+    std::string original = R"(
+var path = "/v1/contact";
+var file = "worker.js";
+var asset = "/assets/css/main-style.css";
+var sound = "/sound_effect.mp3";
+var api = "/api/users/profile";
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+
+    // Path separators and dots must survive as-is
+    EXPECT_TRUE(contains(obfuscated, "/v1/contact"))
+        << "URL path must not have '/' hex-encoded";
+    EXPECT_TRUE(contains(obfuscated, "worker.js"))
+        << "Filename dot must not be hex-encoded";
+    EXPECT_TRUE(contains(obfuscated, "/assets/css/main-style.css"))
+        << "Hyphens, dots, and slashes in asset paths must not be hex-encoded";
+    EXPECT_TRUE(contains(obfuscated, "/sound_effect.mp3"))
+        << "Underscores and dots in filenames must not be hex-encoded";
+    EXPECT_TRUE(contains(obfuscated, "/api/users/profile"))
+        << "Multi-segment URL path must not be hex-encoded";
+}
+
 TEST(JSObfuscatorTest, PreservesStringContents) {
     JSObfuscator obfuscator(1);
     // Identifiers inside strings must NOT be mangled
@@ -855,4 +882,94 @@ async function handleResponse(resp) {
     EXPECT_FALSE(contains(obfDestr, "handleResponse"));
     EXPECT_FALSE(contains(obfDestr, "resp"));
     EXPECT_FALSE(contains(obfDestr, "payload"));
+}
+
+TEST(JSObfuscatorTest, ObjectLiteralKeysPreserved) {
+    JSObfuscator obfuscator(1);
+    // Object-literal keys that are NOT in RESERVED_KEYWORDS must still be
+    // preserved because they define the wire/API contract (e.g. JSON keys
+    // sent to a server).
+    std::string original = R"(
+function submitContact(formValues) {
+    const payload = {
+        email: formValues.email,
+        phone: formValues.phone,
+        address: formValues.address,
+        company: formValues.company
+    };
+    return fetch('/api/contact', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+    });
+}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+
+    // Object-literal keys must not be mangled
+    EXPECT_TRUE(matchesRegex(obfuscated, R"(\bemail\s*:)"))
+        << "Object-literal key 'email' must not be mangled";
+    EXPECT_TRUE(matchesRegex(obfuscated, R"(\bphone\s*:)"))
+        << "Object-literal key 'phone' must not be mangled";
+    EXPECT_TRUE(matchesRegex(obfuscated, R"(\baddress\s*:)"))
+        << "Object-literal key 'address' must not be mangled";
+    EXPECT_TRUE(matchesRegex(obfuscated, R"(\bcompany\s*:)"))
+        << "Object-literal key 'company' must not be mangled";
+
+    // Member-access properties must still be preserved (dot-prefix check)
+    EXPECT_TRUE(contains(obfuscated, ".email"));
+    EXPECT_TRUE(contains(obfuscated, ".phone"));
+    EXPECT_TRUE(contains(obfuscated, ".address"));
+    EXPECT_TRUE(contains(obfuscated, ".company"));
+
+    // User-defined variable names should still be mangled
+    EXPECT_FALSE(contains(obfuscated, "submitContact"));
+    EXPECT_FALSE(contains(obfuscated, "formValues"));
+    EXPECT_FALSE(contains(obfuscated, "payload"));
+}
+
+TEST(JSObfuscatorTest, TernaryValuesStillMangled) {
+    JSObfuscator obfuscator(1);
+    // Identifiers before ':' in a ternary (preceded by '?') must still
+    // be mangled — only object-literal keys are skipped.
+    std::string original = R"(
+function choose(flag) {
+    var optionA = 10;
+    var optionB = 20;
+    return flag ? optionA : optionB;
+}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+
+    EXPECT_FALSE(contains(obfuscated, "optionA"))
+        << "Ternary value 'optionA' should still be mangled";
+    EXPECT_FALSE(contains(obfuscated, "optionB"))
+        << "Ternary value 'optionB' should still be mangled";
+    EXPECT_FALSE(contains(obfuscated, "choose"));
+    EXPECT_FALSE(contains(obfuscated, "flag"));
+}
+
+TEST(JSObfuscatorTest, SwitchCaseValuesStillMangled) {
+    JSObfuscator obfuscator(1);
+    // Identifiers used in 'case' labels must be mangled; they are not
+    // treated like object-literal keys even though they appear before ':'.
+    std::string original = R"(
+function selectValue(cond) {
+    var myVar = 42;
+    switch (cond) {
+        case myVar:
+            return 'hit';
+        default:
+            return 'miss';
+    }
+}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+
+    // The identifier used in the case label must be mangled.
+    EXPECT_FALSE(contains(obfuscated, "myVar"))
+        << "Switch-case label identifier 'myVar' should still be mangled";
+
+    // Consistency: function name and parameter should also be mangled.
+    EXPECT_FALSE(contains(obfuscated, "selectValue"));
+    EXPECT_FALSE(contains(obfuscated, "cond"));
 }
