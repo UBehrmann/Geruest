@@ -947,3 +947,29 @@ function choose(flag) {
     EXPECT_FALSE(contains(obfuscated, "choose"));
     EXPECT_FALSE(contains(obfuscated, "flag"));
 }
+
+TEST(JSObfuscatorTest, SwitchCaseValuesStillMangled) {
+    JSObfuscator obfuscator(1);
+    // Identifiers used in 'case' labels must be mangled; they are not
+    // treated like object-literal keys even though they appear before ':'.
+    std::string original = R"(
+function selectValue(x) {
+    var myVar = 42;
+    switch (x) {
+        case myVar:
+            return 'hit';
+        default:
+            return 'miss';
+    }
+}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+
+    // The identifier used in the case label must be mangled.
+    EXPECT_FALSE(contains(obfuscated, "myVar"))
+        << "Switch-case label identifier 'myVar' should still be mangled";
+
+    // Consistency: function name and parameter should also be mangled.
+    EXPECT_FALSE(contains(obfuscated, "selectValue"));
+    EXPECT_FALSE(contains(obfuscated, "x"));
+}
