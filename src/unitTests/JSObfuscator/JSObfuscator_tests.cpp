@@ -458,3 +458,39 @@ function formatMessage(user, count) {
         << "Variable 'count' inside ${} should be renamed";
 }
 
+TEST(JSObfuscatorTest, AsyncAwaitKeywordsPreserved) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+async function fetchData(url) {
+    const response = await fetch(url);
+    const data = await response.json();
+    return data;
+}
+
+const handler = async (event) => {
+    const result = await processEvent(event);
+    return result;
+};
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    
+    // async and await keywords must NOT be mangled
+    EXPECT_TRUE(contains(obfuscated, "async"))
+        << "The 'async' keyword must be preserved";
+    EXPECT_TRUE(contains(obfuscated, "await"))
+        << "The 'await' keyword must be preserved";
+    
+    // Function names and variables should be mangled
+    EXPECT_FALSE(contains(obfuscated, "fetchData"));
+    EXPECT_FALSE(contains(obfuscated, "response"));
+    EXPECT_FALSE(contains(obfuscated, "data"));
+    EXPECT_FALSE(contains(obfuscated, "handler"));
+    EXPECT_FALSE(contains(obfuscated, "event"));
+    EXPECT_FALSE(contains(obfuscated, "result"));
+    
+    // Check that async appears before function keyword
+    size_t asyncPos = obfuscated.find("async");
+    size_t functionPos = obfuscated.find("function");
+    EXPECT_LT(asyncPos, functionPos)
+        << "async keyword should appear before function keyword";
+}

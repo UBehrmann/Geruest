@@ -18,7 +18,7 @@ namespace geruest {
 
 // JavaScript reserved keywords that should not be mangled
 static const std::unordered_set<std::string> RESERVED_KEYWORDS = {
-    "abstract", "arguments", "await", "boolean", "break", "byte", "case", "catch",
+    "abstract", "arguments", "async", "await", "boolean", "break", "byte", "case", "catch",
     "char", "class", "const", "continue", "debugger", "default", "delete", "do",
     "double", "else", "enum", "eval", "export", "extends", "false", "final",
     "finally", "float", "for", "function", "goto", "if", "implements", "import",
