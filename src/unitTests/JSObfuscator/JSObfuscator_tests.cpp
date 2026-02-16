@@ -17,6 +17,12 @@ bool contains(const std::string& haystack, const std::string& needle) {
     return haystack.find(needle) != std::string::npos;
 }
 
+// Test helper: Check if a string matches a regex pattern
+bool matchesRegex(const std::string& haystack, const std::string& pattern) {
+    std::regex re(pattern);
+    return std::regex_search(haystack, re);
+}
+
 // Test helper: Count occurrences of a substring
 int countOccurrences(const std::string& str, const std::string& substr) {
     int count = 0;
@@ -60,16 +66,16 @@ TEST(JSObfuscatorTest, Level2Medium) {
     JSObfuscator obfuscator(2);
     std::string original = R"(
 function greet(name) {
-    var message = "Hello, " + name;
+    var greeting = "Hello, " + name;
     var count = 42;
-    return message;
+    return greeting;
 }
 )";
     
     std::string obfuscated = obfuscator.obfuscate(original);
     
     EXPECT_FALSE(contains(obfuscated, "greet"));
-    EXPECT_FALSE(contains(obfuscated, "message"));
+    EXPECT_FALSE(contains(obfuscated, "greeting"));
     // The comma and space after "Hello" should trigger hex encoding
     EXPECT_TRUE(contains(obfuscated, "\\x"));
 }
@@ -436,17 +442,17 @@ function redirectToLanguagePage(language) {
 TEST(JSObfuscatorTest, TemplateLiteralComplexExpressions) {
     JSObfuscator obfuscator(1);
     std::string original = R"(
-function formatMessage(user, count) {
-    const message = `User ${user.name} has ${count} items`;
-    return message;
+function formatGreeting(user, count) {
+    const greeting = `User ${user.name} has ${count} items`;
+    return greeting;
 }
 )";
     std::string obfuscated = obfuscator.obfuscate(original);
     
     // Variable names should be mangled
-    EXPECT_FALSE(contains(obfuscated, "formatMessage"));
+    EXPECT_FALSE(contains(obfuscated, "formatGreeting"));
     EXPECT_FALSE(contains(obfuscated, "count"));
-    EXPECT_FALSE(contains(obfuscated, "message"));
+    EXPECT_FALSE(contains(obfuscated, "greeting"));
     
     // Member access (user.name) - "name" after dot should not be mangled
     EXPECT_TRUE(contains(obfuscated, ".name"))
@@ -747,35 +753,106 @@ async function submitForm(data) {
 )";
     std::string obfuscated = obfuscator.obfuscate(original);
     
-    // Critical: Fetch API option property names MUST be preserved
-    EXPECT_TRUE(contains(obfuscated, "method"))
-        << "Fetch option 'method' must be preserved";
-    EXPECT_TRUE(contains(obfuscated, "headers"))
-        << "Fetch option 'headers' must be preserved";
-    EXPECT_TRUE(contains(obfuscated, "body"))
-        << "Fetch option 'body' must be preserved";
-    EXPECT_TRUE(contains(obfuscated, "credentials"))
-        << "Fetch option 'credentials' must be preserved";
-    EXPECT_TRUE(contains(obfuscated, "mode"))
-        << "Fetch option 'mode' must be preserved";
-    EXPECT_TRUE(contains(obfuscated, "cache"))
-        << "Fetch option 'cache' must be preserved";
-    EXPECT_TRUE(contains(obfuscated, "redirect"))
-        << "Fetch option 'redirect' must be preserved";
+    // Critical: Fetch API option property names MUST be preserved as object-literal keys
+    EXPECT_TRUE(matchesRegex(obfuscated, R"(\bmethod\s*:)"))
+        << "Fetch option 'method' must be preserved as object-literal key";
+    EXPECT_TRUE(matchesRegex(obfuscated, R"(\bheaders\s*:)"))
+        << "Fetch option 'headers' must be preserved as object-literal key";
+    EXPECT_TRUE(matchesRegex(obfuscated, R"(\bbody\s*:)"))
+        << "Fetch option 'body' must be preserved as object-literal key";
+    EXPECT_TRUE(matchesRegex(obfuscated, R"(\bcredentials\s*:)"))
+        << "Fetch option 'credentials' must be preserved as object-literal key";
+    EXPECT_TRUE(matchesRegex(obfuscated, R"(\bmode\s*:)"))
+        << "Fetch option 'mode' must be preserved as object-literal key";
+    EXPECT_TRUE(matchesRegex(obfuscated, R"(\bcache\s*:)"))
+        << "Fetch option 'cache' must be preserved as object-literal key";
+    EXPECT_TRUE(matchesRegex(obfuscated, R"(\bredirect\s*:)"))
+        << "Fetch option 'redirect' must be preserved as object-literal key";
     
-    // Response properties must be preserved
-    EXPECT_TRUE(contains(obfuscated, "ok"))
-        << "Response property 'ok' must be preserved";
-    EXPECT_TRUE(contains(obfuscated, "status"))
-        << "Response property 'status' must be preserved";
-    EXPECT_TRUE(contains(obfuscated, "url"))
-        << "Response property 'url' must be preserved";
-    EXPECT_TRUE(contains(obfuscated, "message"))
-        << "Common property 'message' must be preserved";
+    // Response properties must be preserved as member access
+    EXPECT_TRUE(matchesRegex(obfuscated, R"(\.ok\b)"))
+        << "Response property '.ok' must be preserved as member access";
+    EXPECT_TRUE(matchesRegex(obfuscated, R"(\.status\b)"))
+        << "Response property '.status' must be preserved as member access";
+    EXPECT_TRUE(matchesRegex(obfuscated, R"(\.url\b)"))
+        << "Response property '.url' must be preserved as member access";
+    EXPECT_TRUE(matchesRegex(obfuscated, R"(\.message\b)"))
+        << "Common property '.message' must be preserved as member access";
     
     // User-defined names should be mangled
     EXPECT_FALSE(contains(obfuscated, "submitForm"));
     EXPECT_FALSE(contains(obfuscated, "data"));
     EXPECT_FALSE(contains(obfuscated, "response"));
     EXPECT_FALSE(contains(obfuscated, "result"));
+}
+TEST(JSObfuscatorTest, ShorthandAndDestructuringPreserved) {
+    JSObfuscator obfuscator(1);
+
+    // Shorthand properties: the identifier IS the property key,
+    // so mangling it would silently change the wire format.
+    std::string shorthand = R"(
+function doFetch(endpoint) {
+    const method = 'GET';
+    const headers = { 'Accept': 'application/json' };
+    const mode = 'cors';
+    const credentials = 'same-origin';
+    const cache = 'default';
+    const redirect = 'follow';
+    return fetch(endpoint, { method, headers, mode, credentials, cache, redirect });
+}
+)";
+    std::string obfShort = obfuscator.obfuscate(shorthand);
+
+    // Each reserved name must still appear as a bare word inside { ... }
+    // (shorthand property syntax), not just as an object-literal key.
+    EXPECT_TRUE(matchesRegex(obfShort, R"(\bmethod\b)"))
+        << "Shorthand property 'method' must not be mangled";
+    EXPECT_TRUE(matchesRegex(obfShort, R"(\bheaders\b)"))
+        << "Shorthand property 'headers' must not be mangled";
+    EXPECT_TRUE(matchesRegex(obfShort, R"(\bmode\b)"))
+        << "Shorthand property 'mode' must not be mangled";
+    EXPECT_TRUE(matchesRegex(obfShort, R"(\bcredentials\b)"))
+        << "Shorthand property 'credentials' must not be mangled";
+    EXPECT_TRUE(matchesRegex(obfShort, R"(\bcache\b)"))
+        << "Shorthand property 'cache' must not be mangled";
+    EXPECT_TRUE(matchesRegex(obfShort, R"(\bredirect\b)"))
+        << "Shorthand property 'redirect' must not be mangled";
+
+    // User-defined names must still be mangled
+    EXPECT_FALSE(contains(obfShort, "doFetch"));
+    EXPECT_FALSE(contains(obfShort, "endpoint"));
+
+    // Destructuring: renaming the identifier would break the mapping
+    // from the property name to the local binding.
+    std::string destructuring = R"(
+async function handleResponse(resp) {
+    const { status, ok, url, redirected } = resp;
+    if (!ok) {
+        throw new Error('HTTP ' + status + ' at ' + url);
+    }
+    const payload = await resp.json();
+    const { message, code } = payload;
+    return { status, message, code };
+}
+)";
+    std::string obfDestr = obfuscator.obfuscate(destructuring);
+
+    // Destructured property names must survive as whole words
+    EXPECT_TRUE(matchesRegex(obfDestr, R"(\bstatus\b)"))
+        << "Destructured property 'status' must not be mangled";
+    EXPECT_TRUE(matchesRegex(obfDestr, R"(\bok\b)"))
+        << "Destructured property 'ok' must not be mangled";
+    EXPECT_TRUE(matchesRegex(obfDestr, R"(\burl\b)"))
+        << "Destructured property 'url' must not be mangled";
+    EXPECT_TRUE(matchesRegex(obfDestr, R"(\bredirected\b)"))
+        << "Destructured property 'redirected' must not be mangled";
+    EXPECT_TRUE(matchesRegex(obfDestr, R"(\bmessage\b)"))
+        << "Destructured property 'message' must not be mangled";
+    EXPECT_TRUE(matchesRegex(obfDestr, R"(\bcode\b)"))
+        << "Destructured property 'code' must not be mangled";
+
+    // User-defined names must still be mangled
+    EXPECT_FALSE(contains(obfDestr, "handleResponse"));
+    EXPECT_FALSE(contains(obfDestr, "resp"));
+    EXPECT_FALSE(contains(obfDestr, "payload"));
 }
