@@ -109,6 +109,34 @@ static const std::unordered_set<std::string> RESERVED_KEYWORDS = {
 static const std::regex IDENTIFIER_REGEX(R"(\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b)");
 static const std::regex IDENTIFIER_WITH_DOT_REGEX(R"(([.]?)\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b)");
 
+// Detect whether an identifier at [identStart, identEnd) in `segment` is an
+// object-literal key.  An object-literal key is preceded by '{' or ',' (the
+// start of an object literal or the separator between properties) and followed
+// by ':'.  Whitespace between those characters and the identifier is skipped.
+// Ternary expressions (cond ? val : …) are excluded because '?' – not '{'/','.
+// – precedes the value before ':'.
+static bool isObjectLiteralKey(const std::string& segment, size_t identStart, size_t identEnd) {
+    // 1) The identifier must be followed by ':' (skipping whitespace)
+    bool followedByColon = false;
+    for (size_t i = identEnd; i < segment.size(); ++i) {
+        char c = segment[i];
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') continue;
+        followedByColon = (c == ':');
+        break;
+    }
+    if (!followedByColon) return false;
+
+    // 2) The identifier must be preceded by '{' or ',' (skipping whitespace)
+    //    This distinguishes object keys from ternary values (preceded by '?'),
+    //    case labels (preceded by 'case'), and other constructs.
+    for (int i = static_cast<int>(identStart) - 1; i >= 0; --i) {
+        char c = segment[i];
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') continue;
+        return (c == '{' || c == ',');
+    }
+    return false;
+}
+
 JSObfuscator::JSObfuscator(unsigned int level)
     : _level(level) {
     // Seed random number generator with current time
@@ -375,8 +403,15 @@ std::string JSObfuscator::mangleNames(const std::string& code) {
             std::string dotPrefix = match[1].str();
             std::string identifier = match[2].str();
 
-            // Skip member-access identifiers (preceded by '.') and reserved words
-            if (dotPrefix.empty() && !isReservedKeyword(identifier)) {
+            // Compute absolute position of group 2 within tok.text
+            size_t offset = static_cast<size_t>(searchStart - tok.text.cbegin());
+            size_t identStart = offset + static_cast<size_t>(match.position(2));
+            size_t identEnd = identStart + identifier.length();
+
+            // Skip member-access identifiers (preceded by '.'),
+            // reserved words, and object-literal keys (e.g. { email: … })
+            if (dotPrefix.empty() && !isReservedKeyword(identifier)
+                && !isObjectLiteralKey(tok.text, identStart, identEnd)) {
                 if (nameMap.find(identifier) == nameMap.end()) {
                     nameMap[identifier] = generateRandomName(6);
                 }
@@ -425,10 +460,11 @@ std::string JSObfuscator::mangleNames(const std::string& code) {
             // Append text before the match
             replaced += segment.substr(lastPos, matchStart - lastPos);
 
-            // Check if preceded by '.' (member access)
+            // Check if preceded by '.' (member access) or is an object-literal key
             bool isMemberAccess = (matchStart > 0 && segment[matchStart - 1] == '.');
+            bool isObjKey = isObjectLiteralKey(segment, matchStart, matchStart + matchLen);
 
-            if (!isMemberAccess && nameMap.find(identifier) != nameMap.end()) {
+            if (!isMemberAccess && !isObjKey && nameMap.find(identifier) != nameMap.end()) {
                 replaced += nameMap[identifier];
             } else {
                 replaced += identifier;
@@ -584,13 +620,15 @@ bool JSObfuscator::isReservedKeyword(const std::string& word) {
 }
 
 std::string JSObfuscator::encodeStringLiteral(const std::string& str) {
-    // Encode string to hex escape sequences
+    // Encode string to hex escape sequences, but preserve characters that
+    // commonly appear in filenames and URL paths so they remain readable.
     std::ostringstream encoded;
     encoded << "\"";
     
     for (char c : str) {
-        // Use hex encoding for non-alphanumeric characters
-        if (std::isalnum(c) || c == ' ') {
+        // Keep alphanumeric, spaces, and filename/path-safe characters as-is
+        if (std::isalnum(c) || c == ' ' || c == '/' || c == '.' 
+            || c == '-' || c == '_' || c == '~') {
             encoded << c;
         } else {
             encoded << "\\x" << std::hex << std::setw(2) << std::setfill('0') << (static_cast<int>(c) & 0xFF);
