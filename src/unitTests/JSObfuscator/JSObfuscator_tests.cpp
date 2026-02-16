@@ -498,3 +498,222 @@ const handler = async (event) => {
     EXPECT_LT(asyncPos, functionPos)
         << "async keyword should appear before function keyword";
 }
+TEST(JSObfuscatorTest, WebAPIsPreserved) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+async function submitForm(formData) {
+    const response = await fetch("/api/submit", {
+        method: "POST",
+        headers: new Headers({
+            "Content-Type": "application/json"
+        }),
+        body: JSON.stringify(formData)
+    });
+    
+    const result = await response.json();
+    
+    const url = new URL(window.location.href);
+    const params = new URLSearchParams(url.search);
+    
+    const blob = new Blob([result], { type: "application/json" });
+    const formDataObj = new FormData();
+    formDataObj.append("file", blob);
+    
+    return result;
+}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    
+    // Critical Web APIs must NOT be mangled
+    EXPECT_TRUE(contains(obfuscated, "fetch"))
+        << "The 'fetch' API must be preserved";
+    EXPECT_TRUE(contains(obfuscated, "Headers"))
+        << "The 'Headers' API must be preserved";
+    EXPECT_TRUE(contains(obfuscated, "URL"))
+        << "The 'URL' API must be preserved";
+    EXPECT_TRUE(contains(obfuscated, "URLSearchParams"))
+        << "The 'URLSearchParams' API must be preserved";
+    EXPECT_TRUE(contains(obfuscated, "Blob"))
+        << "The 'Blob' API must be preserved";
+    EXPECT_TRUE(contains(obfuscated, "FormData"))
+        << "The 'FormData' API must be preserved";
+    EXPECT_TRUE(contains(obfuscated, "JSON"))
+        << "The 'JSON' object must be preserved";
+    
+    // User-defined names should be mangled
+    EXPECT_FALSE(contains(obfuscated, "submitForm"));
+    EXPECT_FALSE(contains(obfuscated, "formData"));
+    EXPECT_FALSE(contains(obfuscated, "response"));
+    EXPECT_FALSE(contains(obfuscated, "result"));
+    EXPECT_FALSE(contains(obfuscated, "params"));
+    EXPECT_FALSE(contains(obfuscated, "blob"));
+    EXPECT_FALSE(contains(obfuscated, "formDataObj"));
+}
+
+TEST(JSObfuscatorTest, ComprehensiveGlobalAPIsPreserved) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+// DOM & Events
+const img = new Image();
+const audio = new Audio("/sound.mp3");
+const event = new CustomEvent("myevent");
+const observer = new MutationObserver(() => {});
+
+// Web Workers
+const worker = new Worker("worker.js");
+const socket = new WebSocket("ws://localhost");
+
+// Storage
+const db = indexedDB.open("mydb");
+
+// Crypto & Intl
+const hash = crypto.subtle.digest("SHA-256", data);
+const formatter = new Intl.DateTimeFormat();
+
+// Regular expressions
+const regex = new RegExp("pattern");
+
+// Error handling
+throw new TypeError("Invalid type");
+
+// Performance & Animation
+performance.mark("start");
+requestAnimationFrame(render);
+
+// Modern APIs
+queueMicrotask(() => console.log("microtask"));
+const cloned = structuredClone(obj);
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    
+    // Verify all global constructors and APIs are preserved
+    EXPECT_TRUE(contains(obfuscated, "Image"));
+    EXPECT_TRUE(contains(obfuscated, "Audio"));
+    EXPECT_TRUE(contains(obfuscated, "CustomEvent"));
+    EXPECT_TRUE(contains(obfuscated, "MutationObserver"));
+    EXPECT_TRUE(contains(obfuscated, "Worker"));
+    EXPECT_TRUE(contains(obfuscated, "WebSocket"));
+    EXPECT_TRUE(contains(obfuscated, "indexedDB"));
+    EXPECT_TRUE(contains(obfuscated, "crypto"));
+    EXPECT_TRUE(contains(obfuscated, "Intl"));
+    EXPECT_TRUE(contains(obfuscated, "RegExp"));
+    EXPECT_TRUE(contains(obfuscated, "TypeError"));
+    EXPECT_TRUE(contains(obfuscated, "performance"));
+    EXPECT_TRUE(contains(obfuscated, "requestAnimationFrame"));
+    EXPECT_TRUE(contains(obfuscated, "queueMicrotask"));
+    EXPECT_TRUE(contains(obfuscated, "structuredClone"));
+    EXPECT_TRUE(contains(obfuscated, "console"));
+    
+    // User variable names should be mangled
+    EXPECT_FALSE(contains(obfuscated, "const img"));
+    EXPECT_FALSE(contains(obfuscated, "const audio"));
+    EXPECT_FALSE(contains(obfuscated, "const event"));
+    EXPECT_FALSE(contains(obfuscated, "const observer"));
+    EXPECT_FALSE(contains(obfuscated, "const worker"));
+    EXPECT_FALSE(contains(obfuscated, "const socket"));
+}
+
+TEST(JSObfuscatorTest, NodeJSCommonJSGlobalsPreserved) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+// CommonJS module pattern
+const myModule = require('./myModule');
+const fs = require('fs');
+const path = require('path');
+
+exports.handler = function(event) {
+    const env = process.env.NODE_ENV;
+    const dir = __dirname;
+    const file = __filename;
+    
+    const buf = Buffer.from('hello');
+    global.myGlobal = 'value';
+    
+    setImmediate(() => {
+        console.log('immediate');
+    });
+    
+    return module.exports;
+};
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    
+    // Node.js/CommonJS globals must be preserved
+    EXPECT_TRUE(contains(obfuscated, "require"))
+        << "require() must be preserved for CommonJS";
+    EXPECT_TRUE(contains(obfuscated, "exports"))
+        << "exports must be preserved for CommonJS";
+    EXPECT_TRUE(contains(obfuscated, "module"))
+        << "module must be preserved for CommonJS";
+    EXPECT_TRUE(contains(obfuscated, "process"))
+        << "process must be preserved for Node.js";
+    EXPECT_TRUE(contains(obfuscated, "__dirname"))
+        << "__dirname must be preserved";
+    EXPECT_TRUE(contains(obfuscated, "__filename"))
+        << "__filename must be preserved";
+    EXPECT_TRUE(contains(obfuscated, "Buffer"))
+        << "Buffer must be preserved for Node.js";
+    EXPECT_TRUE(contains(obfuscated, "global"))
+        << "global must be preserved";
+    EXPECT_TRUE(contains(obfuscated, "setImmediate"))
+        << "setImmediate must be preserved";
+    
+    // User variables should be mangled (check for variable declarations)
+    EXPECT_FALSE(contains(obfuscated, "const myModule=") || contains(obfuscated, "const myModule ="));
+    EXPECT_FALSE(contains(obfuscated, "const fs=") || contains(obfuscated, "const fs ="));
+    EXPECT_FALSE(contains(obfuscated, "const path=") || contains(obfuscated, "const path ="));
+}
+
+TEST(JSObfuscatorTest, ModernBrowserAPIsPreserved) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+// Fetch with AbortController
+const controller = new AbortController();
+const signal = controller.signal;
+
+fetch('/api/data', { signal })
+    .then(response => response.json());
+
+setTimeout(() => controller.abort(), 5000);
+
+// Streams API
+const stream = new ReadableStream({
+    start(controller) {
+        controller.enqueue('data');
+    }
+});
+
+// Clipboard API
+const item = new ClipboardItem({ 'text/plain': blob });
+
+// Web Components
+customElements.define('my-element', MyElement);
+
+// BigInt
+const bigNum = BigInt(9007199254740991);
+
+// Notifications
+new Notification('Hello!');
+
+// WeakRef for memory management
+const ref = new WeakRef(obj);
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    
+    // Modern APIs must be preserved
+    EXPECT_TRUE(contains(obfuscated, "AbortController"));
+    EXPECT_TRUE(contains(obfuscated, "ReadableStream"));
+    EXPECT_TRUE(contains(obfuscated, "ClipboardItem"));
+    EXPECT_TRUE(contains(obfuscated, "customElements"));
+    EXPECT_TRUE(contains(obfuscated, "BigInt"));
+    EXPECT_TRUE(contains(obfuscated, "Notification"));
+    EXPECT_TRUE(contains(obfuscated, "WeakRef"));
+    EXPECT_TRUE(contains(obfuscated, "fetch"));
+    EXPECT_TRUE(contains(obfuscated, "setTimeout"));
+    
+    // User variables should be mangled (check for variable declarations, not just the name)
+    EXPECT_FALSE(contains(obfuscated, "const controller=") || contains(obfuscated, "const controller ="));
+    EXPECT_FALSE(contains(obfuscated, "const stream=") || contains(obfuscated, "const stream ="));
+    EXPECT_FALSE(contains(obfuscated, "const item=") || contains(obfuscated, "const item ="));
+    EXPECT_FALSE(contains(obfuscated, "const bigNum=") || contains(obfuscated, "const bigNum ="));
+}

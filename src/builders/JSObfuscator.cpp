@@ -32,7 +32,57 @@ static const std::unordered_set<std::string> RESERVED_KEYWORDS = {
     "Function", "Date", "Math", "JSON", "Promise", "Set", "Map", "WeakMap", "WeakSet",
     "Symbol", "Proxy", "Reflect", "parseInt", "parseFloat", "isNaN", "isFinite",
     "encodeURI", "decodeURI", "encodeURIComponent", "decodeURIComponent",
-    "setTimeout", "setInterval", "clearTimeout", "clearInterval", "alert", "confirm", "prompt"
+    "setTimeout", "setInterval", "clearTimeout", "clearInterval", "alert", "confirm", "prompt",
+    "RegExp",
+    // Modern Web APIs
+    "fetch", "Request", "Response", "Headers", "XMLHttpRequest", "FormData",
+    "URL", "URLSearchParams", "Blob", "File", "FileReader", "FileList",
+    "TextEncoder", "TextDecoder", "atob", "btoa",
+    // DOM & Events
+    "Event", "CustomEvent", "MouseEvent", "KeyboardEvent", "TouchEvent", "FocusEvent",
+    "Element", "HTMLElement", "Node", "NodeList", "HTMLCollection",
+    "DOMParser", "MutationObserver", "IntersectionObserver", "ResizeObserver",
+    // Media
+    "Image", "Audio", "Video", "MediaStream", "MediaRecorder",
+    // Storage & Database
+    "indexedDB", "IDBDatabase", "IDBTransaction", "Cache", "CacheStorage",
+    // Web Workers & Communication
+    "Worker", "SharedWorker", "ServiceWorker", "WebSocket", 
+    "MessageChannel", "MessagePort", "BroadcastChannel",
+    // Canvas & Graphics
+    "ImageData", "Path2D", "WebGLRenderingContext",
+    // Crypto & Security
+    "crypto", "SubtleCrypto",
+    // Internationalization
+    "Intl",
+    // Error types
+    "Error", "TypeError", "ReferenceError", "SyntaxError", "RangeError", "EvalError",
+    "URIError", "AggregateError",
+    // Special values & globals
+    "undefined", "NaN", "Infinity", "globalThis",
+    "performance", "requestAnimationFrame", "cancelAnimationFrame",
+    "addEventListener", "removeEventListener", "dispatchEvent",
+    "queueMicrotask", "structuredClone",
+    // Modern JS types
+    "BigInt", "WeakRef", "FinalizationRegistry",
+    // Async/Fetch Control
+    "AbortController", "AbortSignal",
+    // Streams API
+    "ReadableStream", "WritableStream", "TransformStream",
+    "ReadableStreamDefaultReader", "ReadableStreamDefaultController",
+    // Web Components & Modern Browser
+    "customElements", "ShadowRoot", "HTMLTemplateElement",
+    "Notification", "NotificationEvent",
+    "Clipboard", "ClipboardItem", "ClipboardEvent",
+    // Animation & Rendering
+    "Animation", "KeyframeEffect",
+    // Network & Connectivity
+    "NetworkInformation", "BatteryManager",
+    // Deprecated but still used
+    "escape", "unescape",
+    // Node.js globals (for SSR/bundlers)
+    "require", "exports", "module", "process", "Buffer", "global",
+    "__dirname", "__filename", "setImmediate", "clearImmediate"
 };
 
 // Pre-compiled regex patterns for performance (compiled once, reused throughout)
