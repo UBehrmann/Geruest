@@ -82,7 +82,27 @@ static const std::unordered_set<std::string> RESERVED_KEYWORDS = {
     "escape", "unescape",
     // Node.js globals (for SSR/bundlers)
     "require", "exports", "module", "process", "Buffer", "global",
-    "__dirname", "__filename", "setImmediate", "clearImmediate"
+    "__dirname", "__filename", "setImmediate", "clearImmediate",
+    // Well-known property names – reserved to protect shorthand properties
+    // (e.g. { method, headers }) and destructuring (e.g. const { status } = resp).
+    // Member access (response.status) is already preserved by the dot-prefix
+    // check in mangleNames(), but these names must also be reserved so they
+    // survive when used as bare identifiers.  Trade-off: user-defined variables
+    // that happen to share a name (e.g. var status = ...) will not be mangled.
+    //
+    // Fetch API options
+    "method", "headers", "body", "mode", "credentials", "cache", "redirect", 
+    "referrer", "referrerPolicy", "integrity", "keepalive", "signal",
+    // HTTP Response / Request properties
+    "status", "statusText", "ok", "redirected", "type", "url",
+    // Common object / Error properties
+    "length", "name", "value", "message", "code", "stack", "cause",
+    // Event properties
+    "target", "currentTarget", "bubbles", "cancelable", "composed",
+    "defaultPrevented", "eventPhase", "isTrusted", "timeStamp",
+    // DOM element properties
+    "id", "className", "classList", "style", "attributes", "children",
+    "tagName", "innerHTML", "outerHTML", "textContent", "nodeType", "nodeName"
 };
 
 // Pre-compiled regex patterns for performance (compiled once, reused throughout)
