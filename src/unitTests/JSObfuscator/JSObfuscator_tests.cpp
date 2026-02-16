@@ -491,6 +491,10 @@ const handler = async (event) => {
     // Check that async appears before function keyword
     size_t asyncPos = obfuscated.find("async");
     size_t functionPos = obfuscated.find("function");
+    ASSERT_NE(asyncPos, std::string::npos)
+        << "'async' keyword not found in obfuscated output";
+    ASSERT_NE(functionPos, std::string::npos)
+        << "'function' keyword not found in obfuscated output";
     EXPECT_LT(asyncPos, functionPos)
         << "async keyword should appear before function keyword";
 }
