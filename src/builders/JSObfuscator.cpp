@@ -47,7 +47,7 @@ static const std::unordered_set<std::string> RESERVED_KEYWORDS = {
     // Storage & Database
     "indexedDB", "IDBDatabase", "IDBTransaction", "Cache", "CacheStorage",
     // Web Workers & Communication
-    "Worker", "SharedWorker", "ServiceWorker", "WebSocket", 
+    "Worker", "SharedWorker", "ServiceWorker", "WebSocket",
     "MessageChannel", "MessagePort", "BroadcastChannel",
     // Canvas & Graphics
     "ImageData", "Path2D", "WebGLRenderingContext",
