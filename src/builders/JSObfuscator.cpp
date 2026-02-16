@@ -201,10 +201,10 @@ std::string JSObfuscator::removeWhitespace(const std::string& code) {
         } else if (inString || inSingleQuote || inBacktick) {
             // Inside string literals, preserve everything
             result += c;
-        } else if (std::isspace(c)) {
+        } else if (std::isspace(static_cast<unsigned char>(c))) {
             // Outside strings, collapse whitespace
             // Keep space between alphanumeric characters
-            if (!result.empty() && std::isalnum(prevChar) && i + 1 < code.size() && std::isalnum(code[i + 1])) {
+            if (!result.empty() && std::isalnum(static_cast<unsigned char>(prevChar)) && i + 1 < code.size() && std::isalnum(static_cast<unsigned char>(code[i + 1]))) {
                 result += ' ';
             }
         } else {
@@ -627,7 +627,7 @@ std::string JSObfuscator::encodeStringLiteral(const std::string& str) {
     
     for (char c : str) {
         // Keep alphanumeric, spaces, and filename/path-safe characters as-is
-        if (std::isalnum(c) || c == ' ' || c == '/' || c == '.' 
+        if (std::isalnum(static_cast<unsigned char>(c)) || c == ' ' || c == '/' || c == '.' 
             || c == '-' || c == '_' || c == '~') {
             encoded << c;
         } else {
