@@ -399,3 +399,62 @@ var total$ = $price * _count;
     // Syntax should still be valid
     EXPECT_TRUE(contains(obfuscated, "*"));
 }
+
+TEST(JSObfuscatorTest, TemplateLiteralVariableReplacement) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+function redirectToLanguagePage(language) {
+    const currentPath = window.location.pathname.split('/').slice(2).join('/');
+    window.location.href = `/${language}/${currentPath}`;
+}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    
+    // Function and variable names should be mangled
+    EXPECT_FALSE(contains(obfuscated, "redirectToLanguagePage"));
+    EXPECT_FALSE(contains(obfuscated, "language"));
+    EXPECT_FALSE(contains(obfuscated, "currentPath"));
+    
+    // Template literal should be preserved
+    EXPECT_TRUE(contains(obfuscated, "`"));
+    
+    // CRITICAL: Variables inside template literal expressions should also be mangled
+    // They should NOT appear in their original form inside ${}
+    std::regex languageInTemplate(R"(\$\{language\})");
+    std::regex currentPathInTemplate(R"(\$\{currentPath\})");
+    EXPECT_FALSE(std::regex_search(obfuscated, languageInTemplate))
+        << "Variable 'language' inside ${} should be renamed";
+    EXPECT_FALSE(std::regex_search(obfuscated, currentPathInTemplate))
+        << "Variable 'currentPath' inside ${} should be renamed";
+    
+    // Should still have ${} expressions with some identifiers
+    std::regex anyExpression(R"(\$\{[a-zA-Z_$][a-zA-Z0-9_$]*\})");
+    EXPECT_TRUE(std::regex_search(obfuscated, anyExpression))
+        << "Template literal should still contain ${...} expressions with mangled names";
+}
+
+TEST(JSObfuscatorTest, TemplateLiteralComplexExpressions) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+function formatMessage(user, count) {
+    const message = `User ${user.name} has ${count} items`;
+    return message;
+}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    
+    // Variable names should be mangled
+    EXPECT_FALSE(contains(obfuscated, "formatMessage"));
+    EXPECT_FALSE(contains(obfuscated, "count"));
+    EXPECT_FALSE(contains(obfuscated, "message"));
+    
+    // Member access (user.name) - "name" after dot should not be mangled
+    EXPECT_TRUE(contains(obfuscated, ".name"))
+        << "Property access in template literal should be preserved";
+    
+    // Variables inside ${} should be mangled
+    std::regex countInTemplate(R"(\$\{count\})");
+    EXPECT_FALSE(std::regex_search(obfuscated, countInTemplate))
+        << "Variable 'count' inside ${} should be renamed";
+}
+

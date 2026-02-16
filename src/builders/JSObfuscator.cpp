@@ -35,6 +35,10 @@ static const std::unordered_set<std::string> RESERVED_KEYWORDS = {
     "setTimeout", "setInterval", "clearTimeout", "clearInterval", "alert", "confirm", "prompt"
 };
 
+// Pre-compiled regex patterns for performance (compiled once, reused throughout)
+static const std::regex IDENTIFIER_REGEX(R"(\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b)");
+static const std::regex IDENTIFIER_WITH_DOT_REGEX(R"(([.]?)\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b)");
+
 JSObfuscator::JSObfuscator(unsigned int level)
     : _level(level) {
     // Seed random number generator with current time
@@ -201,6 +205,89 @@ std::string JSObfuscator::escapeForRegex(const std::string& str) {
     return escaped;
 }
 
+std::string JSObfuscator::processTemplateLiteral(const std::string& templateLiteral,
+                                                 const std::unordered_map<std::string, std::string>& nameMap) {
+    // Template literals are in the form: `text ${expr} more text ${expr2}`
+    // We need to find ${...} expressions and replace variable names inside them
+    
+    // Pre-allocate with extra space for potentially longer mangled names
+    // Estimate: original size + 30% for mangled names which may be longer/shorter
+    std::string result;
+    result.reserve(static_cast<size_t>(templateLiteral.size() * 1.3));
+    
+    size_t pos = 0;
+    while (pos < templateLiteral.size()) {
+        // Look for ${
+        size_t exprStart = templateLiteral.find("${", pos);
+        
+        if (exprStart == std::string::npos) {
+            // No more expressions, copy rest of the string
+            result.append(templateLiteral, pos, std::string::npos);
+            break;
+        }
+        
+        // Copy everything before the expression (including "${")
+        result.append(templateLiteral, pos, exprStart - pos + 2);
+        
+        // Find the matching }
+        size_t exprEnd = templateLiteral.find("}", exprStart + 2);
+        if (exprEnd == std::string::npos) {
+            // Malformed template literal, copy rest as-is
+            result.append(templateLiteral, exprStart + 2, std::string::npos);
+            break;
+        }
+        
+        // Extract the expression content
+        size_t exprContentStart = exprStart + 2;
+        size_t exprContentLen = exprEnd - exprContentStart;
+        
+        // Use string_view-like approach to avoid copying when possible
+        const char* exprStart_ptr = templateLiteral.data() + exprContentStart;
+        std::string expression(exprStart_ptr, exprContentLen);
+        
+        // Replace identifiers in the expression using the name map
+        // Use the pre-compiled static regex for performance
+        std::sregex_iterator it(expression.begin(), expression.end(), IDENTIFIER_REGEX);
+        std::sregex_iterator endIt;
+        size_t lastExprPos = 0;
+        
+        while (it != endIt) {
+            const std::smatch& m = *it;
+            size_t matchStart = static_cast<size_t>(m.position());
+            size_t matchLen = static_cast<size_t>(m.length());
+            std::string identifier = m[1].str();
+            
+            // Append text before the match
+            result.append(expression, lastExprPos, matchStart - lastExprPos);
+            
+            // Check if preceded by '.' (member access)
+            bool isMemberAccess = (matchStart > 0 && expression[matchStart - 1] == '.');
+            
+            if (!isMemberAccess) {
+                auto mapIt = nameMap.find(identifier);
+                if (mapIt != nameMap.end()) {
+                    result.append(mapIt->second);
+                } else {
+                    result.append(identifier);
+                }
+            } else {
+                result.append(identifier);
+            }
+            
+            lastExprPos = matchStart + matchLen;
+            ++it;
+        }
+        
+        // Append remaining text after last match in expression and closing }
+        result.append(expression, lastExprPos, std::string::npos);
+        result.push_back('}');
+        
+        pos = exprEnd + 1;
+    }
+    
+    return result;
+}
+
 std::string JSObfuscator::mangleNames(const std::string& code) {
     // Tokenize the source so we can skip strings and comments
     std::vector<Token> tokens = tokenize(code);
@@ -208,14 +295,13 @@ std::string JSObfuscator::mangleNames(const std::string& code) {
     // 1) Collect identifiers that appear in CODE tokens,
     //    skipping those preceded by '.' (member access).
     std::unordered_map<std::string, std::string> nameMap;
-    std::regex identifierRegex(R"(([.]?)\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b)");
 
     for (const auto& tok : tokens) {
         if (tok.type != TokenType::CODE) continue;
 
         auto searchStart = tok.text.cbegin();
         std::smatch match;
-        while (std::regex_search(searchStart, tok.text.cend(), match, identifierRegex)) {
+        while (std::regex_search(searchStart, tok.text.cend(), match, IDENTIFIER_WITH_DOT_REGEX)) {
             std::string dotPrefix = match[1].str();
             std::string identifier = match[2].str();
 
@@ -236,8 +322,17 @@ std::string JSObfuscator::mangleNames(const std::string& code) {
 
     for (const auto& tok : tokens) {
         if (tok.type != TokenType::CODE) {
-            // Preserve strings, comments verbatim
-            result += tok.text;
+            // Check if it's a template literal (starts and ends with backtick)
+            if (tok.type == TokenType::STRING_LITERAL && 
+                tok.text.size() >= 2 && 
+                tok.text[0] == '`' && 
+                tok.text[tok.text.size() - 1] == '`') {
+                // Process template literal to replace variables inside ${...}
+                result += processTemplateLiteral(tok.text, nameMap);
+            } else {
+                // Preserve strings, comments verbatim
+                result += tok.text;
+            }
             continue;
         }
 
@@ -247,8 +342,7 @@ std::string JSObfuscator::mangleNames(const std::string& code) {
         std::string replaced;
         replaced.reserve(segment.size());
 
-        std::regex idRegex(R"(\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b)");
-        std::sregex_iterator it(segment.begin(), segment.end(), idRegex);
+        std::sregex_iterator it(segment.begin(), segment.end(), IDENTIFIER_REGEX);
         std::sregex_iterator endIt;
         size_t lastPos = 0;
 
@@ -396,14 +490,13 @@ std::string JSObfuscator::generateRandomName(int length) {
 std::vector<std::string> JSObfuscator::extractIdentifiers(const std::string& code) {
     std::vector<std::string> identifiers;
     std::vector<Token> tokens = tokenize(code);
-    std::regex identifierRegex(R"(([.])?)" R"(\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b)");
 
     for (const auto& tok : tokens) {
         if (tok.type != TokenType::CODE) continue;
 
         auto searchStart = tok.text.cbegin();
         std::smatch match;
-        while (std::regex_search(searchStart, tok.text.cend(), match, identifierRegex)) {
+        while (std::regex_search(searchStart, tok.text.cend(), match, IDENTIFIER_WITH_DOT_REGEX)) {
             std::string dotPrefix = match[1].str();
             std::string identifier = match[2].str();
             if (dotPrefix.empty() && !isReservedKeyword(identifier)) {
