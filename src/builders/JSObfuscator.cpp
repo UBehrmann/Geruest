@@ -113,8 +113,8 @@ static const std::regex IDENTIFIER_WITH_DOT_REGEX(R"(([.]?)\b([a-zA-Z_$][a-zA-Z0
 // object-literal key.  An object-literal key is preceded by '{' or ',' (the
 // start of an object literal or the separator between properties) and followed
 // by ':'.  Whitespace between those characters and the identifier is skipped.
-// Ternary expressions (cond ? val : …) are excluded because '?' – not '{'/','.
-// – precedes the value before ':'.
+// Ternary expressions (cond ? val : …) are excluded because '?' – not '{' or ',' –
+// precedes the value before ':'.
 static bool isObjectLiteralKey(const std::string& segment, size_t identStart, size_t identEnd) {
     // 1) The identifier must be followed by ':' (skipping whitespace)
     bool followedByColon = false;
