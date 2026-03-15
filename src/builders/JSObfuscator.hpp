@@ -71,6 +71,7 @@ private:
     enum class TokenType {
         CODE,           // Normal code (identifiers, operators, etc.)
         STRING_LITERAL, // "...", '...', `...`
+        REGEX_LITERAL,  // /.../flags
         LINE_COMMENT,   // // ...
         BLOCK_COMMENT   // /* ... */
     };

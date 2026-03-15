@@ -13,6 +13,7 @@
 #include <regex>
 #include <chrono>
 #include <iomanip>
+#include <cctype>
 
 namespace geruest {
 
@@ -134,6 +135,63 @@ static bool isObjectLiteralKey(const std::string& segment, size_t identStart, si
         if (c == ' ' || c == '\t' || c == '\n' || c == '\r') continue;
         return (c == '{' || c == ',');
     }
+    return false;
+}
+
+static bool isRegexAllowedAfterChar(char c) {
+    switch (c) {
+        case '(': case '{': case '[':
+        case ',': case ';': case ':': case '?':
+        case '=': case '!': case '&': case '|':
+        case '+': case '-': case '*': case '%': case '^': case '~':
+        case '<': case '>':
+            return true;
+        default:
+            return false;
+    }
+}
+
+static bool isRegexPrefixKeyword(const std::string& word) {
+    // After these keywords, a regex literal is valid in expression position.
+    static const std::unordered_set<std::string> regexKeywords = {
+        "return", "throw", "case", "delete", "void", "typeof", "instanceof", "in", "of"
+    };
+    return regexKeywords.find(word) != regexKeywords.end();
+}
+
+static bool canStartRegexLiteral(const std::string& code, size_t slashPos) {
+    // Scan backward for previous significant non-whitespace character.
+    int j = static_cast<int>(slashPos) - 1;
+    while (j >= 0 && std::isspace(static_cast<unsigned char>(code[static_cast<size_t>(j)]))) {
+        --j;
+    }
+
+    if (j < 0) {
+        return true;
+    }
+
+    const char prev = code[static_cast<size_t>(j)];
+    if (isRegexAllowedAfterChar(prev)) {
+        return true;
+    }
+
+    // Keyword-based contexts, e.g. "return /abc/".
+    if (std::isalpha(static_cast<unsigned char>(prev)) || prev == '_' || prev == '$') {
+        int end = j;
+        int start = j;
+        while (start >= 0) {
+            char c = code[static_cast<size_t>(start)];
+            if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '$')) {
+                break;
+            }
+            --start;
+        }
+        std::string word = code.substr(static_cast<size_t>(start + 1), static_cast<size_t>(end - start));
+        if (isRegexPrefixKeyword(word)) {
+            return true;
+        }
+    }
+
     return false;
 }
 
@@ -281,6 +339,50 @@ std::vector<JSObfuscator::Token> JSObfuscator::tokenize(const std::string& code)
                 str += code[i++];
             }
             tokens.push_back({TokenType::STRING_LITERAL, str});
+            continue;
+        }
+
+        // --- regex literal (/.../flags) ---
+        // We only treat '/' as regex start in expression contexts.
+        if (c == '/' && canStartRegexLiteral(code, i)) {
+            flushCode();
+            std::string regexLiteral;
+            regexLiteral += code[i++]; // opening '/'
+
+            bool inCharClass = false;
+            while (i < code.size()) {
+                char rc = code[i];
+
+                if (rc == '\\') {
+                    regexLiteral += code[i++];
+                    if (i < code.size()) regexLiteral += code[i++];
+                    continue;
+                }
+
+                if (rc == '[') {
+                    inCharClass = true;
+                    regexLiteral += code[i++];
+                    continue;
+                }
+
+                if (rc == ']' && inCharClass) {
+                    inCharClass = false;
+                    regexLiteral += code[i++];
+                    continue;
+                }
+
+                if (rc == '/' && !inCharClass) {
+                    regexLiteral += code[i++]; // closing '/'
+                    while (i < code.size() && std::isalpha(static_cast<unsigned char>(code[i]))) {
+                        regexLiteral += code[i++];
+                    }
+                    break;
+                }
+
+                regexLiteral += code[i++];
+            }
+
+            tokens.push_back({TokenType::REGEX_LITERAL, regexLiteral});
             continue;
         }
 

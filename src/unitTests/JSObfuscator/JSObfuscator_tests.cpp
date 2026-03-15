@@ -491,6 +491,32 @@ function formatGreeting(user, count) {
         << "Variable 'count' inside ${} should be renamed";
 }
 
+TEST(JSObfuscatorTest, PreservesRegexLiteralsAndManglesOutside) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+function initializePlatformClasses() {
+    const ua = navigator.userAgent || '';
+    if (/iPhone|iPod|IPod|iphone/i.test(ua)) {
+        document.documentElement.classList.add('ios-iphone');
+    }
+}
+)";
+
+    std::string obfuscated = obfuscator.obfuscate(original);
+
+    // Regression: regex literal alternatives must stay untouched.
+    EXPECT_TRUE(contains(obfuscated, "/iPhone|iPod|IPod|iphone/i"))
+        << "Regex literal content should not be modified by identifier mangling";
+
+    // The local function/variable names should still be mangled.
+    EXPECT_FALSE(contains(obfuscated, "initializePlatformClasses"));
+    EXPECT_FALSE(contains(obfuscated, "ua="));
+
+    // Member access and API calls should remain intact.
+    EXPECT_TRUE(contains(obfuscated, ".test("));
+    EXPECT_TRUE(contains(obfuscated, ".classList"));
+}
+
 TEST(JSObfuscatorTest, AsyncAwaitKeywordsPreserved) {
     JSObfuscator obfuscator(1);
     std::string original = R"(
