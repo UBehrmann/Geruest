@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <climits>
 #include <filesystem>
+#include <fstream>
 
 #include "builders/AssetMerger.hpp"
 #include "builders/CSSBuilder.hpp"
@@ -214,12 +215,7 @@ void Handler::handleRequest(HTTPRequest* request) {
     }
 
     sendToLoggerPages("Not found: " + request->getPathString());
-
-    std::string header = buildNotFoundHeader();
-
-    if (!sendSocket(header.c_str(), header.size())) {
-        sendToLoggerError("Failed to send 404 response");
-    }
+    sendNotFoundResponse(request);
 }
 
 // TODO : Redo with HTTPResponse
@@ -238,6 +234,54 @@ void Handler::sendResponse(const std::string& status, const std::string& content
     if (!sendSocket((char*)response.c_str(), response.size())) {
         sendToLoggerError("Failed to send response: " + status);
     }
+}
+
+void Handler::sendNotFoundResponse(HTTPRequest* httpRequest) const {
+    if (serverData.hasNotFoundPage() && httpRequest != nullptr) {
+        std::string notFoundPath = serverData.getNotFoundPage();
+        if (!notFoundPath.empty() && notFoundPath[0] != '/') {
+            notFoundPath = "/" + notFoundPath;
+        }
+
+        const std::string extension = getExtension(notFoundPath);
+        const std::string contentType = getContentType(extension);
+        std::string resolvedNotFoundPath = notFoundPath;
+
+        // Support both framework-relative paths (e.g. /404.html) and absolute filesystem paths.
+        if (!(std::filesystem::path(resolvedNotFoundPath).is_absolute() && std::filesystem::exists(resolvedNotFoundPath))) {
+            resolvedNotFoundPath = buildPath(notFoundPath, extension, httpRequest);
+        }
+
+        if (!resolvedNotFoundPath.empty()) {
+            if (contentType == "text/html" || contentType == "text/javascript" || contentType == "text/css") {
+                std::unique_ptr<ContentBuilder> contentBuilder;
+
+                if (contentType == "text/html") {
+                    contentBuilder = std::make_unique<HtmlBuilder>(resolvedNotFoundPath, serverData);
+                } else if (contentType == "text/javascript") {
+                    contentBuilder = std::make_unique<JSBuilder>(resolvedNotFoundPath, serverData);
+                } else if (contentType == "text/css") {
+                    contentBuilder = std::make_unique<CSSBuilder>(resolvedNotFoundPath, serverData);
+                }
+
+                if (contentBuilder && contentBuilder->size() > 0) {
+                    sendResponse("404 Not Found", contentType, contentBuilder->file());
+                    return;
+                }
+            } else {
+                std::ifstream file(resolvedNotFoundPath, std::ios::binary);
+                if (file.is_open()) {
+                    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+                    sendResponse("404 Not Found", contentType, content);
+                    return;
+                }
+            }
+        }
+
+        sendToLoggerError("Configured 404 page could not be loaded: " + serverData.getNotFoundPage());
+    }
+
+    sendResponse("404 Not Found", "text/html", "<html><body><h1>404 Not Found</h1></body></html>");
 }
 
 /**
@@ -280,14 +324,13 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
 
         // Check if builder was created
         if (!contentBuilder) {
-            // sendToLogger("File not found: " + contentPath);
-            sendResponse("404 Not Found", "text/html", "<html><body><h1>404 Not Found</h1></body></html>");
+            sendNotFoundResponse(httpRequest);
             return;
         }
 
         // Check if content is empty
         if (contentBuilder->size() == 0) {
-            sendResponse("404 Not Found", "text/html", "<html><body><h1>404 Not Found</h1></body></html>");
+            sendNotFoundResponse(httpRequest);
             return;
         }
 
@@ -392,7 +435,7 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
             // If still not open, send 404
             if (!file.is_open()) {
                 sendToLogger("File not found: " + contentPath);
-                sendResponse("404 Not Found", "text/html", "<html><body><h1>404 Not Found</h1></body></html>");
+                sendNotFoundResponse(httpRequest);
                 return;
             }
         }
@@ -430,7 +473,7 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
     }
 }
 
-std::string Handler::getExtension(const std::string& path) {
+std::string Handler::getExtension(const std::string& path) const {
     // Check if path is for a file or a page
     if (path.find('.') == std::string::npos) {
         return "html";
@@ -449,7 +492,7 @@ bool startsWithLangPrefix(const std::string& str) {
     return str.size() >= 4 && str[0] == '/' && std::isalpha(str[1]) && std::isalpha(str[2]) && str[3] == '/';
 }
 
-std::string Handler::buildPath(std::string& pathReceived, const std::string& Extension, HTTPRequest* httpRequest) {
+std::string Handler::buildPath(std::string& pathReceived, const std::string& Extension, HTTPRequest* httpRequest) const {
     std::map<std::string, std::string> contentRoot = {
         {"html", "/html"},         {"htm", "/html"},           {"css", "/assets/css"},    {"js", "/assets/js"},
         {"jpg", "/assets/images"}, {"jpeg", "/assets/images"}, {"png", "/assets/images"}, {"gif", "/assets/images"},

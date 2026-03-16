@@ -90,13 +90,15 @@ private:
 	void sendResponse(const std::string &status, const std::string &contentType,
 							const std::string &content) const;
 
+	void sendNotFoundResponse(HTTPRequest* httpRequest) const;
 
-	std::string getExtension(const std::string &path);
+
+	std::string getExtension(const std::string &path) const;
 
 	void removeSearchParameters();
 
 	std::string buildPath(std::string &pathReceived, const std::string &Extension,
-	HTTPRequest* httpRequest) ;
+	HTTPRequest* httpRequest) const;
 
 	static std::string getContentType(const std::string &extension);
 

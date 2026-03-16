@@ -73,6 +73,11 @@ void Geruest::addRoute(const std::string& path, RouteHandler routeHandler) {
 
 void Geruest::addRoot(const std::string& root) { serverData.setRoot(root); }
 
+void Geruest::set404(const std::string& path) {
+    serverData.setNotFoundPage(path);
+    sendToLogger("Custom 404 page set to: " + path);
+}
+
 void Geruest::setAvailableLanguages(const std::vector<std::string>& languages) {
     serverData.setAvailableLanguages(languages);
     if (!languages.empty()) {

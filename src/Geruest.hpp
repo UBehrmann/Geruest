@@ -66,6 +66,12 @@ class Geruest {
     void addRoot(const std::string& root);
 
     /**
+     * @brief Set a custom page path for 404 responses (e.g. "/404.html").
+     * @note Should be called before init() or start()
+     */
+    void set404(const std::string& path);
+
+    /**
      * @brief Sets the available languages for the server.
      * @param languages Vector of language codes (e.g., {"en", "de", "fr"})
      * @note The first language will be used as the default. If empty, no language routing.
