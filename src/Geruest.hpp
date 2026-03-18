@@ -119,6 +119,14 @@ class Geruest {
     void setMergeAssets(bool enabled);
 
     /**
+     * @brief Enable automatic CSS/JS asset merging (alias for setMergeAssets(true))
+     * 
+     * Convenience method that follows the same pattern as enableDevMode().
+     * @see setMergeAssets for detailed behavior description
+     */
+    void enableMergeAssets();
+
+    /**
      * @brief Enable or disable automatic PNG/JPG to WebP conversion.
      * 
      * When enabled, the HTMLBuilder scans each HTML template for:
@@ -296,7 +304,15 @@ class Geruest {
      * @param enabled true to enable authentication, false to disable
      * @note When disabled, all pages are accessible without credentials
      */
-    void setBasicAuthEnabled(bool enabled);
+    void setBasicAuth(bool enabled);
+
+    /**
+     * @brief Enable Basic Authentication (alias for setBasicAuth(true))
+     * 
+     * Convenience method that follows the same pattern as enableDevMode().
+     * @see setBasicAuth for detailed behavior description
+     */
+    void enableBasicAuth();
     
     /**
      * @brief Add a user with credentials for Basic Authentication
@@ -456,7 +472,7 @@ class Geruest {
      * @param token Bearer token required in the Authorization header.
      * @note Should be called before start().
      */
-    void activateStatus(const std::string& token);
+    void enableStatus(const std::string& token);
 
    private:
 #ifdef _WIN32

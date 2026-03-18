@@ -110,6 +110,8 @@ void Geruest::setMergeAssets(bool enabled) {
     sendToLogger(std::string("Asset merging ") + (enabled ? "enabled" : "disabled"));
 }
 
+void Geruest::enableMergeAssets() { setMergeAssets(true); }
+
 void Geruest::setWebPConversion(bool enabled) {
 #if GERUEST_HAS_WEBP
     serverData.setWebPConversion(enabled);
@@ -207,10 +209,12 @@ void Geruest::setMaxQueueSize(size_t size) {
 
 // ========== Basic Authentication Implementation ==========
 
-void Geruest::setBasicAuthEnabled(bool enabled) {
+void Geruest::setBasicAuth(bool enabled) {
     serverData.getBasicAuth().setEnabled(enabled);
     sendToLogger(std::string("Basic Authentication ") + (enabled ? "enabled" : "disabled"));
 }
+
+void Geruest::enableBasicAuth() { setBasicAuth(true); }
 
 void Geruest::addBasicAuthUser(const std::string& username, const std::string& password) {
     serverData.getBasicAuth().addUser(username, password);
@@ -823,7 +827,7 @@ void Geruest::sendToLoggerError(const std::string& message) const {
     }
 }
 
-void Geruest::activateStatus(const std::string& token) {
+void Geruest::enableStatus(const std::string& token) {
     _statusToken = token;
     _statusActive = true;
 
