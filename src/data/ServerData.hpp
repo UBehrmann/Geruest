@@ -14,6 +14,7 @@
 #include <atomic>
 #include <functional>
 #include <optional>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -46,8 +47,15 @@ using RouteHandler = std::function<HTTPResponse(const HTTPRequest&)>;
 // class with the server data
 class ServerData {
    private:
+    struct RedirectRule {
+        std::string target;
+        int status = 301;
+    };
+
     std::unordered_map<std::string, RouteHandler> _routes;
     std::unordered_map<std::string, RouteHandler> _wildcardRoutes;
+    std::unordered_map<std::string, RedirectRule> _redirects;
+    std::unordered_map<std::string, RedirectRule> _wildcardRedirects;
     std::string _root;
     bool _removeComments = true;    // Remove comments from built files
     bool _mergeAssets = false;      // Automatic CSS/JS merging per page
@@ -122,6 +130,114 @@ class ServerData {
         return false;
     }
 
+    std::optional<std::string> extractWildcardCapture(const std::string& pattern, const std::string& path) const {
+        const size_t firstStar = pattern.find('*');
+        if (firstStar == std::string::npos) {
+            if (pattern == path) {
+                return std::string();
+            }
+            return std::nullopt;
+        }
+
+        if (pattern.find('*', firstStar + 1) != std::string::npos) {
+            return std::nullopt;
+        }
+
+        const std::string prefix = pattern.substr(0, firstStar);
+        const std::string suffix = pattern.substr(firstStar + 1);
+
+        if (path.size() < prefix.size() + suffix.size()) {
+            return std::nullopt;
+        }
+
+        if (path.compare(0, prefix.size(), prefix) != 0) {
+            return std::nullopt;
+        }
+
+        if (!suffix.empty() && path.compare(path.size() - suffix.size(), suffix.size(), suffix) != 0) {
+            return std::nullopt;
+        }
+
+        return path.substr(prefix.size(), path.size() - prefix.size() - suffix.size());
+    }
+
+    std::string applyWildcardCapture(const std::string& target, const std::string& capture) const {
+        if (target.find('*') == std::string::npos) {
+            return target;
+        }
+
+        std::string resolved;
+        resolved.reserve(target.size() + capture.size());
+        for (char c : target) {
+            if (c == '*') {
+                resolved += capture;
+            } else {
+                resolved += c;
+            }
+        }
+        return resolved;
+    }
+
+    static bool isLikelyExternalTarget(const std::string& target) {
+        return target.rfind("http://", 0) == 0
+            || target.rfind("https://", 0) == 0
+            || target.rfind("//", 0) == 0;
+    }
+
+    std::optional<std::pair<std::string, int>> findMatchingWildcardRedirect(const std::string& path) const {
+        size_t bestPatternLength = 0;
+        std::optional<std::pair<std::string, int>> bestMatch;
+
+        for (const auto& redirect : _wildcardRedirects) {
+            const std::string& pattern = redirect.first;
+            if (!matchesWildcardPattern(pattern, path)) {
+                continue;
+            }
+
+            std::optional<std::string> capture = extractWildcardCapture(pattern, path);
+            if (!capture.has_value()) {
+                continue;
+            }
+
+            const std::string resolvedTarget = applyWildcardCapture(redirect.second.target, *capture);
+            if (!bestMatch.has_value() || pattern.size() > bestPatternLength) {
+                bestPatternLength = pattern.size();
+                bestMatch = std::make_pair(resolvedTarget, redirect.second.status);
+            }
+        }
+
+        return bestMatch;
+    }
+
+    bool hasRedirectLoop(const std::string& startPath) const {
+        std::set<std::string> visited;
+        std::string current = startPath;
+
+        constexpr size_t maxRedirectHops = 32;
+        for (size_t hop = 0; hop < maxRedirectHops; ++hop) {
+            if (!visited.insert(current).second) {
+                return true;
+            }
+
+            auto next = findMatchingRedirect(current);
+            if (!next.has_value()) {
+                return false;
+            }
+
+            if (isLikelyExternalTarget(next->first)) {
+                return false;
+            }
+
+            if (next->first.empty() || next->first[0] != '/') {
+                return false;
+            }
+
+            current = next->first;
+        }
+
+        return true;
+    }
+
    public:
     ServerData() = default;
 
@@ -129,6 +245,8 @@ class ServerData {
     ServerData(const ServerData& other)
         : _routes(other._routes),
           _wildcardRoutes(other._wildcardRoutes),
+                    _redirects(other._redirects),
+                    _wildcardRedirects(other._wildcardRedirects),
           _root(other._root),
           _removeComments(other._removeComments),
           _mergeAssets(other._mergeAssets),
@@ -146,6 +264,8 @@ class ServerData {
         if (this != &other) {
             _routes = other._routes;
             _wildcardRoutes = other._wildcardRoutes;
+            _redirects = other._redirects;
+            _wildcardRedirects = other._wildcardRedirects;
             _root = other._root;
             _removeComments = other._removeComments;
             _mergeAssets = other._mergeAssets;
@@ -187,6 +307,65 @@ class ServerData {
         } else {
             _routes[path] = std::move(routeHandler);
         }
+    }
+
+    bool addRedirect(const std::string& from, const std::string& to, int status = 301) {
+        if (from.empty()) {
+            return false;
+        }
+
+        if (to.empty()) {
+            return false;
+        }
+
+        if (status != 301 && status != 302) {
+            status = 301;
+        }
+
+        RedirectRule rule{to, status};
+        if (from.find('*') != std::string::npos) {
+            _wildcardRedirects[from] = std::move(rule);
+        } else {
+            _redirects[from] = std::move(rule);
+        }
+
+        std::string loopProbePath = from;
+        const size_t wildcardPos = loopProbePath.find('*');
+        if (wildcardPos != std::string::npos) {
+            loopProbePath.replace(wildcardPos, 1, "loop-check");
+        }
+
+        if (hasRedirectLoop(loopProbePath)) {
+            if (from.find('*') != std::string::npos) {
+                _wildcardRedirects.erase(from);
+            } else {
+                _redirects.erase(from);
+            }
+            return false;
+        }
+
+        return true;
+    }
+
+    size_t addRedirects(const std::unordered_map<std::string, std::string>& redirects, int status = 301) {
+        size_t addedCount = 0;
+        for (const auto& entry : redirects) {
+            if (addRedirect(entry.first, entry.second, status)) {
+                ++addedCount;
+            }
+        }
+        return addedCount;
+    }
+
+    std::optional<std::pair<std::string, int>> findMatchingRedirect(const std::string& path) const {
+        // Priority rule 1: exact redirect first
+        auto exactMatch = _redirects.find(path);
+        if (exactMatch != _redirects.end()) {
+            return std::make_pair(exactMatch->second.target, exactMatch->second.status);
+        }
+
+        // Priority rule 2: wildcard redirect after exact redirect
+        return findMatchingWildcardRedirect(path);
     }
 
     /**

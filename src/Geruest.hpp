@@ -63,6 +63,21 @@ class Geruest {
 
     void addRoute(const std::string& path, RouteHandler handler);
 
+    /**
+     * @brief Add a redirect from one route to another route or URL.
+     * @param from Source route pattern (supports '*' wildcard)
+     * @param to Target route or external URL. If it contains '*', the wildcard capture is forwarded.
+     * @param status Redirect status code (301 or 302, default: 301)
+     */
+    void addRedirect(const std::string& from, const std::string& to, int status = 301);
+
+    /**
+     * @brief Add multiple redirects with a shared status code.
+     * @param redirects Mapping of source route pattern to target route/URL
+     * @param status Redirect status code (301 or 302, default: 301)
+     */
+    void addRedirects(const std::unordered_map<std::string, std::string>& redirects, int status = 301);
+
     void addRoot(const std::string& root);
 
     /**

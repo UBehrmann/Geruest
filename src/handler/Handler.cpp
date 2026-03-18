@@ -187,7 +187,25 @@ void Handler::handleRequest(HTTPRequest* request) {
         return;
     }
 
-    // Try to find a matching route (exact or wildcard)
+    // Priority rule 1+2: redirects first (exact redirect, then wildcard redirect)
+    auto redirectMatch = serverData.findMatchingRedirect(request->getPathString());
+    if (redirectMatch.has_value()) {
+        const std::string& target = redirectMatch->first;
+        const int statusCode = redirectMatch->second;
+        const std::string statusText = (statusCode == 302) ? "302 Found" : "301 Moved Permanently";
+
+        HTTPResponse redirectResponse(statusText);
+        redirectResponse.setHeader("Location", target);
+        redirectResponse.setBody("");
+
+        std::string responseStr = redirectResponse.toString();
+        if (!sendSocket(responseStr.c_str(), responseStr.size())) {
+            sendToLoggerError("Failed to send redirect response for: " + request->getPathString());
+        }
+        return;
+    }
+
+    // Priority rule 3+4: normal routes (exact route, then wildcard route)
     auto routeHandler = serverData.findMatchingRoute(request->getPathString());
     if (routeHandler) {
         // Call the route handler  

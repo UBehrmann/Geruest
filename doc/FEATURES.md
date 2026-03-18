@@ -195,10 +195,18 @@ server->start();
 
 **Custom Error Pages:**
 ```cpp
-server.set404Handler([](const HTTPRequest& req) {
-    HTTPResponse res("404 Not Found");
-    res.setBody("<h1>Page Not Found</h1>");
-    return res;
+server.set404("/404.html");
+```
+
+**Redirects:**
+```cpp
+server.addRedirect("/old-home", "/en/home");          // 301
+server.addRedirect("/temp-news", "/en/news", 302);    // 302
+server.addRedirect("/go/*", "/en/*");                 // wildcard forwarding
+
+server.addRedirects({
+    {"/gh", "https://github.com/UBehrmann/Geruest"},
+    {"/docs", "/en/documentation"}
 });
 ```
 

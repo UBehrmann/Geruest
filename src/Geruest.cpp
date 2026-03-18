@@ -71,6 +71,20 @@ void Geruest::addRoute(const std::string& path, RouteHandler routeHandler) {
     serverData.addRoute(path, std::move(routeHandler));
 }
 
+void Geruest::addRedirect(const std::string& from, const std::string& to, int status) {
+    if (serverData.addRedirect(from, to, status)) {
+        sendToLogger("Added redirect: " + from + " -> " + to + " (" + std::to_string(status) + ")");
+    } else {
+        sendToLoggerError("Skipped redirect (invalid or loop detected): " + from + " -> " + to);
+    }
+}
+
+void Geruest::addRedirects(const std::unordered_map<std::string, std::string>& redirects, int status) {
+    const size_t addedCount = serverData.addRedirects(redirects, status);
+    sendToLogger("Added redirect map entries: " + std::to_string(addedCount) + "/" + std::to_string(redirects.size())
+                 + " (" + std::to_string(status) + ")");
+}
+
 void Geruest::addRoot(const std::string& root) { serverData.setRoot(root); }
 
 void Geruest::set404(const std::string& path) {

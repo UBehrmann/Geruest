@@ -13,6 +13,7 @@ Welcome to the Geruest documentation! This guide will help you get started with 
 ### Core Features
 
 - [**Features Overview**](FEATURES.md) - Complete feature documentation with examples
+- [**Redirects and 404**](REDIRECTS_AND_404.md) - Redirect maps, wildcard redirects, and custom 404 pages
 - [**Data Classes**](DATA_CLASSES.md) - HTTPRequest, HTTPResponse, JSONParser API reference
 
 ### Template System
@@ -66,7 +67,9 @@ int main() {
 | Feature | Description | Documentation |
 |---------|-------------|---------------|
 | **Routing** | Exact and wildcard route patterns | [Features](FEATURES.md#routing-system) |
+| **Redirects** | Exact/wildcard redirects and redirect maps | [Redirects and 404](REDIRECTS_AND_404.md) |
 | **Static Files** | Automatic file serving | [Features](FEATURES.md#static-file-serving) |
+| **404 Page** | Custom file-backed not-found handling | [Redirects and 404](REDIRECTS_AND_404.md#custom-404-page) |
 | **Thread Pool** | Configurable concurrent workers | [Features](FEATURES.md#thread-pool) |
 | **Languages** | Multi-language URL routing | [Translations](TRANSLATIONS.md) |
 | **Asset Merging** | CSS/JS bundling per page | [Asset Merging](ASSET_MERGING.md) |
