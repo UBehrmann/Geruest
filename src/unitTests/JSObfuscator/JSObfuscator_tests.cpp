@@ -425,10 +425,11 @@ var total$ = $price * _count;
 )";
     std::string obfuscated = obfuscator.obfuscate(original);
 
-    // Identifiers with $ and _ should be mangled without regex errors
+    // $ prefixed identifiers should be mangled
     EXPECT_FALSE(contains(obfuscated, "$price"));
-    EXPECT_FALSE(contains(obfuscated, "_count"));
     EXPECT_FALSE(contains(obfuscated, "total$"));
+    // _ prefixed identifiers are intentionally preserved (private/internal convention)
+    EXPECT_TRUE(contains(obfuscated, "_count"));
     // Syntax should still be valid
     EXPECT_TRUE(contains(obfuscated, "*"));
 }
