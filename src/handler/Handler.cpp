@@ -210,12 +210,7 @@ void Handler::handleRequest(HTTPRequest* request) {
         std::string contentPath = buildPath(path, extension, request);
 
         sendFile(content_type, contentPath, request);
-
-        return;
     }
-
-    sendToLoggerPages("Not found: " + request->getPathString());
-    sendNotFoundResponse(request);
 }
 
 // TODO : Redo with HTTPResponse

@@ -171,6 +171,17 @@ static bool canStartRegexLiteral(const std::string& code, size_t slashPos) {
     }
 
     const char prev = code[static_cast<size_t>(j)];
+    
+    // Detect postfix operators (++ and --) which are followed by division, not regex.
+    // e.g., x++/2 should parse as (x++) / 2, not (x++) / (regex)
+    if ((prev == '+' || prev == '-') && j > 0) {
+        char beforePrev = code[static_cast<size_t>(j - 1)];
+        if (beforePrev == prev) {
+            // This is '++' or '--', so '/' is division, not regex start
+            return false;
+        }
+    }
+    
     if (isRegexAllowedAfterChar(prev)) {
         return true;
     }
@@ -241,26 +252,57 @@ std::string JSObfuscator::removeWhitespace(const std::string& code) {
     bool inString = false;
     bool inSingleQuote = false;
     bool inBacktick = false;
+    bool inRegex = false;
+    bool inCharClass = false;
     char prevChar = '\0';
     
     for (size_t i = 0; i < code.size(); ++i) {
         char c = code[i];
         
         // Track string literals
-        if (c == '"' && prevChar != '\\' && !inSingleQuote && !inBacktick) {
+        if (!inRegex && c == '"' && prevChar != '\\' && !inSingleQuote && !inBacktick) {
             inString = !inString;
             result += c;
-        } else if (c == '\'' && prevChar != '\\' && !inString && !inBacktick) {
+        } else if (!inRegex && c == '\'' && prevChar != '\\' && !inString && !inBacktick) {
             inSingleQuote = !inSingleQuote;
             result += c;
-        } else if (c == '`' && prevChar != '\\' && !inString && !inSingleQuote) {
+        } else if (!inRegex && c == '`' && prevChar != '\\' && !inString && !inSingleQuote) {
             inBacktick = !inBacktick;
             result += c;
         } else if (inString || inSingleQuote || inBacktick) {
             // Inside string literals, preserve everything
             result += c;
+        } else if (!inRegex && c == '/' && i + 1 < code.size()) {
+            // Check if '/' starts a regex literal
+            if (canStartRegexLiteral(code, i)) {
+                inRegex = true;
+                inCharClass = false;
+                result += c;
+            } else {
+                // Regular division operator
+                result += c;
+            }
+        } else if (inRegex) {
+            // Inside regex literal, preserve everything including whitespace
+            result += c;
+            
+            // Handle regex escape sequences
+            if (c == '\\' && i + 1 < code.size()) {
+                result += code[++i];  // Add escaped character
+            } else if (c == '[' && prevChar != '\\') {
+                inCharClass = true;
+            } else if (c == ']' && prevChar != '\\' && inCharClass) {
+                inCharClass = false;
+            } else if (c == '/' && prevChar != '\\' && !inCharClass) {
+                // End of regex literal
+                inRegex = false;
+                // Consume flags (g, i, m, s, u, y)
+                while (i + 1 < code.size() && std::isalpha(static_cast<unsigned char>(code[i + 1]))) {
+                    result += code[++i];
+                }
+            }
         } else if (std::isspace(static_cast<unsigned char>(c))) {
-            // Outside strings, collapse whitespace
+            // Outside strings and regex, collapse whitespace
             // Keep space between alphanumeric characters
             if (!result.empty() && std::isalnum(static_cast<unsigned char>(prevChar)) && i + 1 < code.size() && std::isalnum(static_cast<unsigned char>(code[i + 1]))) {
                 result += ' ';
@@ -347,9 +389,11 @@ std::vector<JSObfuscator::Token> JSObfuscator::tokenize(const std::string& code)
         if (c == '/' && canStartRegexLiteral(code, i)) {
             flushCode();
             std::string regexLiteral;
+            size_t regexStart = i;  // Save position of opening '/'
             regexLiteral += code[i++]; // opening '/'
 
             bool inCharClass = false;
+            bool foundClosing = false;
             while (i < code.size()) {
                 char rc = code[i];
 
@@ -376,13 +420,23 @@ std::vector<JSObfuscator::Token> JSObfuscator::tokenize(const std::string& code)
                     while (i < code.size() && std::isalpha(static_cast<unsigned char>(code[i]))) {
                         regexLiteral += code[i++];
                     }
+                    foundClosing = true;
                     break;
                 }
 
                 regexLiteral += code[i++];
             }
 
-            tokens.push_back({TokenType::REGEX_LITERAL, regexLiteral});
+            // Only emit REGEX_LITERAL if we found a valid closing '/'.
+            // Otherwise, treat '/' as normal code (division operator).
+            if (foundClosing) {
+                tokens.push_back({TokenType::REGEX_LITERAL, regexLiteral});
+            } else {
+                // Restore position to just after the opening '/',
+                // treat '/' as division operator, and continue normal processing
+                i = regexStart + 1;
+                current += '/';
+            }
             continue;
         }
 
@@ -512,8 +566,10 @@ std::string JSObfuscator::mangleNames(const std::string& code) {
             size_t identEnd = identStart + identifier.length();
 
             // Skip member-access identifiers (preceded by '.'),
-            // reserved words, and object-literal keys (e.g. { email: … })
-            if (dotPrefix.empty() && !isReservedKeyword(identifier)
+            // reserved words, identifiers starting with '_' (internal/private),
+            // and object-literal keys (e.g. { email: … })
+            if (dotPrefix.empty() && !isReservedKeyword(identifier) 
+                && !identifier.empty() && identifier[0] != '_'
                 && !isObjectLiteralKey(tok.text, identStart, identEnd)) {
                 if (nameMap.find(identifier) == nameMap.end()) {
                     nameMap[identifier] = generateRandomName(6);
@@ -590,14 +646,55 @@ std::string JSObfuscator::encodeStrings(const std::string& code) {
     
     bool inString = false;
     bool inSingleQuote = false;
+    bool inUnderscoreContext = false;  // Track if we're in a _-prefixed function/variable
+    int braceDepth = 0;  // Track nesting depth
     char prevChar = '\0';
     std::string currentString;
     
-    for (char c : code) {
+    for (size_t i = 0; i < code.size(); ++i) {
+        char c = code[i];
+        
+        // Update context by tracking identifiers and braces
+        if (!inString && !inSingleQuote && c == '_' && (i == 0 || (!std::isalnum(static_cast<unsigned char>(code[i-1])) && code[i-1] != '$'))) {
+            // Check if this is the start of a _-prefixed identifier
+            size_t j = i + 1;
+            while (j < code.size() && (std::isalnum(static_cast<unsigned char>(code[j])) || code[j] == '_' || code[j] == '$')) {
+                j++;
+            }
+            if (j > i + 1) {  // Valid identifier starting with _
+                // Look ahead to see if followed by ( or = (function or variable)
+                while (j < code.size() && std::isspace(static_cast<unsigned char>(code[j]))) j++;
+                if (j < code.size() && (code[j] == '(' || code[j] == '=')) {
+                    inUnderscoreContext = true;
+                    braceDepth = 0;
+                }
+            }
+        }
+        
+        // Track braces to know when _-context ends
+        if (!inString && !inSingleQuote) {
+            if (c == '{') {
+                braceDepth++;
+            } else if (c == '}') {
+                braceDepth--;
+                if (braceDepth <= 0) {
+                    inUnderscoreContext = false;
+                    braceDepth = 0;
+                }
+            }
+        }
+        
+        // Process strings
         if (c == '"' && prevChar != '\\' && !inSingleQuote) {
             if (inString) {
-                // End of string - encode it
-                result += encodeStringLiteral(currentString);
+                // End of string - encode it only if NOT in _-context
+                if (inUnderscoreContext) {
+                    result += '"';
+                    result += currentString;
+                    result += '"';
+                } else {
+                    result += encodeStringLiteral(currentString);
+                }
                 currentString.clear();
                 inString = false;
             } else {
@@ -606,8 +703,15 @@ std::string JSObfuscator::encodeStrings(const std::string& code) {
             }
         } else if (c == '\'' && prevChar != '\\' && !inString) {
             if (inSingleQuote) {
-                // End of string - encode it
-                result += encodeStringLiteral(currentString);
+                // End of string - encode it only if NOT in _-context
+                if (inUnderscoreContext) {
+                    result += '\'';
+                    result += currentString;
+                    result += '\'';
+                } else {
+                    // Single quotes also get encoded at level 2
+                    result += encodeStringLiteral(currentString);
+                }
                 currentString.clear();
                 inSingleQuote = false;
             } else {
@@ -754,6 +858,7 @@ bool JSObfuscator::isReservedKeyword(const std::string& word) {
 std::string JSObfuscator::encodeStringLiteral(const std::string& str) {
     // Encode string to hex escape sequences, but preserve characters that
     // commonly appear in filenames and URL paths so they remain readable.
+    // UTF-8 multi-byte characters (ä, ü, ê, etc.) are encoded byte-by-byte.
     std::ostringstream encoded;
     encoded << "\"";
     
@@ -763,7 +868,9 @@ std::string JSObfuscator::encodeStringLiteral(const std::string& str) {
             || c == '-' || c == '_' || c == '~') {
             encoded << c;
         } else {
-            encoded << "\\x" << std::hex << std::setw(2) << std::setfill('0') << (static_cast<int>(c) & 0xFF);
+            // Cast to unsigned char first to ensure proper byte value (0-255)
+            unsigned char byte = static_cast<unsigned char>(c);
+            encoded << "\\x" << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
         }
     }
     
