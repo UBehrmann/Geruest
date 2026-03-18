@@ -43,11 +43,7 @@
 cmake-build-debug
 
 # All the build directories
-build/
-build-msvc/
-build-lib/
-build-release/
-build-debug/
+build*
 
 # All environment files
 .env

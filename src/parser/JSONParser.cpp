@@ -919,23 +919,57 @@ std::string JSONParser::toString() const {
             } else if (value == "true" || value == "false" || value == "null") {
                 result += value;
             } else {
-                bool isNumber = true;
-                int dotCount = 0;
-                if (!value.empty()) {
-                    for (size_t i = 0; i < value.length(); ++i) {
-                        char c = value[i];
-                        if (c == '.') {
-                            if (++dotCount > 1) { isNumber = false; break; }
-                        } else if (c == '-') {
-                            if (i != 0) { isNumber = false; break; }
-                        } else if (!std::isdigit(c)) {
-                            isNumber = false;
-                            break;
-                        }
+                auto isJsonNumber = [](const std::string& s) -> bool {
+                    // RFC 8259 number grammar:
+                    // -?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?
+                    if (s.empty()) return false;
+
+                    size_t i = 0;
+                    const size_t n = s.size();
+
+                    if (s[i] == '-') {
+                        ++i;
+                        if (i >= n) return false;  // lone '-'
                     }
-                }
-                
-                if (isNumber && !value.empty()) {
+
+                    // int part
+                    if (s[i] == '0') {
+                        ++i;
+                        if (i < n && std::isdigit(static_cast<unsigned char>(s[i]))) {
+                            return false;  // leading zero
+                        }
+                    } else if (std::isdigit(static_cast<unsigned char>(s[i]))) {
+                        if (s[i] < '1' || s[i] > '9') return false;
+                        ++i;
+                        while (i < n && std::isdigit(static_cast<unsigned char>(s[i]))) ++i;
+                    } else {
+                        return false;
+                    }
+
+                    // frac part
+                    if (i < n && s[i] == '.') {
+                        ++i;
+                        if (i >= n) return false;  // trailing '.'
+                        if (!std::isdigit(static_cast<unsigned char>(s[i]))) return false;
+                        while (i < n && std::isdigit(static_cast<unsigned char>(s[i]))) ++i;
+                    }
+
+                    // exp part
+                    if (i < n && (s[i] == 'e' || s[i] == 'E')) {
+                        ++i;
+                        if (i >= n) return false;
+                        if (s[i] == '+' || s[i] == '-') {
+                            ++i;
+                            if (i >= n) return false;
+                        }
+                        if (!std::isdigit(static_cast<unsigned char>(s[i]))) return false;
+                        while (i < n && std::isdigit(static_cast<unsigned char>(s[i]))) ++i;
+                    }
+
+                    return i == n;
+                };
+
+                if (isJsonNumber(value)) {
                     result += value;
                 } else {
                     result += "\"" + value + "\"";
