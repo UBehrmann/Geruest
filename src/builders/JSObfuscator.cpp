@@ -413,7 +413,8 @@ std::string JSObfuscator::processTemplateLiteral(const std::string& templateLite
     // Pre-allocate with extra space for potentially longer mangled names
     // Estimate: original size + 30% for mangled names which may be longer/shorter
     std::string result;
-    result.reserve(static_cast<size_t>(templateLiteral.size() * 1.3));
+    const size_t estimatedCapacity = templateLiteral.size() + (templateLiteral.size() / 3) + 1;
+    result.reserve(estimatedCapacity);
     
     size_t pos = 0;
     while (pos < templateLiteral.size()) {
