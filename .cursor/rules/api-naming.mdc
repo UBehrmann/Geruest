@@ -1,0 +1,51 @@
+---
+description: Public API naming conventions for the Geruest class
+globs: src/Geruest.hpp,src/Geruest.cpp
+alwaysApply: false
+---
+
+# Public API Naming Conventions
+
+## Boolean setters — `setX(bool)`
+
+Use plain `setX(bool)` without an `Enabled` suffix.
+
+```cpp
+// ✅ GOOD
+void setBasicAuth(bool enabled);
+void setMergeAssets(bool enabled);
+void setWebPConversion(bool enabled);
+
+// ❌ BAD
+void setBasicAuthEnabled(bool enabled);
+void setMergeAssetsEnabled(bool enabled);
+```
+
+## Convenience enable methods — `enableX()`
+
+Every `setX(bool)` that represents a feature toggle should have a matching `enableX()` shorthand. Implement it as a one-liner delegating to the setter.
+
+```cpp
+// Declaration (Geruest.hpp)
+void enableBasicAuth();
+void enableMergeAssets();
+void enableWebPConversion();
+void enableDevMode();
+
+// Implementation (Geruest.cpp)
+void Geruest::enableBasicAuth()     { setBasicAuth(true); }
+void Geruest::enableMergeAssets()   { setMergeAssets(true); }
+void Geruest::enableWebPConversion(){ setWebPConversion(true); }
+```
+
+## Feature activation — `enableX()`, not `activateX()`
+
+Use the `enable` prefix consistently. Never use `activate`.
+
+```cpp
+// ✅ GOOD
+void enableStatus(const std::string& token);
+
+// ❌ BAD
+void activateStatus(const std::string& token);
+```

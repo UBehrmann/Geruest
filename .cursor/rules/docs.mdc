@@ -1,0 +1,73 @@
+---
+description: Documentation style and structure conventions for the Geruest framework
+globs: doc/*.md,*.md
+alwaysApply: false
+---
+
+# Documentation Conventions
+
+## File Naming
+`UPPERCASE_WITH_UNDERSCORES.md` — e.g. `BASIC_AUTH.md`, `ASSET_MERGING.md`
+
+## Standard Structure
+Each feature doc follows this order:
+
+```markdown
+# Feature Name
+
+One-line description of what it does.
+
+## Quick Start
+Minimal working code — no setup noise.
+
+## API
+Grouped function signatures only (no prose).
+
+## Example: Specific Use Case
+Full working code with inline comments.
+
+## Troubleshooting  (if relevant)
+Short problem → solution pairs.
+
+## Security / Notes  (if relevant)
+Warnings last, not first.
+```
+
+## Quick Start — Keep It Minimal
+```cpp
+// ✅ GOOD — shows the 3 lines needed to enable the feature
+server.setBasicAuth(true);
+server.addBasicAuthUser("admin", "secret123");
+server.addProtectedPage("/admin");
+```
+
+## API Section — Signatures Only
+Group by category with a comment label, no implementation details:
+```cpp
+// Enable/disable
+void setBasicAuth(bool enabled);
+void enableBasicAuth();
+
+// User management
+void addBasicAuthUser(const std::string& username, const std::string& password);
+bool removeBasicAuthUser(const std::string& username);
+```
+
+## Code Blocks
+- Always use `cpp`, `bash`, `cmake`, `json`, or `nginx` language tags
+- Inline explanations with `// comment`, not surrounding prose
+- Raw string literals for JSON bodies: `R"({"key":"value"})"`
+
+## Cross-References
+Link to related docs at the end of sections:
+```markdown
+See [ASSET_MERGING.md](ASSET_MERGING.md) for complete documentation.
+```
+
+## Warnings
+Use `**⚠️ ...**` for security or breaking behaviour — place at the end of the doc, not the top.
+
+## Tone
+- Direct and technical — no filler phrases
+- Present tense: "Serves files" not "Will serve files"
+- No emojis in body text (only `⚠️` for warnings)
