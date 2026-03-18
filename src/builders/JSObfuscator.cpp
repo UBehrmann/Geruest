@@ -856,24 +856,70 @@ bool JSObfuscator::isReservedKeyword(const std::string& word) {
 }
 
 std::string JSObfuscator::encodeStringLiteral(const std::string& str) {
-    // Encode string to hex escape sequences, but preserve characters that
-    // commonly appear in filenames and URL paths so they remain readable.
-    // UTF-8 multi-byte characters (ä, ü, ê, etc.) are encoded byte-by-byte.
+    // Encode string to escape sequences.
+    // ASCII special chars use \xHH; multi-byte UTF-8 sequences are decoded to
+    // their Unicode codepoint and emitted as \uXXXX (or a surrogate pair for
+    // codepoints above U+FFFF), because JavaScript \xHH is Latin-1 — treating
+    // raw UTF-8 bytes as \xHH produces mojibake (e.g. Ã instead of Ü).
     std::ostringstream encoded;
     encoded << "\"";
-    
-    for (char c : str) {
-        // Keep alphanumeric, spaces, and filename/path-safe characters as-is
-        if (std::isalnum(static_cast<unsigned char>(c)) || c == ' ' || c == '/' || c == '.' 
-            || c == '-' || c == '_' || c == '~') {
-            encoded << c;
-        } else {
-            // Cast to unsigned char first to ensure proper byte value (0-255)
-            unsigned char byte = static_cast<unsigned char>(c);
+
+    size_t i = 0;
+    while (i < str.size()) {
+        unsigned char byte = static_cast<unsigned char>(str[i]);
+
+        // Keep alphanumeric, spaces, and filename/path-safe ASCII as-is
+        if (std::isalnum(byte) || byte == ' ' || byte == '/' || byte == '.'
+            || byte == '-' || byte == '_' || byte == '~') {
+            encoded << str[i];
+            ++i;
+        } else if (byte < 0x80) {
+            // Single-byte ASCII special character → \xHH
             encoded << "\\x" << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
+            ++i;
+        } else {
+            // Multi-byte UTF-8 sequence: decode to Unicode codepoint → \uXXXX
+            uint32_t codepoint = 0;
+            size_t extraBytes = 0;
+
+            if ((byte & 0xE0) == 0xC0) {        // 110xxxxx – 2-byte sequence
+                codepoint = byte & 0x1F;
+                extraBytes = 1;
+            } else if ((byte & 0xF0) == 0xE0) { // 1110xxxx – 3-byte sequence
+                codepoint = byte & 0x0F;
+                extraBytes = 2;
+            } else if ((byte & 0xF8) == 0xF0) { // 11110xxx – 4-byte sequence
+                codepoint = byte & 0x07;
+                extraBytes = 3;
+            } else {
+                // Invalid UTF-8 lead byte – emit raw \xHH and move on
+                encoded << "\\x" << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
+                ++i;
+                continue;
+            }
+
+            ++i;
+            for (size_t j = 0; j < extraBytes && i < str.size(); ++j, ++i) {
+                unsigned char cont = static_cast<unsigned char>(str[i]);
+                if ((cont & 0xC0) != 0x80) {
+                    break;  // Invalid continuation byte – stop consuming
+                }
+                codepoint = (codepoint << 6) | (cont & 0x3F);
+            }
+
+            if (codepoint <= 0xFFFF) {
+                encoded << "\\u" << std::hex << std::setw(4) << std::setfill('0') << codepoint;
+            } else {
+                // Encode as a UTF-16 surrogate pair for codepoints above U+FFFF
+                codepoint -= 0x10000;
+                uint32_t high = 0xD800 + (codepoint >> 10);
+                uint32_t low  = 0xDC00 + (codepoint & 0x3FF);
+                encoded << "\\u" << std::hex << std::setw(4) << std::setfill('0') << high;
+                encoded << "\\u" << std::hex << std::setw(4) << std::setfill('0') << low;
+            }
         }
     }
-    
+
     encoded << "\"";
     return encoded.str();
 }
