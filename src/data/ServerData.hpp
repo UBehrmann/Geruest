@@ -59,6 +59,7 @@ class ServerData {
     std::vector<std::string> _obfuscationExclusions;  // Files excluded from obfuscation and merging
     std::vector<std::string> _availableLanguages;
     std::string _defaultLanguage;
+    std::string _notFoundPage;
     BasicAuth _basicAuth;
     std::atomic<LogLevel> _logLevel{LogLevel::Error};  // Thread-safe log level (can be changed at runtime)
 
@@ -136,6 +137,7 @@ class ServerData {
           _webpQuality(other._webpQuality),
           _availableLanguages(other._availableLanguages),
           _defaultLanguage(other._defaultLanguage),
+          _notFoundPage(other._notFoundPage),
           _basicAuth(other._basicAuth),
           _logLevel(other._logLevel.load(std::memory_order_relaxed)) {}
 
@@ -152,6 +154,7 @@ class ServerData {
             _webpQuality = other._webpQuality;
             _availableLanguages = other._availableLanguages;
             _defaultLanguage = other._defaultLanguage;
+            _notFoundPage = other._notFoundPage;
             _basicAuth = other._basicAuth;
             _logLevel.store(other._logLevel.load(std::memory_order_relaxed), std::memory_order_relaxed);
         }
@@ -335,6 +338,21 @@ class ServerData {
      * @return true if at least one language is configured
      */
     bool hasLanguages() const { return !_availableLanguages.empty(); }
+
+    /**
+     * Set custom page path for 404 responses (e.g. "/404.html")
+     */
+    void setNotFoundPage(const std::string& path) { _notFoundPage = path; }
+
+    /**
+     * Get configured custom 404 page path
+     */
+    const std::string& getNotFoundPage() const { return _notFoundPage; }
+
+    /**
+     * Check if a custom 404 page is configured
+     */
+    bool hasNotFoundPage() const { return !_notFoundPage.empty(); }
 
     /**
      * Get Basic Authentication manager

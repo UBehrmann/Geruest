@@ -13,6 +13,7 @@
 #include <regex>
 #include <chrono>
 #include <iomanip>
+#include <cctype>
 
 namespace geruest {
 
@@ -137,6 +138,74 @@ static bool isObjectLiteralKey(const std::string& segment, size_t identStart, si
     return false;
 }
 
+static bool isRegexAllowedAfterChar(char c) {
+    switch (c) {
+        case '(': case '{': case '[':
+        case ',': case ';': case ':': case '?':
+        case '=': case '!': case '&': case '|':
+        case '+': case '-': case '*': case '%': case '^': case '~':
+        case '<': case '>':
+            return true;
+        default:
+            return false;
+    }
+}
+
+static bool isRegexPrefixKeyword(const std::string& word) {
+    // After these keywords, a regex literal is valid in expression position.
+    static const std::unordered_set<std::string> regexKeywords = {
+        "return", "throw", "case", "delete", "void", "typeof", "instanceof", "in", "of"
+    };
+    return regexKeywords.find(word) != regexKeywords.end();
+}
+
+static bool canStartRegexLiteral(const std::string& code, size_t slashPos) {
+    // Scan backward for previous significant non-whitespace character.
+    int j = static_cast<int>(slashPos) - 1;
+    while (j >= 0 && std::isspace(static_cast<unsigned char>(code[static_cast<size_t>(j)]))) {
+        --j;
+    }
+
+    if (j < 0) {
+        return true;
+    }
+
+    const char prev = code[static_cast<size_t>(j)];
+    
+    // Detect postfix operators (++ and --) which are followed by division, not regex.
+    // e.g., x++/2 should parse as (x++) / 2, not (x++) / (regex)
+    if ((prev == '+' || prev == '-') && j > 0) {
+        char beforePrev = code[static_cast<size_t>(j - 1)];
+        if (beforePrev == prev) {
+            // This is '++' or '--', so '/' is division, not regex start
+            return false;
+        }
+    }
+    
+    if (isRegexAllowedAfterChar(prev)) {
+        return true;
+    }
+
+    // Keyword-based contexts, e.g. "return /abc/".
+    if (std::isalpha(static_cast<unsigned char>(prev)) || prev == '_' || prev == '$') {
+        int end = j;
+        int start = j;
+        while (start >= 0) {
+            char c = code[static_cast<size_t>(start)];
+            if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '$')) {
+                break;
+            }
+            --start;
+        }
+        std::string word = code.substr(static_cast<size_t>(start + 1), static_cast<size_t>(end - start));
+        if (isRegexPrefixKeyword(word)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 JSObfuscator::JSObfuscator(unsigned int level)
     : _level(level) {
     // Seed random number generator with current time
@@ -183,26 +252,57 @@ std::string JSObfuscator::removeWhitespace(const std::string& code) {
     bool inString = false;
     bool inSingleQuote = false;
     bool inBacktick = false;
+    bool inRegex = false;
+    bool inCharClass = false;
     char prevChar = '\0';
     
     for (size_t i = 0; i < code.size(); ++i) {
         char c = code[i];
         
         // Track string literals
-        if (c == '"' && prevChar != '\\' && !inSingleQuote && !inBacktick) {
+        if (!inRegex && c == '"' && prevChar != '\\' && !inSingleQuote && !inBacktick) {
             inString = !inString;
             result += c;
-        } else if (c == '\'' && prevChar != '\\' && !inString && !inBacktick) {
+        } else if (!inRegex && c == '\'' && prevChar != '\\' && !inString && !inBacktick) {
             inSingleQuote = !inSingleQuote;
             result += c;
-        } else if (c == '`' && prevChar != '\\' && !inString && !inSingleQuote) {
+        } else if (!inRegex && c == '`' && prevChar != '\\' && !inString && !inSingleQuote) {
             inBacktick = !inBacktick;
             result += c;
         } else if (inString || inSingleQuote || inBacktick) {
             // Inside string literals, preserve everything
             result += c;
+        } else if (!inRegex && c == '/' && i + 1 < code.size()) {
+            // Check if '/' starts a regex literal
+            if (canStartRegexLiteral(code, i)) {
+                inRegex = true;
+                inCharClass = false;
+                result += c;
+            } else {
+                // Regular division operator
+                result += c;
+            }
+        } else if (inRegex) {
+            // Inside regex literal, preserve everything including whitespace
+            result += c;
+            
+            // Handle regex escape sequences
+            if (c == '\\' && i + 1 < code.size()) {
+                result += code[++i];  // Add escaped character
+            } else if (c == '[' && prevChar != '\\') {
+                inCharClass = true;
+            } else if (c == ']' && prevChar != '\\' && inCharClass) {
+                inCharClass = false;
+            } else if (c == '/' && prevChar != '\\' && !inCharClass) {
+                // End of regex literal
+                inRegex = false;
+                // Consume flags (g, i, m, s, u, y)
+                while (i + 1 < code.size() && std::isalpha(static_cast<unsigned char>(code[i + 1]))) {
+                    result += code[++i];
+                }
+            }
         } else if (std::isspace(static_cast<unsigned char>(c))) {
-            // Outside strings, collapse whitespace
+            // Outside strings and regex, collapse whitespace
             // Keep space between alphanumeric characters
             if (!result.empty() && std::isalnum(static_cast<unsigned char>(prevChar)) && i + 1 < code.size() && std::isalnum(static_cast<unsigned char>(code[i + 1]))) {
                 result += ' ';
@@ -284,6 +384,62 @@ std::vector<JSObfuscator::Token> JSObfuscator::tokenize(const std::string& code)
             continue;
         }
 
+        // --- regex literal (/.../flags) ---
+        // We only treat '/' as regex start in expression contexts.
+        if (c == '/' && canStartRegexLiteral(code, i)) {
+            flushCode();
+            std::string regexLiteral;
+            size_t regexStart = i;  // Save position of opening '/'
+            regexLiteral += code[i++]; // opening '/'
+
+            bool inCharClass = false;
+            bool foundClosing = false;
+            while (i < code.size()) {
+                char rc = code[i];
+
+                if (rc == '\\') {
+                    regexLiteral += code[i++];
+                    if (i < code.size()) regexLiteral += code[i++];
+                    continue;
+                }
+
+                if (rc == '[') {
+                    inCharClass = true;
+                    regexLiteral += code[i++];
+                    continue;
+                }
+
+                if (rc == ']' && inCharClass) {
+                    inCharClass = false;
+                    regexLiteral += code[i++];
+                    continue;
+                }
+
+                if (rc == '/' && !inCharClass) {
+                    regexLiteral += code[i++]; // closing '/'
+                    while (i < code.size() && std::isalpha(static_cast<unsigned char>(code[i]))) {
+                        regexLiteral += code[i++];
+                    }
+                    foundClosing = true;
+                    break;
+                }
+
+                regexLiteral += code[i++];
+            }
+
+            // Only emit REGEX_LITERAL if we found a valid closing '/'.
+            // Otherwise, treat '/' as normal code (division operator).
+            if (foundClosing) {
+                tokens.push_back({TokenType::REGEX_LITERAL, regexLiteral});
+            } else {
+                // Restore position to just after the opening '/',
+                // treat '/' as division operator, and continue normal processing
+                i = regexStart + 1;
+                current += '/';
+            }
+            continue;
+        }
+
         current += code[i++];
     }
     flushCode();
@@ -311,7 +467,8 @@ std::string JSObfuscator::processTemplateLiteral(const std::string& templateLite
     // Pre-allocate with extra space for potentially longer mangled names
     // Estimate: original size + 30% for mangled names which may be longer/shorter
     std::string result;
-    result.reserve(static_cast<size_t>(templateLiteral.size() * 1.3));
+    const size_t estimatedCapacity = templateLiteral.size() + (templateLiteral.size() / 3) + 1;
+    result.reserve(estimatedCapacity);
     
     size_t pos = 0;
     while (pos < templateLiteral.size()) {
@@ -409,8 +566,10 @@ std::string JSObfuscator::mangleNames(const std::string& code) {
             size_t identEnd = identStart + identifier.length();
 
             // Skip member-access identifiers (preceded by '.'),
-            // reserved words, and object-literal keys (e.g. { email: … })
-            if (dotPrefix.empty() && !isReservedKeyword(identifier)
+            // reserved words, identifiers starting with '_' (internal/private),
+            // and object-literal keys (e.g. { email: … })
+            if (dotPrefix.empty() && !isReservedKeyword(identifier) 
+                && !identifier.empty() && identifier[0] != '_'
                 && !isObjectLiteralKey(tok.text, identStart, identEnd)) {
                 if (nameMap.find(identifier) == nameMap.end()) {
                     nameMap[identifier] = generateRandomName(6);
@@ -487,14 +646,55 @@ std::string JSObfuscator::encodeStrings(const std::string& code) {
     
     bool inString = false;
     bool inSingleQuote = false;
+    bool inUnderscoreContext = false;  // Track if we're in a _-prefixed function/variable
+    int braceDepth = 0;  // Track nesting depth
     char prevChar = '\0';
     std::string currentString;
     
-    for (char c : code) {
+    for (size_t i = 0; i < code.size(); ++i) {
+        char c = code[i];
+        
+        // Update context by tracking identifiers and braces
+        if (!inString && !inSingleQuote && c == '_' && (i == 0 || (!std::isalnum(static_cast<unsigned char>(code[i-1])) && code[i-1] != '$'))) {
+            // Check if this is the start of a _-prefixed identifier
+            size_t j = i + 1;
+            while (j < code.size() && (std::isalnum(static_cast<unsigned char>(code[j])) || code[j] == '_' || code[j] == '$')) {
+                j++;
+            }
+            if (j > i + 1) {  // Valid identifier starting with _
+                // Look ahead to see if followed by ( or = (function or variable)
+                while (j < code.size() && std::isspace(static_cast<unsigned char>(code[j]))) j++;
+                if (j < code.size() && (code[j] == '(' || code[j] == '=')) {
+                    inUnderscoreContext = true;
+                    braceDepth = 0;
+                }
+            }
+        }
+        
+        // Track braces to know when _-context ends
+        if (!inString && !inSingleQuote) {
+            if (c == '{') {
+                braceDepth++;
+            } else if (c == '}') {
+                braceDepth--;
+                if (braceDepth <= 0) {
+                    inUnderscoreContext = false;
+                    braceDepth = 0;
+                }
+            }
+        }
+        
+        // Process strings
         if (c == '"' && prevChar != '\\' && !inSingleQuote) {
             if (inString) {
-                // End of string - encode it
-                result += encodeStringLiteral(currentString);
+                // End of string - encode it only if NOT in _-context
+                if (inUnderscoreContext) {
+                    result += '"';
+                    result += currentString;
+                    result += '"';
+                } else {
+                    result += encodeStringLiteral(currentString);
+                }
                 currentString.clear();
                 inString = false;
             } else {
@@ -503,8 +703,15 @@ std::string JSObfuscator::encodeStrings(const std::string& code) {
             }
         } else if (c == '\'' && prevChar != '\\' && !inString) {
             if (inSingleQuote) {
-                // End of string - encode it
-                result += encodeStringLiteral(currentString);
+                // End of string - encode it only if NOT in _-context
+                if (inUnderscoreContext) {
+                    result += '\'';
+                    result += currentString;
+                    result += '\'';
+                } else {
+                    // Single quotes also get encoded at level 2
+                    result += encodeStringLiteral(currentString);
+                }
                 currentString.clear();
                 inSingleQuote = false;
             } else {
@@ -524,30 +731,59 @@ std::string JSObfuscator::encodeStrings(const std::string& code) {
 }
 
 std::string JSObfuscator::obfuscateNumbers(const std::string& code) {
-    std::string result = code;
-    
-    // Find number literals and replace with expressions
+    // Tokenize first so we only touch CODE tokens (skip strings, comments).
+    std::vector<Token> tokens = tokenize(code);
     std::regex numberRegex(R"(\b(\d+)\b)");
-    std::smatch match;
-    
-    // Process from end to start to preserve positions
-    std::vector<std::pair<size_t, size_t>> positions;
-    std::vector<int> numbers;
-    
-    auto searchStart = code.cbegin();
-    while (std::regex_search(searchStart, code.cend(), match, numberRegex)) {
-        size_t pos = std::distance(code.cbegin(), match[1].first);
-        positions.push_back({pos, match[1].length()});
-        numbers.push_back(std::stoi(match[1].str()));
-        searchStart = match.suffix().first;
+
+    std::string result;
+    result.reserve(code.size());
+
+    for (const auto& tok : tokens) {
+        if (tok.type != TokenType::CODE) {
+            // Preserve string literals and comments verbatim
+            result += tok.text;
+            continue;
+        }
+
+        const std::string& segment = tok.text;
+
+        // Collect replaceable integer literal positions within this token
+        std::vector<std::pair<size_t, size_t>> positions;
+        std::vector<int> numbers;
+
+        auto searchStart = segment.cbegin();
+        std::smatch match;
+        while (std::regex_search(searchStart, segment.cend(), match, numberRegex)) {
+            size_t pos = static_cast<size_t>(std::distance(segment.cbegin(), match[1].first));
+            size_t len = match[1].length();
+            size_t endPos = pos + len;
+
+            // Skip fractional part of a decimal literal  (e.g. "55" in "0.55")
+            bool isDecimalFraction = (pos > 0 && segment[pos - 1] == '.');
+
+            // Skip integer part of a decimal literal  (e.g. "0" in "0.55")
+            bool isDecimalInteger = (endPos < segment.size() && segment[endPos] == '.'
+                                     && endPos + 1 < segment.size()
+                                     && std::isdigit(static_cast<unsigned char>(segment[endPos + 1])));
+
+            if (!isDecimalFraction && !isDecimalInteger) {
+                positions.push_back({pos, len});
+                numbers.push_back(std::stoi(match[1].str()));
+            }
+
+            searchStart = match.suffix().first;
+        }
+
+        // Replace from end to start to preserve earlier positions
+        std::string tokenResult = segment;
+        for (int i = static_cast<int>(positions.size()) - 1; i >= 0; --i) {
+            std::string expression = createNumberExpression(numbers[i]);
+            tokenResult.replace(positions[i].first, positions[i].second, expression);
+        }
+
+        result += tokenResult;
     }
-    
-    // Replace from end to start
-    for (int i = static_cast<int>(positions.size()) - 1; i >= 0; --i) {
-        std::string expression = createNumberExpression(numbers[i]);
-        result.replace(positions[i].first, positions[i].second, expression);
-    }
-    
+
     return result;
 }
 
@@ -620,21 +856,70 @@ bool JSObfuscator::isReservedKeyword(const std::string& word) {
 }
 
 std::string JSObfuscator::encodeStringLiteral(const std::string& str) {
-    // Encode string to hex escape sequences, but preserve characters that
-    // commonly appear in filenames and URL paths so they remain readable.
+    // Encode string to escape sequences.
+    // ASCII special chars use \xHH; multi-byte UTF-8 sequences are decoded to
+    // their Unicode codepoint and emitted as \uXXXX (or a surrogate pair for
+    // codepoints above U+FFFF), because JavaScript \xHH is Latin-1 — treating
+    // raw UTF-8 bytes as \xHH produces mojibake (e.g. Ã instead of Ü).
     std::ostringstream encoded;
     encoded << "\"";
-    
-    for (char c : str) {
-        // Keep alphanumeric, spaces, and filename/path-safe characters as-is
-        if (std::isalnum(static_cast<unsigned char>(c)) || c == ' ' || c == '/' || c == '.' 
-            || c == '-' || c == '_' || c == '~') {
-            encoded << c;
+
+    size_t i = 0;
+    while (i < str.size()) {
+        unsigned char byte = static_cast<unsigned char>(str[i]);
+
+        // Keep alphanumeric, spaces, and filename/path-safe ASCII as-is
+        if (std::isalnum(byte) || byte == ' ' || byte == '/' || byte == '.'
+            || byte == '-' || byte == '_' || byte == '~') {
+            encoded << str[i];
+            ++i;
+        } else if (byte < 0x80) {
+            // Single-byte ASCII special character → \xHH
+            encoded << "\\x" << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
+            ++i;
         } else {
-            encoded << "\\x" << std::hex << std::setw(2) << std::setfill('0') << (static_cast<int>(c) & 0xFF);
+            // Multi-byte UTF-8 sequence: decode to Unicode codepoint → \uXXXX
+            uint32_t codepoint = 0;
+            size_t extraBytes = 0;
+
+            if ((byte & 0xE0) == 0xC0) {        // 110xxxxx – 2-byte sequence
+                codepoint = byte & 0x1F;
+                extraBytes = 1;
+            } else if ((byte & 0xF0) == 0xE0) { // 1110xxxx – 3-byte sequence
+                codepoint = byte & 0x0F;
+                extraBytes = 2;
+            } else if ((byte & 0xF8) == 0xF0) { // 11110xxx – 4-byte sequence
+                codepoint = byte & 0x07;
+                extraBytes = 3;
+            } else {
+                // Invalid UTF-8 lead byte – emit raw \xHH and move on
+                encoded << "\\x" << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
+                ++i;
+                continue;
+            }
+
+            ++i;
+            for (size_t j = 0; j < extraBytes && i < str.size(); ++j, ++i) {
+                unsigned char cont = static_cast<unsigned char>(str[i]);
+                if ((cont & 0xC0) != 0x80) {
+                    break;  // Invalid continuation byte – stop consuming
+                }
+                codepoint = (codepoint << 6) | (cont & 0x3F);
+            }
+
+            if (codepoint <= 0xFFFF) {
+                encoded << "\\u" << std::hex << std::setw(4) << std::setfill('0') << codepoint;
+            } else {
+                // Encode as a UTF-16 surrogate pair for codepoints above U+FFFF
+                codepoint -= 0x10000;
+                uint32_t high = 0xD800 + (codepoint >> 10);
+                uint32_t low  = 0xDC00 + (codepoint & 0x3FF);
+                encoded << "\\u" << std::hex << std::setw(4) << std::setfill('0') << high;
+                encoded << "\\u" << std::hex << std::setw(4) << std::setfill('0') << low;
+            }
         }
     }
-    
+
     encoded << "\"";
     return encoded.str();
 }
@@ -660,7 +945,12 @@ std::string JSObfuscator::createNumberExpression(int num) {
             if (num % 2 == 0 && num > 2) {
                 return "(" + std::to_string(num / 2) + "*2)";
             }
-            return std::to_string(num);
+            // Odd or small – fall back to hex
+            {
+                std::ostringstream oss;
+                oss << "0x" << std::hex << num;
+                return oss.str();
+            }
         case 2:
             // Bitshift (for powers of 2)
             if (num > 1 && (num & (num - 1)) == 0) {
@@ -672,9 +962,18 @@ std::string JSObfuscator::createNumberExpression(int num) {
                 }
                 return "(1<<" + std::to_string(shift) + ")";
             }
-            return std::to_string(num);
+            // Not a power of 2 – fall back to hex
+            {
+                std::ostringstream oss;
+                oss << "0x" << std::hex << num;
+                return oss.str();
+            }
         default:
-            return std::to_string(num);
+            {
+                std::ostringstream oss;
+                oss << "0x" << std::hex << num;
+                return oss.str();
+            }
     }
 }
 
