@@ -444,14 +444,14 @@ class Geruest {
      * - version: Geruest framework version (useful for multi-version comparisons)
      * - timestamp: ISO 8601 UTC time of the snapshot
      * - uptime_seconds: seconds since server start
-     * - requests.total / per_hour / active
-     * - errors.total / rate_percent
-     * - queue.current_size / max_size / rejections_total / fill_percent
-     * - latency_ms.p50 / p95 / p99 (milliseconds, last 1000 requests)
+     * - requests.total / last_hour / avg_per_hour / active
+     * - errors.total / client_4xx / server_5xx / internal (+ last_hour/avg_per_hour breakdown)
+     * - queue.current_size / max_size / rejections_total / avg_fill_percent_hour / avg_fill_percent_per_hour
+     * - latency_ms.p50 / p95 / p99 (milliseconds, last 60 seconds)
      *
      * Health thresholds:
-     * - degraded:   queue fill >= 50% OR error rate >= 2%
-     * - overloaded: queue fill >= 80% OR error rate >= 5%
+     * - degraded:   avg queue fill (last hour) >= 50% OR requests (last hour) >= 500
+     * - overloaded: avg queue fill (last hour) >= 80% OR requests (last hour) >= 1000
      *
      * @param token Bearer token required in the Authorization header.
      * @note Should be called before start().
@@ -518,6 +518,7 @@ class Geruest {
     std::mutex _queueMutex;
     std::condition_variable _queueCV;
     std::atomic<bool> _workersRunning{false};
+    std::atomic<size_t> _queueSize{0};  // mirror of _connectionQueue.size() for lock-free status reporting
 
     void sendToLogger(const std::string& message) const;
 

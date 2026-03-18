@@ -666,6 +666,7 @@ void Geruest::start() {
                 std::lock_guard<std::mutex> lock(_queueMutex);
                 if (_connectionQueue.size() >= _maxQueueSize) {
                     serverData.recordQueueRejection();
+                    serverData.recordQueueFill(100.0f);
                     sendToLoggerError("Connection queue full (" + std::to_string(_maxQueueSize) +
                                       "), rejecting connection from " + client_ip_str);
 #ifdef _WIN32
@@ -676,6 +677,12 @@ void Geruest::start() {
                     continue;
                 }
                 _connectionQueue.push({new_socket, client_ip_str});
+                _queueSize.fetch_add(1, std::memory_order_relaxed);
+                if (_maxQueueSize > 0) {
+                    const float fill = 100.0f * static_cast<float>(_queueSize.load(std::memory_order_relaxed)) /
+                                       static_cast<float>(_maxQueueSize);
+                    serverData.recordQueueFill(fill > 100.0f ? 100.0f : (fill < 0.0f ? 0.0f : fill));
+                }
             }
             _queueCV.notify_one();  // Wake up a worker thread
 
@@ -703,8 +710,10 @@ void Geruest::giveToHandler(int new_socket, std::string& IP) {
         try {
             handler->run();
         } catch (const std::exception& e) {
+            serverData.recordError();
             sendToLoggerError(std::string("Handler error: ") + e.what());
         } catch (...) {
+            serverData.recordError();
             sendToLoggerError("Handler encountered an unknown error");
         }
     });
@@ -758,6 +767,7 @@ void Geruest::stopWorkers() {
         close(connection.first);
 #endif
     }
+    _queueSize.store(0, std::memory_order_relaxed);
     
     sendToLogger("All worker threads stopped");
 }
@@ -786,6 +796,12 @@ void Geruest::workerThread() {
 
             auto connection = _connectionQueue.front();
             _connectionQueue.pop();
+            _queueSize.fetch_sub(1, std::memory_order_relaxed);
+            if (_maxQueueSize > 0) {
+                const float fill = 100.0f * static_cast<float>(_queueSize.load(std::memory_order_relaxed)) /
+                                   static_cast<float>(_maxQueueSize);
+                serverData.recordQueueFill(fill > 100.0f ? 100.0f : (fill < 0.0f ? 0.0f : fill));
+            }
             clientSocket = connection.first;
             clientIP = connection.second;
         }
@@ -837,6 +853,7 @@ void Geruest::activateStatus(const std::string& token) {
         const uint64_t rejTotal = serverData.getQueueRejections();
         const int64_t  active   = serverData.getActiveHandlers();
         const ServerData::LatencyStats lat = serverData.getLatencyStats(60);
+        const uint64_t curQueue = static_cast<uint64_t>(_queueSize.load(std::memory_order_relaxed));
 
         std::string health = "ok";
         if (wmHour.avg_queue_fill >= 80.0 || wmHour.requests >= 1000) {
@@ -877,6 +894,7 @@ void Geruest::activateStatus(const std::string& token) {
         errors.setLongLong("avg_per_hour_int", static_cast<long long>(avgHour.errors_int));
 
         JSONParser queue;
+        queue.setLongLong("current_size",      static_cast<long long>(curQueue));
         queue.setLongLong("max_size",          static_cast<long long>(_maxQueueSize));
         queue.setLongLong("rejections_total",  static_cast<long long>(rejTotal));
         queue.setDouble("avg_fill_percent_hour", wmHour.avg_queue_fill);
