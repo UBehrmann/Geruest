@@ -11,8 +11,12 @@
 #define GERUEST_SERVERDATA_HPP
 
 #include <algorithm>
+#include <array>
 #include <atomic>
+#include <chrono>
+#include <cstdint>
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <string>
@@ -70,6 +74,35 @@ class ServerData {
     std::string _notFoundPage;
     BasicAuth _basicAuth;
     std::atomic<LogLevel> _logLevel{LogLevel::Error};  // Thread-safe log level (can be changed at runtime)
+
+    // ========== Metrics (mutable: incremented via const ServerData& in Handler) ==========
+    mutable std::atomic<uint64_t> _totalRequests{0};
+    mutable std::atomic<uint64_t> _total4xx{0};
+    mutable std::atomic<uint64_t> _total5xx{0};
+    mutable std::atomic<uint64_t> _totalInternalErrors{0};
+    mutable std::atomic<uint64_t> _queueRejections{0};
+    mutable std::atomic<int64_t>  _activeHandlers{0};
+    std::chrono::steady_clock::time_point _startTime{std::chrono::steady_clock::now()};
+
+    // 60 rolling minute buckets (last hour)
+    struct RollingBucket {
+        uint32_t epoch      = 0;
+        uint32_t requests   = 0;
+        uint32_t errors_4xx = 0;
+        uint32_t errors_5xx = 0;
+        uint32_t errors_int = 0;
+        float    fill_sum   = 0.f;  // sum of queue fill% samples
+        uint32_t fill_count = 0;
+    };
+    mutable std::mutex _metricsMutex;
+    mutable std::array<RollingBucket, 60> _minBuckets{};
+
+    // Timestamped latency ring buffer (values in microseconds)
+    struct LatencySample { uint32_t epoch_s = 0; uint32_t us = 0; };
+    static constexpr size_t _LAT_CAP = 10000;
+    mutable std::array<LatencySample, _LAT_CAP> _latSamples{};
+    mutable size_t _latHead{0};
+    mutable size_t _latCount{0};
 
     /**
      * Check if a path matches a wildcard pattern
@@ -236,6 +269,30 @@ class ServerData {
         }
 
         return true;
+    }
+
+    // Bucket write helper — must be called under _metricsMutex
+    void _writeBuckets(uint32_t epochS, uint32_t epochM,
+                       uint32_t req, uint32_t e4, uint32_t e5, uint32_t ei,
+                       float qFill, uint32_t qCnt) const {
+        (void)epochS; // suppress unused parameter warning
+        auto apply = [](RollingBucket& b, uint32_t ep,
+                        uint32_t req_, uint32_t e4_, uint32_t e5_, uint32_t ei_,
+                        float qFill_, uint32_t qCnt_) {
+            if (b.epoch != ep) b = RollingBucket{ep,0,0,0,0,0.f,0};
+            b.requests   += req_;  b.errors_4xx += e4_;
+            b.errors_5xx += e5_;   b.errors_int  += ei_;
+            b.fill_sum   += qFill_; b.fill_count += qCnt_;
+        };
+        apply(_minBuckets[epochM % 60], epochM, req, e4, e5, ei, qFill, qCnt);
+    }
+
+    // Returns {epoch_seconds, epoch_minutes}
+    static std::pair<uint32_t, uint32_t> _nowEpochs() {
+        const auto now = std::chrono::system_clock::now();
+        const uint32_t es = static_cast<uint32_t>(
+            std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count());
+        return {es, es / 60};
     }
 
    public:
@@ -632,6 +689,159 @@ class ServerData {
      */
     bool shouldObfuscate() const {
         return !_devMode && _obfuscationLevel > 0;
+    }
+
+    // ========== Metrics Methods ==========
+
+    void recordRequest() const {
+        _totalRequests.fetch_add(1, std::memory_order_relaxed);
+        const auto ep = _nowEpochs();
+        std::lock_guard<std::mutex> lock(_metricsMutex);
+        _writeBuckets(ep.first, ep.second, 1,0,0,0, 0.f,0);
+    }
+
+    void recordError() const {
+        _totalInternalErrors.fetch_add(1, std::memory_order_relaxed);
+        const auto ep = _nowEpochs();
+        std::lock_guard<std::mutex> lock(_metricsMutex);
+        _writeBuckets(ep.first, ep.second, 0,0,0,1, 0.f,0);
+    }
+
+    void record4xx() const {
+        _total4xx.fetch_add(1, std::memory_order_relaxed);
+        const auto ep = _nowEpochs();
+        std::lock_guard<std::mutex> lock(_metricsMutex);
+        _writeBuckets(ep.first, ep.second, 0,1,0,0, 0.f,0);
+    }
+
+    void record5xx() const {
+        _total5xx.fetch_add(1, std::memory_order_relaxed);
+        const auto ep = _nowEpochs();
+        std::lock_guard<std::mutex> lock(_metricsMutex);
+        _writeBuckets(ep.first, ep.second, 0,0,1,0, 0.f,0);
+    }
+
+    void recordQueueRejection() const {
+        _queueRejections.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void recordQueueFill(float fillPct) const {
+        const auto ep = _nowEpochs();
+        std::lock_guard<std::mutex> lock(_metricsMutex);
+        _writeBuckets(ep.first, ep.second, 0,0,0,0, fillPct, 1);
+    }
+
+    void incrementActiveHandlers() const {
+        _activeHandlers.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void decrementActiveHandlers() const {
+        _activeHandlers.fetch_sub(1, std::memory_order_relaxed);
+    }
+
+    void recordLatency(uint32_t us) const {
+        const auto ep = _nowEpochs();
+        std::lock_guard<std::mutex> lock(_metricsMutex);
+        _latSamples[_latHead] = {ep.first, us};
+        _latHead = (_latHead + 1) % _LAT_CAP;
+        if (_latCount < _LAT_CAP) ++_latCount;
+    }
+
+    // ========== Getters ==========
+
+    uint64_t getTotalRequests() const {
+        return _totalRequests.load(std::memory_order_relaxed);
+    }
+
+    uint64_t getTotalErrors() const {
+        return _total4xx.load(std::memory_order_relaxed)
+             + _total5xx.load(std::memory_order_relaxed)
+             + _totalInternalErrors.load(std::memory_order_relaxed);
+    }
+
+    uint64_t getTotal4xx() const { return _total4xx.load(std::memory_order_relaxed); }
+    uint64_t getTotal5xx() const { return _total5xx.load(std::memory_order_relaxed); }
+    uint64_t getTotalInternalErrors() const { return _totalInternalErrors.load(std::memory_order_relaxed); }
+    uint64_t getQueueRejections() const { return _queueRejections.load(std::memory_order_relaxed); }
+    int64_t  getActiveHandlers() const { return _activeHandlers.load(std::memory_order_relaxed); }
+
+    struct WindowMetrics {
+        uint64_t requests       = 0;
+        uint64_t errors_4xx     = 0;
+        uint64_t errors_5xx     = 0;
+        uint64_t errors_int     = 0;
+        double   avg_queue_fill = 0.0;
+    };
+    WindowMetrics getWindowMetricsHour() const {
+        const auto ep = _nowEpochs();
+        const uint32_t curM = ep.second;
+        std::lock_guard<std::mutex> lock(_metricsMutex);
+        WindowMetrics wm;
+        double fillSum = 0.0; uint64_t fillN = 0;
+        for (const auto& b : _minBuckets) {
+            if (b.epoch > 0 && curM >= b.epoch && (curM - b.epoch) < 60) {
+                wm.requests   += b.requests;
+                wm.errors_4xx += b.errors_4xx;
+                wm.errors_5xx += b.errors_5xx;
+                wm.errors_int += b.errors_int;
+                fillSum += b.fill_sum; fillN += b.fill_count;
+            }
+        }
+        if (fillN > 0) wm.avg_queue_fill = fillSum / static_cast<double>(fillN);
+        return wm;
+    }
+
+    // Rolling average per hour since restart
+    WindowMetrics getRollingAveragePerHour() const {
+        const uint64_t uptime = getUptimeSeconds();
+        const uint64_t hours = uptime / 3600;
+        if (hours == 0) return getWindowMetricsHour();
+        std::lock_guard<std::mutex> lock(_metricsMutex);
+        WindowMetrics wm;
+        double fillSum = 0.0; uint64_t fillN = 0;
+        for (const auto& b : _minBuckets) {
+            wm.requests   += b.requests;
+            wm.errors_4xx += b.errors_4xx;
+            wm.errors_5xx += b.errors_5xx;
+            wm.errors_int += b.errors_int;
+            fillSum += b.fill_sum; fillN += b.fill_count;
+        }
+        if (fillN > 0) wm.avg_queue_fill = fillSum / static_cast<double>(fillN);
+        // Average per hour
+        wm.requests   = hours ? wm.requests / hours : wm.requests;
+        wm.errors_4xx = hours ? wm.errors_4xx / hours : wm.errors_4xx;
+        wm.errors_5xx = hours ? wm.errors_5xx / hours : wm.errors_5xx;
+        wm.errors_int = hours ? wm.errors_int / hours : wm.errors_int;
+        return wm;
+    }
+
+    struct LatencyStats { double p50 = 0.0; double p95 = 0.0; double p99 = 0.0; };
+
+    LatencyStats getLatencyStats(uint32_t windowSeconds) const {
+        const auto ep = _nowEpochs();
+        const uint32_t curS = ep.first;
+        const uint32_t cutoff = (curS > windowSeconds) ? (curS - windowSeconds) : 0;
+        std::lock_guard<std::mutex> lock(_metricsMutex);
+        std::vector<uint32_t> relevant;
+        relevant.reserve(_latCount);
+        const size_t start = (_latHead + _LAT_CAP - _latCount) % _LAT_CAP;
+        for (size_t i = 0; i < _latCount; ++i) {
+            const LatencySample& s = _latSamples[(start + i) % _LAT_CAP];
+            if (s.epoch_s >= cutoff) relevant.push_back(s.us);
+        }
+        if (relevant.empty()) return {};
+        std::sort(relevant.begin(), relevant.end());
+        const size_t n = relevant.size();
+        return {
+            relevant[n * 50 / 100] / 1000.0,
+            relevant[n * 95 / 100] / 1000.0,
+            relevant[n * 99 / 100] / 1000.0
+        };
+    }
+
+    uint64_t getUptimeSeconds() const {
+        return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - _startTime).count());
     }
 };
 

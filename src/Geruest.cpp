@@ -18,11 +18,14 @@
 #endif
 
 #include <algorithm>
+#include <ctime>
 #include <iostream>
+#include <sstream>
 #include <thread>
 
 #include "data/HTTPResponse.hpp"
 #include "geruest/Version.hpp"
+#include "parser/JSONParser.hpp"
 
 namespace geruest {
 
@@ -662,6 +665,7 @@ void Geruest::start() {
             {
                 std::lock_guard<std::mutex> lock(_queueMutex);
                 if (_connectionQueue.size() >= _maxQueueSize) {
+                    serverData.recordQueueRejection();
                     sendToLoggerError("Connection queue full (" + std::to_string(_maxQueueSize) +
                                       "), rejecting connection from " + client_ip_str);
 #ifdef _WIN32
@@ -803,4 +807,104 @@ void Geruest::sendToLoggerError(const std::string& message) const {
     }
 }
 
+void Geruest::activateStatus(const std::string& token) {
+    _statusToken = token;
+    _statusActive = true;
+
+    serverData.addRoute("/status", [this, token](const HTTPRequest& req) -> HTTPResponse {
+        // Verify Bearer token (skipped in dev mode)
+        if (!serverData.isDevMode()) {
+            const std::string authHeader = req.getHeader("authorization");
+            const std::string expected   = "Bearer " + token;
+            if (authHeader != expected) {
+                HTTPResponse resp("401 Unauthorized");
+                resp.setHeader("WWW-Authenticate", "Bearer realm=\"status\"");
+                resp.setHeader("Content-Type", "application/json");
+                resp.setBody(R"({"error":"Unauthorized"})");
+                return resp;
+            }
+        }
+
+        // Collect metrics
+        const uint64_t uptime   = serverData.getUptimeSeconds();
+        const ServerData::WindowMetrics wmHour = serverData.getWindowMetricsHour();
+        const ServerData::WindowMetrics avgHour = serverData.getRollingAveragePerHour();
+        const uint64_t totalR   = serverData.getTotalRequests();
+        const uint64_t totalE   = serverData.getTotalErrors();
+        const uint64_t total4xx = serverData.getTotal4xx();
+        const uint64_t total5xx = serverData.getTotal5xx();
+        const uint64_t totalInt = serverData.getTotalInternalErrors();
+        const uint64_t rejTotal = serverData.getQueueRejections();
+        const int64_t  active   = serverData.getActiveHandlers();
+        const ServerData::LatencyStats lat = serverData.getLatencyStats(60);
+
+        std::string health = "ok";
+        if (wmHour.avg_queue_fill >= 80.0 || wmHour.requests >= 1000) {
+            health = "overloaded";
+        } else if (wmHour.avg_queue_fill >= 50.0 || wmHour.requests >= 500) {
+            health = "degraded";
+        }
+
+        // Build ISO 8601 UTC timestamp
+        std::time_t now_t = std::time(nullptr);
+        char timeBuf[32] = {};
+#ifdef _WIN32
+        struct tm utcTm{};
+        gmtime_s(&utcTm, &now_t);
+        std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%dT%H:%M:%SZ", &utcTm);
+#else
+        struct tm utcTm{};
+        gmtime_r(&now_t, &utcTm);
+        std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%dT%H:%M:%SZ", &utcTm);
+#endif
+
+        JSONParser requests;
+        requests.setLongLong("total",    static_cast<long long>(totalR));
+        requests.setLongLong("active",   static_cast<long long>(active));
+        requests.setLongLong("last_hour", static_cast<long long>(wmHour.requests));
+        requests.setLongLong("avg_per_hour", static_cast<long long>(avgHour.requests));
+
+        JSONParser errors;
+        errors.setLongLong("total",          static_cast<long long>(totalE));
+        errors.setLongLong("client_4xx",     static_cast<long long>(total4xx));
+        errors.setLongLong("server_5xx",     static_cast<long long>(total5xx));
+        errors.setLongLong("internal",       static_cast<long long>(totalInt));
+        errors.setLongLong("last_hour_4xx",   static_cast<long long>(wmHour.errors_4xx));
+        errors.setLongLong("last_hour_5xx",   static_cast<long long>(wmHour.errors_5xx));
+        errors.setLongLong("last_hour_int",   static_cast<long long>(wmHour.errors_int));
+        errors.setLongLong("avg_per_hour_4xx", static_cast<long long>(avgHour.errors_4xx));
+        errors.setLongLong("avg_per_hour_5xx", static_cast<long long>(avgHour.errors_5xx));
+        errors.setLongLong("avg_per_hour_int", static_cast<long long>(avgHour.errors_int));
+
+        JSONParser queue;
+        queue.setLongLong("max_size",          static_cast<long long>(_maxQueueSize));
+        queue.setLongLong("rejections_total",  static_cast<long long>(rejTotal));
+        queue.setDouble("avg_fill_percent_hour", wmHour.avg_queue_fill);
+        queue.setDouble("avg_fill_percent_per_hour", avgHour.avg_queue_fill);
+
+        JSONParser latency;
+        latency.setDouble("p50", lat.p50);
+        latency.setDouble("p95", lat.p95);
+        latency.setDouble("p99", lat.p99);
+
+        JSONParser root;
+        root.setString("health",          health);
+        root.setString("version",         getVersion());
+        root.setString("timestamp",       timeBuf);
+        root.setLongLong("uptime_seconds", static_cast<long long>(uptime));
+        root.setJSON("requests",          requests);
+        root.setJSON("errors",            errors);
+        root.setJSON("queue",             queue);
+        root.setJSON("latency_ms",        latency);
+
+        HTTPResponse resp("200 OK");
+        resp.setHeader("Content-Type", "application/json");
+        resp.setHeader("Cache-Control", "no-store");
+        resp.setBody(root.toString());
+        return resp;
+    });
+
+    sendToLogger("Status endpoint activated at /status (token-protected)");
 }  // namespace geruest
+
+}

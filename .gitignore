@@ -51,3 +51,6 @@ build-debug/
 
 # All environment files
 .env
+
+# All shell scripts
+*.sh

@@ -10,6 +10,7 @@
 #include "Handler.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <climits>
 #include <filesystem>
 #include <fstream>
@@ -30,9 +31,11 @@ Handler::Handler(SOCKET socket, std::string clientIP, const ServerData& serverDa
 Handler::Handler(int socket, std::string clientIP, const ServerData& serverDataRef)
 #endif
     : clientSocket(socket), serverData(serverDataRef), IP(std::move(clientIP)), buffer(std::make_unique<char[]>(BUFFER_SIZE)) {
+    serverData.incrementActiveHandlers();
 }
 
 Handler::~Handler() {
+    serverData.decrementActiveHandlers();
 #ifdef _WIN32
     closesocket(clientSocket);
 #else
@@ -170,7 +173,17 @@ void Handler::run() {
             hTTPRequest = HTTPRequest(requestStream.str(), IP, serverData.getRoot());
         }
 
-        handleRequest(&hTTPRequest);
+        serverData.recordRequest();
+        {
+            const auto _reqStart = std::chrono::steady_clock::now();
+            handleRequest(&hTTPRequest);
+            const auto _elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - _reqStart).count();
+            serverData.recordLatency(
+                _elapsedUs <= 0 ? 0u
+                : _elapsedUs > 0xFFFFFFFFLL ? 0xFFFFFFFFu
+                : static_cast<uint32_t>(_elapsedUs));
+        }
 
         // Clear the buffer, so we don't send the same data again
         memset(buffer.get(), 0, BUFFER_SIZE);
@@ -179,6 +192,7 @@ void Handler::run() {
 
 void Handler::handleRequest(HTTPRequest* request) {
     if (request == nullptr) {
+        serverData.recordError();
         sendToLoggerError("HTTPRequest is null.");
         std::string header = buildInternalServerErrorHeader();
         if (!sendSocket(header.c_str(), header.size())) {
@@ -210,6 +224,12 @@ void Handler::handleRequest(HTTPRequest* request) {
     if (routeHandler) {
         // Call the route handler  
         HTTPResponse response = (*routeHandler)(*request);
+
+        const std::string& _st = response.getStatus();
+        if (!_st.empty()) {
+            if (_st[0] == '4') { serverData.record4xx(); }
+            else if (_st[0] == '5') { serverData.record5xx(); }
+        }
 
         // Send the response
         std::string responseStr = response.toString();
@@ -250,6 +270,7 @@ void Handler::sendResponse(const std::string& status, const std::string& content
 }
 
 void Handler::sendNotFoundResponse(HTTPRequest* httpRequest) const {
+    serverData.record4xx();
     if (serverData.hasNotFoundPage() && httpRequest != nullptr) {
         std::string notFoundPath = serverData.getNotFoundPage();
         if (!notFoundPath.empty() && notFoundPath[0] != '/') {

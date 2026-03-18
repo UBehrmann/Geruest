@@ -432,6 +432,32 @@ class Geruest {
      */
     bool isRunning();
 
+    /**
+     * @brief Activate the /status metrics endpoint (token-protected).
+     *
+     * The endpoint returns a JSON snapshot of server health and metrics.
+     * Access requires the HTTP header: Authorization: Bearer <token>
+     * In dev mode, the token check is skipped and the endpoint is openly accessible.
+     *
+     * Response fields:
+     * - health: "ok" | "degraded" | "overloaded"
+     * - version: Geruest framework version (useful for multi-version comparisons)
+     * - timestamp: ISO 8601 UTC time of the snapshot
+     * - uptime_seconds: seconds since server start
+     * - requests.total / per_hour / active
+     * - errors.total / rate_percent
+     * - queue.current_size / max_size / rejections_total / fill_percent
+     * - latency_ms.p50 / p95 / p99 (milliseconds, last 1000 requests)
+     *
+     * Health thresholds:
+     * - degraded:   queue fill >= 50% OR error rate >= 2%
+     * - overloaded: queue fill >= 80% OR error rate >= 5%
+     *
+     * @param token Bearer token required in the Authorization header.
+     * @note Should be called before start().
+     */
+    void activateStatus(const std::string& token);
+
    private:
 #ifdef _WIN32
     SOCKET server_fd = INVALID_SOCKET;  // Socket descriptor for the server
@@ -446,6 +472,9 @@ class Geruest {
     int port = 8080;
 
     std::string hostname_ = "localhost";
+
+    bool _statusActive = false;
+    std::string _statusToken;
 
     ServerData serverData;
 

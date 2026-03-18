@@ -920,10 +920,15 @@ std::string JSONParser::toString() const {
                 result += value;
             } else {
                 bool isNumber = true;
+                int dotCount = 0;
                 if (!value.empty()) {
                     for (size_t i = 0; i < value.length(); ++i) {
                         char c = value[i];
-                        if (!std::isdigit(c) && c != '.' && c != '-') {
+                        if (c == '.') {
+                            if (++dotCount > 1) { isNumber = false; break; }
+                        } else if (c == '-') {
+                            if (i != 0) { isNumber = false; break; }
+                        } else if (!std::isdigit(c)) {
                             isNumber = false;
                             break;
                         }
