@@ -471,6 +471,8 @@ class Geruest {
      * - system.disk.total_gb / used_gb / free_gb / percent_used (root "/" on Linux, "C:\" on Windows)
      * - system.cgroup_memory.limit_mb / used_mb / free_mb / percent_used
      *     (only present when a cgroup memory limit is detected, e.g. inside Docker)
+     * - system.cgroup_cpu.allocated_cores / usage_percent
+     *     (only present when a CPU quota is set via --cpus; usage_percent is 0 on first call)
      *
      * Health thresholds:
      * - degraded:   avg queue fill (last hour) >= 50% OR requests (last hour) >= 500

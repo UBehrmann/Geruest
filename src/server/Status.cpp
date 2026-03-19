@@ -9,6 +9,7 @@
 
 #include "../Geruest.hpp"
 
+#include <chrono>
 #include <ctime>
 #include <fstream>
 #include <sstream>
@@ -38,6 +39,12 @@ struct SysCgroupMemInfo {
     uint64_t used_mb      = 0;
     uint64_t free_mb      = 0;
     double   percent_used = 0.0;
+};
+
+struct SysCgroupCpuInfo {
+    bool   available        = false;
+    double allocated_cores  = 0.0;   // CPU quota / period (e.g. 2.0 = 2 CPUs)
+    double usage_percent    = 0.0;   // % of allocated CPU used since last sample
 };
 
 struct SysCpuInfo {
@@ -128,6 +135,87 @@ static SysCgroupMemInfo collectCgroupMemInfo() {
     return info;
 }
 
+static SysCgroupCpuInfo collectCgroupCpuInfo() {
+    SysCgroupCpuInfo info;
+#ifndef _WIN32
+    double allocated = 0.0;
+    bool   hasLimit  = false;
+
+    // Try cgroup v2: cpu.max → "quota period" or "max period"
+    {
+        std::ifstream f("/sys/fs/cgroup/cpu.max");
+        if (f) {
+            std::string quota_str, period_str;
+            f >> quota_str >> period_str;
+            if (quota_str != "max" && !quota_str.empty() && !period_str.empty()) {
+                const double period = std::stod(period_str);
+                if (period > 0) { allocated = std::stod(quota_str) / period; hasLimit = true; }
+            }
+        }
+    }
+    // Fall back to cgroup v1
+    if (!hasLimit) {
+        std::ifstream qf("/sys/fs/cgroup/cpu/cpu.cfs_quota_us");
+        std::ifstream pf("/sys/fs/cgroup/cpu/cpu.cfs_period_us");
+        if (qf && pf) {
+            int64_t quota = 0, period = 0;
+            qf >> quota; pf >> period;
+            if (quota > 0 && period > 0) { allocated = static_cast<double>(quota) / static_cast<double>(period); hasLimit = true; }
+        }
+    }
+
+    if (!hasLimit) return info;
+    info.available       = true;
+    info.allocated_cores = allocated;
+
+    // Read cumulative CPU time (µs)
+    uint64_t usage_usec = 0;
+    bool     gotUsage   = false;
+
+    // cgroup v2: cpu.stat → "usage_usec <n>"
+    {
+        std::ifstream f("/sys/fs/cgroup/cpu.stat");
+        if (f) {
+            std::string line;
+            while (std::getline(f, line)) {
+                if (line.compare(0, 11, "usage_usec ") == 0) {
+                    std::istringstream ss(line.substr(11));
+                    ss >> usage_usec;
+                    gotUsage = true;
+                    break;
+                }
+            }
+        }
+    }
+    // cgroup v1: cpuacct.usage (nanoseconds)
+    if (!gotUsage) {
+        std::ifstream f("/sys/fs/cgroup/cpuacct/cpuacct.usage");
+        if (f) { uint64_t ns = 0; f >> ns; usage_usec = ns / 1000; gotUsage = true; }
+    }
+
+    if (gotUsage) {
+        // Delta between consecutive calls — no blocking sleep needed
+        static uint64_t                            prev_usec = 0;
+        static std::chrono::steady_clock::time_point prev_tp = std::chrono::steady_clock::now();
+
+        const auto   now        = std::chrono::steady_clock::now();
+        const double elapsed_us = static_cast<double>(
+            std::chrono::duration_cast<std::chrono::microseconds>(now - prev_tp).count());
+
+        if (elapsed_us > 0 && prev_usec > 0 && usage_usec >= prev_usec) {
+            const double cpu_delta = static_cast<double>(usage_usec - prev_usec);
+            info.usage_percent = (cpu_delta / (elapsed_us * allocated)) * 100.0;
+            if (info.usage_percent > 100.0) info.usage_percent = 100.0;
+            if (info.usage_percent <   0.0) info.usage_percent =   0.0;
+        }
+
+        prev_usec = usage_usec;
+        prev_tp   = now;
+    }
+#endif
+    return info;
+}
+
 static SysCpuInfo collectCpuInfo() {
     SysCpuInfo info;
     info.cpu_count = std::thread::hardware_concurrency();
@@ -187,10 +275,11 @@ void Geruest::enableStatus(const std::string& token) {
         }
 
         // Collect system metrics
-        const SysMemInfo       sysMem      = collectMemoryInfo();
+        const SysMemInfo       sysMem       = collectMemoryInfo();
         const SysCgroupMemInfo sysCgroupMem = collectCgroupMemInfo();
-        const SysCpuInfo       sysCpu      = collectCpuInfo();
-        const SysDiskInfo      sysDisk     = collectDiskInfo();
+        const SysCgroupCpuInfo sysCgroupCpu = collectCgroupCpuInfo();
+        const SysCpuInfo       sysCpu       = collectCpuInfo();
+        const SysDiskInfo      sysDisk      = collectDiskInfo();
 
         // Collect server metrics
         const uint64_t uptime   = serverData.getUptimeSeconds();
@@ -285,6 +374,13 @@ void Geruest::enableStatus(const std::string& token) {
             cgMem.setLongLong("free_mb",    static_cast<long long>(sysCgroupMem.free_mb));
             cgMem.setDouble("percent_used", sysCgroupMem.percent_used);
             system.setJSON("cgroup_memory", cgMem);
+        }
+
+        if (sysCgroupCpu.available) {
+            JSONParser cgCpu;
+            cgCpu.setDouble("allocated_cores", sysCgroupCpu.allocated_cores);
+            cgCpu.setDouble("usage_percent",   sysCgroupCpu.usage_percent);
+            system.setJSON("cgroup_cpu", cgCpu);
         }
 
         JSONParser root;
