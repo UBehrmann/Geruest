@@ -172,9 +172,12 @@ void Geruest::enableStatus(const std::string& token) {
 
     serverData.addRoute("/status", [this, token](const HTTPRequest& req) -> HTTPResponse {
         if (!serverData.isDevMode()) {
-            const std::string authHeader = req.getHeader("authorization");
-            const std::string expected   = "Bearer " + token;
-            if (authHeader != expected) {
+            const std::string authHeader  = req.getHeader("authorization");
+            const std::string queryToken  = req.getParam("token");
+            const std::string expected    = "Bearer " + token;
+            const bool validHeader = (authHeader == expected);
+            const bool validQuery  = (!queryToken.empty() && queryToken == token);
+            if (!validHeader && !validQuery) {
                 HTTPResponse resp("401 Unauthorized");
                 resp.setHeader("WWW-Authenticate", "Bearer realm=\"status\"");
                 resp.setHeader("Content-Type", "application/json");
