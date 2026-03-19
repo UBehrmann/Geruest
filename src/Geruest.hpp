@@ -464,6 +464,13 @@ class Geruest {
      * - errors.total / client_4xx / server_5xx / internal (+ last_hour/avg_per_hour breakdown)
      * - queue.current_size / max_size / rejections_total / avg_fill_percent_hour / avg_fill_percent_per_hour
      * - latency_ms.p50 / p95 / p99 (milliseconds, last 60 seconds)
+     * - system.memory.total_mb / used_mb / free_mb / percent_used (host memory)
+     * - system.cpu.count (logical CPU cores)
+     * - system.cpu.load_1m / load_5m / load_15m (system-wide, all cores combined; Linux only, 0 on Windows)
+     *     Normalize by count to get per-core utilization: load_1m / count * 100 ≈ CPU %
+     * - system.disk.total_gb / used_gb / free_gb / percent_used (root "/" on Linux, "C:\" on Windows)
+     * - system.cgroup_memory.limit_mb / used_mb / free_mb / percent_used
+     *     (only present when a cgroup memory limit is detected, e.g. inside Docker)
      *
      * Health thresholds:
      * - degraded:   avg queue fill (last hour) >= 50% OR requests (last hour) >= 500

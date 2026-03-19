@@ -19,9 +19,14 @@
 
 #include <algorithm>
 #include <ctime>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <thread>
+
+#ifndef _WIN32
+#include <sys/statvfs.h>
+#endif
 
 #include "data/HTTPResponse.hpp"
 #include "geruest/Version.hpp"
@@ -827,6 +832,154 @@ void Geruest::sendToLoggerError(const std::string& message) const {
     }
 }
 
+// ---------------------------------------------------------------------------
+// System metrics helpers
+// ---------------------------------------------------------------------------
+
+struct SysMemInfo {
+    uint64_t total_mb    = 0;
+    uint64_t used_mb     = 0;
+    uint64_t free_mb     = 0;
+    double   percent_used = 0.0;
+};
+
+struct SysCgroupMemInfo {
+    bool     available    = false;
+    uint64_t limit_mb     = 0;
+    uint64_t used_mb      = 0;
+    uint64_t free_mb      = 0;
+    double   percent_used = 0.0;
+};
+
+struct SysCpuInfo {
+    unsigned int cpu_count = 0;
+    double load_1m  = 0.0;
+    double load_5m  = 0.0;
+    double load_15m = 0.0;
+};
+
+struct SysDiskInfo {
+    uint64_t total_gb    = 0;
+    uint64_t used_gb     = 0;
+    uint64_t free_gb     = 0;
+    double   percent_used = 0.0;
+};
+
+static SysMemInfo collectMemoryInfo() {
+    SysMemInfo info;
+#ifdef _WIN32
+    MEMORYSTATUSEX ms{};
+    ms.dwLength = sizeof(ms);
+    if (GlobalMemoryStatusEx(&ms)) {
+        info.total_mb     = static_cast<uint64_t>(ms.ullTotalPhys) / (1024ULL * 1024);
+        info.free_mb      = static_cast<uint64_t>(ms.ullAvailPhys)  / (1024ULL * 1024);
+        info.used_mb      = info.total_mb - info.free_mb;
+        info.percent_used = info.total_mb > 0 ? 100.0 * info.used_mb / info.total_mb : 0.0;
+    }
+#else
+    std::ifstream f("/proc/meminfo");
+    std::string line;
+    uint64_t total_kb = 0, avail_kb = 0;
+    while (std::getline(f, line)) {
+        if (line.compare(0, 9, "MemTotal:") == 0) {
+            std::istringstream ss(line.substr(9));
+            ss >> total_kb;
+        } else if (line.compare(0, 13, "MemAvailable:") == 0) {
+            std::istringstream ss(line.substr(13));
+            ss >> avail_kb;
+        }
+    }
+    info.total_mb     = total_kb / 1024;
+    info.free_mb      = avail_kb / 1024;
+    info.used_mb      = info.total_mb - info.free_mb;
+    info.percent_used = info.total_mb > 0 ? 100.0 * static_cast<double>(info.used_mb) / static_cast<double>(info.total_mb) : 0.0;
+#endif
+    return info;
+}
+
+static SysCgroupMemInfo collectCgroupMemInfo() {
+    SysCgroupMemInfo info;
+#ifndef _WIN32
+    // Try cgroup v2 first
+    {
+        std::ifstream usage_f("/sys/fs/cgroup/memory.current");
+        std::ifstream limit_f("/sys/fs/cgroup/memory.max");
+        if (usage_f && limit_f) {
+            std::string limit_str;
+            uint64_t usage_bytes = 0;
+            usage_f >> usage_bytes;
+            limit_f >> limit_str;
+            if (limit_str != "max" && !limit_str.empty()) {
+                const uint64_t limit_bytes = std::stoull(limit_str);
+                info.available    = true;
+                info.limit_mb     = limit_bytes / (1024ULL * 1024);
+                info.used_mb      = usage_bytes / (1024ULL * 1024);
+                info.free_mb      = info.limit_mb > info.used_mb ? info.limit_mb - info.used_mb : 0;
+                info.percent_used = info.limit_mb > 0 ? 100.0 * static_cast<double>(info.used_mb) / static_cast<double>(info.limit_mb) : 0.0;
+                return info;
+            }
+        }
+    }
+    // Fall back to cgroup v1
+    {
+        std::ifstream usage_f("/sys/fs/cgroup/memory/memory.usage_in_bytes");
+        std::ifstream limit_f("/sys/fs/cgroup/memory/memory.limit_in_bytes");
+        if (usage_f && limit_f) {
+            uint64_t usage_bytes = 0, limit_bytes = 0;
+            usage_f >> usage_bytes;
+            limit_f >> limit_bytes;
+            // A near-UINT64_MAX value means no limit is set
+            if (limit_bytes < (1ULL << 62)) {
+                info.available    = true;
+                info.limit_mb     = limit_bytes / (1024ULL * 1024);
+                info.used_mb      = usage_bytes / (1024ULL * 1024);
+                info.free_mb      = info.limit_mb > info.used_mb ? info.limit_mb - info.used_mb : 0;
+                info.percent_used = info.limit_mb > 0 ? 100.0 * static_cast<double>(info.used_mb) / static_cast<double>(info.limit_mb) : 0.0;
+            }
+        }
+    }
+#endif
+    return info;
+}
+
+static SysCpuInfo collectCpuInfo() {
+    SysCpuInfo info;
+    info.cpu_count = std::thread::hardware_concurrency();
+#ifndef _WIN32
+    std::ifstream f("/proc/loadavg");
+    if (f) f >> info.load_1m >> info.load_5m >> info.load_15m;
+#endif
+    return info;
+}
+
+static SysDiskInfo collectDiskInfo() {
+    SysDiskInfo info;
+#ifdef _WIN32
+    ULARGE_INTEGER freeBytesAvailable, totalBytes, totalFreeBytes;
+    if (GetDiskFreeSpaceExA("C:\\", &freeBytesAvailable, &totalBytes, &totalFreeBytes)) {
+        info.total_gb     = totalBytes.QuadPart      / (1024ULL * 1024 * 1024);
+        info.free_gb      = totalFreeBytes.QuadPart  / (1024ULL * 1024 * 1024);
+        info.used_gb      = info.total_gb - info.free_gb;
+        info.percent_used = info.total_gb > 0 ? 100.0 * static_cast<double>(info.used_gb) / static_cast<double>(info.total_gb) : 0.0;
+    }
+#else
+    struct statvfs sv{};
+    if (statvfs("/", &sv) == 0) {
+        const uint64_t block = sv.f_frsize;
+        const uint64_t total = sv.f_blocks * block;
+        const uint64_t free  = sv.f_bfree  * block;
+        const uint64_t avail = sv.f_bavail * block;
+        info.total_gb     = total / (1024ULL * 1024 * 1024);
+        info.free_gb      = avail / (1024ULL * 1024 * 1024);
+        info.used_gb      = (total - free) / (1024ULL * 1024 * 1024);
+        info.percent_used = total > 0 ? 100.0 * static_cast<double>(total - free) / static_cast<double>(total) : 0.0;
+    }
+#endif
+    return info;
+}
+
+// ---------------------------------------------------------------------------
+
 void Geruest::enableStatus(const std::string& token) {
     _statusToken = token;
     _statusActive = true;
@@ -846,6 +999,11 @@ void Geruest::enableStatus(const std::string& token) {
         }
 
         // Collect metrics
+        const SysMemInfo      sysMem      = collectMemoryInfo();
+        const SysCgroupMemInfo sysCgroupMem = collectCgroupMemInfo();
+        const SysCpuInfo      sysCpu      = collectCpuInfo();
+        const SysDiskInfo     sysDisk     = collectDiskInfo();
+
         const uint64_t uptime   = serverData.getUptimeSeconds();
         const ServerData::WindowMetrics wmHour = serverData.getWindowMetricsHour();
         const ServerData::WindowMetrics avgHour = serverData.getRollingAveragePerHour();
@@ -909,6 +1067,38 @@ void Geruest::enableStatus(const std::string& token) {
         latency.setDouble("p95", lat.p95);
         latency.setDouble("p99", lat.p99);
 
+        JSONParser memory;
+        memory.setLongLong("total_mb",    static_cast<long long>(sysMem.total_mb));
+        memory.setLongLong("used_mb",     static_cast<long long>(sysMem.used_mb));
+        memory.setLongLong("free_mb",     static_cast<long long>(sysMem.free_mb));
+        memory.setDouble("percent_used",  sysMem.percent_used);
+
+        JSONParser cpu;
+        cpu.setInt("count",       static_cast<int>(sysCpu.cpu_count));
+        cpu.setDouble("load_1m",  sysCpu.load_1m);
+        cpu.setDouble("load_5m",  sysCpu.load_5m);
+        cpu.setDouble("load_15m", sysCpu.load_15m);
+
+        JSONParser disk;
+        disk.setLongLong("total_gb",   static_cast<long long>(sysDisk.total_gb));
+        disk.setLongLong("used_gb",    static_cast<long long>(sysDisk.used_gb));
+        disk.setLongLong("free_gb",    static_cast<long long>(sysDisk.free_gb));
+        disk.setDouble("percent_used", sysDisk.percent_used);
+
+        JSONParser system;
+        system.setJSON("memory", memory);
+        system.setJSON("cpu",    cpu);
+        system.setJSON("disk",   disk);
+
+        if (sysCgroupMem.available) {
+            JSONParser cgMem;
+            cgMem.setLongLong("limit_mb",   static_cast<long long>(sysCgroupMem.limit_mb));
+            cgMem.setLongLong("used_mb",    static_cast<long long>(sysCgroupMem.used_mb));
+            cgMem.setLongLong("free_mb",    static_cast<long long>(sysCgroupMem.free_mb));
+            cgMem.setDouble("percent_used", sysCgroupMem.percent_used);
+            system.setJSON("cgroup_memory", cgMem);
+        }
+
         JSONParser root;
         root.setString("health",          health);
         root.setString("version",         getVersion());
@@ -918,6 +1108,7 @@ void Geruest::enableStatus(const std::string& token) {
         root.setJSON("errors",            errors);
         root.setJSON("queue",             queue);
         root.setJSON("latency_ms",        latency);
+        root.setJSON("system",            system);
 
         HTTPResponse resp("200 OK");
         resp.setHeader("Content-Type", "application/json");
