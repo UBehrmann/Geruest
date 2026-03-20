@@ -277,6 +277,24 @@ void Handler::sendNotFoundResponse(HTTPRequest* httpRequest) const {
             notFoundPath = "/" + notFoundPath;
         }
 
+        // If the original request had a language prefix in the URL (e.g. /de/missing),
+        // serve the language-specific 404 page (e.g. /de/404.html → root/html/de/404.html).
+        if (serverData.hasLanguages()) {
+            const std::string& reqPath = httpRequest->getPathString();
+            if (reqPath.size() >= 4 && reqPath[0] == '/' &&
+                std::isalpha(static_cast<unsigned char>(reqPath[1])) &&
+                std::isalpha(static_cast<unsigned char>(reqPath[2])) &&
+                reqPath[3] == '/') {
+                const std::string langCode = reqPath.substr(1, 2);
+                for (const auto& lang : serverData.getAvailableLanguages()) {
+                    if (lang == langCode) {
+                        notFoundPath = "/" + langCode + notFoundPath;
+                        break;
+                    }
+                }
+            }
+        }
+
         const std::string extension = getExtension(notFoundPath);
         const std::string contentType = getContentType(extension);
         std::string resolvedNotFoundPath = notFoundPath;
