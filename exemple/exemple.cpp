@@ -234,7 +234,7 @@ int main(int argc, char* argv[]) {
     std::cout << "=====================================\n" << std::endl;
 
     // Add basic auth
-    server->setBasicAuthEnabled(true);
+    server->setBasicAuth(true);
 
     server->addBasicAuthUser("admin", "secret123");
     server->addProtectedPage("/devices/devices");

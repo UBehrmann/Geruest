@@ -56,6 +56,12 @@ public:
     void setBody(const std::string& responseBody);
 
     /**
+     * Returns the HTTP status string (e.g., "200 OK").
+     * @return The status string.
+     */
+    const std::string& getStatus() const { return status; }
+
+    /**
      * Builds and returns the full HTTP response as a string.
      * @return The complete HTTP response.
      */

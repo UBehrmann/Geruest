@@ -63,6 +63,21 @@ class Geruest {
 
     void addRoute(const std::string& path, RouteHandler handler);
 
+    /**
+     * @brief Add a redirect from one route to another route or URL.
+     * @param from Source route pattern (supports '*' wildcard)
+     * @param to Target route or external URL. If it contains '*', the wildcard capture is forwarded.
+     * @param status Redirect status code (301 or 302, default: 301)
+     */
+    void addRedirect(const std::string& from, const std::string& to, int status = 301);
+
+    /**
+     * @brief Add multiple redirects with a shared status code.
+     * @param redirects Mapping of source route pattern to target route/URL
+     * @param status Redirect status code (301 or 302, default: 301)
+     */
+    void addRedirects(const std::unordered_map<std::string, std::string>& redirects, int status = 301);
+
     void addRoot(const std::string& root);
 
     /**
@@ -102,6 +117,14 @@ class Geruest {
      * @note Must be called before init() or start()
      */
     void setMergeAssets(bool enabled);
+
+    /**
+     * @brief Enable automatic CSS/JS asset merging (alias for setMergeAssets(true))
+     * 
+     * Convenience method that follows the same pattern as enableDevMode().
+     * @see setMergeAssets for detailed behavior description
+     */
+    void enableMergeAssets();
 
     /**
      * @brief Enable or disable automatic PNG/JPG to WebP conversion.
@@ -281,7 +304,15 @@ class Geruest {
      * @param enabled true to enable authentication, false to disable
      * @note When disabled, all pages are accessible without credentials
      */
-    void setBasicAuthEnabled(bool enabled);
+    void setBasicAuth(bool enabled);
+
+    /**
+     * @brief Enable Basic Authentication (alias for setBasicAuth(true))
+     * 
+     * Convenience method that follows the same pattern as enableDevMode().
+     * @see setBasicAuth for detailed behavior description
+     */
+    void enableBasicAuth();
     
     /**
      * @brief Add a user with credentials for Basic Authentication
@@ -417,6 +448,41 @@ class Geruest {
      */
     bool isRunning();
 
+    /**
+     * @brief Activate the /status metrics endpoint (token-protected).
+     *
+     * The endpoint returns a JSON snapshot of server health and metrics.
+     * Access requires the HTTP header: Authorization: Bearer <token>
+     * In dev mode, the token check is skipped and the endpoint is openly accessible.
+     *
+     * Response fields:
+     * - health: "ok" | "degraded" | "overloaded"
+     * - version: Geruest framework version (useful for multi-version comparisons)
+     * - timestamp: ISO 8601 UTC time of the snapshot
+     * - uptime_seconds: seconds since server start
+     * - requests.total / last_hour / avg_per_hour / active
+     * - errors.total / client_4xx / server_5xx / internal (+ last_hour/avg_per_hour breakdown)
+     * - queue.current_size / max_size / rejections_total / avg_fill_percent_hour / avg_fill_percent_per_hour
+     * - latency_ms.p50 / p95 / p99 (milliseconds, last 60 seconds)
+     * - system.memory.total_mb / used_mb / free_mb / percent_used (host memory)
+     * - system.cpu.count (logical CPU cores)
+     * - system.cpu.load_1m / load_5m / load_15m (system-wide, all cores combined; Linux only, 0 on Windows)
+     *     Normalize by count to get per-core utilization: load_1m / count * 100 ≈ CPU %
+     * - system.disk.total_gb / used_gb / free_gb / percent_used (root "/" on Linux, "C:\" on Windows)
+     * - system.cgroup_memory.limit_mb / used_mb / free_mb / percent_used
+     *     (only present when a cgroup memory limit is detected, e.g. inside Docker)
+     * - system.cgroup_cpu.allocated_cores / usage_percent
+     *     (only present when a CPU quota is set via --cpus; usage_percent is 0 on first call)
+     *
+     * Health thresholds:
+     * - degraded:   avg queue fill (last hour) >= 50% OR requests (last hour) >= 500
+     * - overloaded: avg queue fill (last hour) >= 80% OR requests (last hour) >= 1000
+     *
+     * @param token Bearer token required in the Authorization header.
+     * @note Should be called before start().
+     */
+    void enableStatus(const std::string& token);
+
    private:
 #ifdef _WIN32
     SOCKET server_fd = INVALID_SOCKET;  // Socket descriptor for the server
@@ -431,6 +497,9 @@ class Geruest {
     int port = 8080;
 
     std::string hostname_ = "localhost";
+
+    bool _statusActive = false;
+    std::string _statusToken;
 
     ServerData serverData;
 
@@ -474,6 +543,7 @@ class Geruest {
     std::mutex _queueMutex;
     std::condition_variable _queueCV;
     std::atomic<bool> _workersRunning{false};
+    std::atomic<size_t> _queueSize{0};  // mirror of _connectionQueue.size() for lock-free status reporting
 
     void sendToLogger(const std::string& message) const;
 

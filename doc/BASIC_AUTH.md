@@ -5,7 +5,7 @@ HTTP Basic Authentication for protecting pages with SHA-256 password hashing.
 ## Quick Start
 
 ```cpp
-server.setBasicAuthEnabled(true);
+server.setBasicAuth(true);
 server.addBasicAuthUser("admin", "secret123");  // SHA-256 hashed internally
 server.addProtectedPage("/admin");
 server.addProtectedPage("/dashboard");
@@ -17,7 +17,7 @@ All `/admin` and `/dashboard` pages now require login.
 
 ```cpp
 // Enable/disable
-void setBasicAuthEnabled(bool enabled);
+void setBasicAuth(bool enabled);
 
 // User management
 void addBasicAuthUser(const std::string& username, const std::string& password);
@@ -49,7 +49,7 @@ server.addBasicAuthUserHashed("admin", "89e01536ac207279409d4de1e5253e01f4a1769e
 ## Example: Admin Panel
 
 ```cpp
-server.setBasicAuthEnabled(true);
+server.setBasicAuth(true);
 server.addBasicAuthUser("admin", "admin123");
 server.addProtectedPage("/admin");
 server.addProtectedPage("/admin/users");

@@ -366,6 +366,57 @@ TEST(JSONParserTest, SetValues) {
     EXPECT_EQ(jsonArray2[1].getString("nestedKey"), "nestedValue");
 }
 
+TEST(JSONParserTest, ToString_InvalidJsonNumbersRemainQuoted) {
+    struct Case {
+        std::string input;
+        std::string expectedSerializedValue;
+    };
+
+    const std::vector<Case> cases = {
+        // Lone sign / dot (regression cases)
+        {".", "\".\""},
+        {"-", "\"-\""},
+
+        // Invalid JSON number forms
+        {"", "\"\""},
+        {"1.", "\"1.\""},
+        {".1", "\".1\""},
+        {"-.1", "\"-.1\""},
+        {"01", "\"01\""},
+        {"00", "\"00\""},
+        {"1e", "\"1e\""},
+        {"1E", "\"1E\""},
+        {"1e+", "\"1e+\""},
+        {"1e-", "\"1e-\""},
+        {"-.", "\"-.\""},
+        {"--1", "\"--1\""},
+        {"1..0", "\"1..0\""},
+        {"1-2", "\"1-2\""},
+        {"NaN", "\"NaN\""},
+        {"Infinity", "\"Infinity\""},
+
+        // Valid JSON numbers (should be emitted unquoted)
+        {"0", "0"},
+        {"-0", "-0"},
+        {"10", "10"},
+        {"10.0", "10.0"},
+        {"0.0", "0.0"},
+        {"-12.34", "-12.34"},
+        {"1e2", "1e2"},
+        {"1E2", "1E2"},
+        {"1e+2", "1e+2"},
+        {"1e-2", "1e-2"},
+        {"-1e-2", "-1e-2"},
+    };
+
+    for (const auto& tc : cases) {
+        JSONParser json;
+        json.setString("k", tc.input);
+        const std::string out = json.toString();
+        EXPECT_EQ(out, std::string("{\"k\":") + tc.expectedSerializedValue + "}") << "input='" << tc.input << "'";
+    }
+}
+
 TEST(JSONParserTest, JSONArrayFromFile) {
     auto json = getJSONFromFileSafe("JSONParser/jsonArray.json");
     ASSERT_NE(json, nullptr);

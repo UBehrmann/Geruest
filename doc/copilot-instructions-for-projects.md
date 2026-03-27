@@ -133,7 +133,7 @@ Priority: .env file > environment variables > default value.
 ## Auth
 
 ```cpp
-server.setBasicAuthEnabled(true);
+server.setBasicAuth(true);
 server.addBasicAuthUser("admin", "password");              // hashed internally (SHA-256)
 server.addBasicAuthUserHashed("admin", "64charhexhash");   // pre-hashed
 server.addProtectedPage("/admin");

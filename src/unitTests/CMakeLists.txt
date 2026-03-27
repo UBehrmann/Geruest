@@ -57,6 +57,10 @@ endif()
 # Collect all source files from the main Geruest library
 set(GERUEST_SOURCES
     ../Geruest.cpp
+    ../server/Config.cpp
+    ../server/Socket.cpp
+    ../server/Workers.cpp
+    ../server/Status.cpp
     ../auth/BasicAuth.cpp
     ../config/ConfigLoader.cpp
     ../data/HTTPRequest.cpp
