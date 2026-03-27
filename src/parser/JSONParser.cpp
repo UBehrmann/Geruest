@@ -2,6 +2,7 @@
 #include <iostream>
 #include <cctype>
 #include <stdexcept>
+#include "security/Security.hpp"
 
 namespace geruest {
 
@@ -302,7 +303,7 @@ void JSONParser::parseJSON() {
 }
 
 std::string JSONParser::stringToString(const std::string &val) const {
-    return "\"" + val + "\"";
+    return "\"" + Security::escapeJson(val) + "\"";
 }
 
 std::string JSONParser::getString(const std::string &key) {
@@ -751,7 +752,7 @@ void JSONParser::setStringArray(const std::string &key, const std::vector<std::s
     std::string arrayStr = "[";
     for (size_t i = 0; i < value.size(); ++i) {
         if (i > 0) arrayStr += ",";
-        arrayStr += "\"" + value[i] + "\"";
+        arrayStr += "\"" + Security::escapeJson(value[i]) + "\"";
     }
     arrayStr += "]";
     data[key] = arrayStr;
@@ -972,7 +973,7 @@ std::string JSONParser::toString() const {
                 if (isJsonNumber(value)) {
                     result += value;
                 } else {
-                    result += "\"" + value + "\"";
+                    result += stringToString(value);
                 }
             }
         }

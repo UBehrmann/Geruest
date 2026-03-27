@@ -75,6 +75,7 @@ set(GERUEST_SOURCES
     ../builders/JSObfuscator.cpp
     ../builders/WebPConverter.cpp
     ../handler/Handler.cpp
+    ../security/Security.cpp
 )
 
 # Conditionally add EmailSender if CURL is available
@@ -85,7 +86,11 @@ endif()
 # Create individual test executables
 # Note: No longer building a combined Geruest_Unit_Tests executable
 # All tests are run via individual executables or ctest
-add_executable(JSONParser_Tests JSONParser/JSONParser_tests.cpp ../parser/JSONParser.cpp)
+add_executable(JSONParser_Tests
+    JSONParser/JSONParser_tests.cpp
+    ../parser/JSONParser.cpp
+    ../security/Security.cpp
+)
 target_link_libraries(JSONParser_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
 add_executable(HTTPRequest_Tests HTTPRequest/HTTPRequest_tests.cpp ../data/HTTPRequest.cpp)
@@ -112,6 +117,7 @@ add_executable(ContentBuilder_Tests
     ../builders/JSObfuscator.cpp
     ../builders/WebPConverter.cpp
     ../parser/JSONParser.cpp
+    ../security/Security.cpp
     ../FileManagement/FileManagement.cpp
 )
 target_link_libraries(ContentBuilder_Tests ${PLATFORM_LIBS} GTest::gtest_main)
@@ -142,6 +148,12 @@ add_executable(AssetMerger_Tests
 )
 target_link_libraries(AssetMerger_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
+add_executable(Security_Tests
+    Security/Security_tests.cpp
+    ../security/Security.cpp
+)
+target_link_libraries(Security_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+
 # Add tests to CTest using Google Test discovery
 include(GoogleTest)
 gtest_discover_tests(JSONParser_Tests)
@@ -153,11 +165,12 @@ gtest_discover_tests(JSObfuscator_Tests)
 gtest_discover_tests(BasicAuth_Tests)
 gtest_discover_tests(ConfigLoader_Tests)
 gtest_discover_tests(AssetMerger_Tests)
+gtest_discover_tests(Security_Tests)
 
 # Custom target to run all tests
 add_custom_target(run_tests
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-    DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests
+    DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests
     COMMENT "Running all unit tests via CTest"
 )
 

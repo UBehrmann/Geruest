@@ -22,6 +22,7 @@
 #include "builders/JSBuilder.hpp"
 #include "builders/WebPConverter.hpp"
 #include "data/HTTPResponse.hpp"
+#include "security/Security.hpp"
 
 namespace geruest {
 
@@ -545,6 +546,12 @@ bool startsWithLangPrefix(const std::string& str) {
 }
 
 std::string Handler::buildPath(std::string& pathReceived, const std::string& Extension, HTTPRequest* httpRequest) const {
+    // Block directory-traversal attempts before any path manipulation.
+    if (!Security::isSafePath(serverData.getRoot(), pathReceived)) {
+        sendToLoggerError("Path traversal attempt blocked: " + pathReceived);
+        return "";
+    }
+
     std::map<std::string, std::string> contentRoot = {
         {"html", "/html"},         {"htm", "/html"},           {"css", "/assets/css"},    {"js", "/assets/js"},
         {"jpg", "/assets/images"}, {"jpeg", "/assets/images"}, {"png", "/assets/images"}, {"gif", "/assets/images"},
@@ -670,7 +677,14 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
         pathReceived += ".html";
     }
 
-    return contentRoot.count(Extension) ? serverData.getRoot() + contentRoot[Extension] + pathReceived : "";
+    if (!contentRoot.count(Extension)) return "";
+
+    std::string finalPath = serverData.getRoot() + contentRoot[Extension] + pathReceived;
+    if (!Security::isSafePath(serverData.getRoot(), contentRoot[Extension] + pathReceived)) {
+        sendToLoggerError("Path traversal attempt blocked after assembly: " + finalPath);
+        return "";
+    }
+    return finalPath;
 }
 
 /**

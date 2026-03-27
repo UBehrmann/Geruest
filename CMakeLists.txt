@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 
 # Define the project name and version
-project(GeruestLibrary VERSION 0.7.0 LANGUAGES CXX)
+project(GeruestLibrary VERSION 0.7.1 LANGUAGES CXX)
 
 # Configure version header
 configure_file(
@@ -95,6 +95,7 @@ add_library(Geruest STATIC
     src/FileManagement/FileManagement.cpp
     src/handler/Handler.cpp
     src/parser/JSONParser.cpp
+    src/security/Security.cpp
 )
 
 # Public headers
