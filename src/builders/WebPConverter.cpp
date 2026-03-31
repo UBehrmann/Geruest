@@ -74,7 +74,9 @@ size_t WebPConverter::_staticCacheSizeBytes = 0;
 size_t WebPConverter::_staticMaxCacheBytes = WebPConverter::WEBP_DEFAULT_MAX_CACHE_BYTES;
 std::condition_variable WebPConverter::_conversionCV;
 std::unordered_set<std::string> WebPConverter::_inProgressConversions;
+bool WebPConverter::_conversionActive = false;
 int WebPConverter::_maxConversionDimension = WebPConverter::WEBP_DEFAULT_MAX_DIMENSION;
+const ServerData* WebPConverter::_serverData = nullptr;
 
 // ========== Constructor ==========
 
@@ -145,6 +147,10 @@ void WebPConverter::setMaxCacheBytes(size_t maxBytes) {
 
 void WebPConverter::setMaxConversionDimension(int maxDimension) {
     _maxConversionDimension = (maxDimension < 0) ? 0 : maxDimension;
+}
+
+void WebPConverter::setServerData(const ServerData* sd) {
+    _serverData = sd;
 }
 
 // ========== Static HTML processing methods ==========
@@ -239,12 +245,6 @@ std::vector<uint8_t> WebPConverter::resizeImage(StbiBuffer src,
     if (dstW < 1) dstW = 1;
     if (dstH < 1) dstH = 1;
 
-    std::cerr << "WebPConverter: Resizing " << width << "x" << height
-              << " -> " << dstW << "x" << dstH
-              << " (~" << (static_cast<size_t>(dstW) * static_cast<size_t>(dstH)
-                           * static_cast<size_t>(channels) / (1024 * 1024))
-              << " MB after resize)" << std::endl;
-
     std::vector<uint8_t> resized(
         static_cast<size_t>(dstW) * static_cast<size_t>(dstH) *
         static_cast<size_t>(channels));
@@ -278,14 +278,6 @@ WebPConverter::StbiBuffer WebPConverter::loadImage(const std::string& path,
         // All JPEGs and most PNGs are 3-channel (RGB), saving 25 % of buffer.
         channels = (fileChannels == 4) ? 4 : 3;
     }
-
-    const size_t rawBytes =
-        static_cast<size_t>(width) * static_cast<size_t>(height) *
-        static_cast<size_t>(channels);
-    std::cerr << "WebPConverter: Loading " << path
-              << " (" << width << "x" << height
-              << ", " << channels << "ch"
-              << ", ~" << (rawBytes / (1024 * 1024)) << " MB raw)" << std::endl;
 
     // stbi_load returns its own allocation; we wrap it in StbiBuffer so it is
     // freed via stbi_image_free — no copy is made here.
@@ -447,119 +439,154 @@ bool WebPConverter::convertImage(const std::string& sourcePath, const std::strin
         return false;
     }
 
-    if (cacheOnly) {
-        // --- In-flight deduplication for cache-only (dev) mode ---
-        //
-        // Under _staticCacheMutex we atomically check the cache, and if the
-        // image is already being converted by another thread we wait on
-        // _conversionCV until that thread finishes.  This guarantees:
-        //  • Each image path is decoded/encoded by at most ONE thread at a time,
-        //    bounding peak memory to a single RGBA + WebP buffer set.
-        //  • No TOCTOU race: the check and the "claim" are atomic.
-        //  • Different image paths can still progress independently.
-        {
-            std::unique_lock<std::mutex> lock(_staticCacheMutex);
+    // -----------------------------------------------------------------------
+    // Phase 1 — acquire global conversion slot + optional per-path dedup.
+    //
+    // _conversionActive ensures AT MOST ONE decode/encode pipeline runs at any
+    // time, regardless of mode (dev or production).  This is the only reliable
+    // way to bound peak memory when the browser fires N parallel connections
+    // for N different images.
+    //
+    // For cacheOnly (dev mode) we additionally wait for the same image path not
+    // to be in-progress so that identical concurrent requests share the result.
+    // -----------------------------------------------------------------------
+    bool claimedPath = false;   // did we insert into _inProgressConversions?
+
+    {
+        std::unique_lock<std::mutex> lock(_staticCacheMutex);
+
+        if (cacheOnly) {
             _conversionCV.wait(lock, [&outputPath]() {
-                return _staticWebpCache.count(outputPath) > 0 ||
+                if (_staticWebpCache.count(outputPath) > 0) return true; // already done
+                return !_conversionActive &&
                        _inProgressConversions.count(outputPath) == 0;
             });
             if (_staticWebpCache.count(outputPath) > 0) {
-                return true; // another thread already converted it
+                return true; // another thread converted it while we waited
             }
-            _inProgressConversions.insert(outputPath); // we own this conversion
+            _inProgressConversions.insert(outputPath);
+            claimedPath = true;
+        } else {
+            // Production: just wait for the global slot; the filesystem provides
+            // idempotency (mtime checks happen before convertImage is called).
+            _conversionCV.wait(lock, []() { return !_conversionActive; });
         }
+
+        _conversionActive = true; // claim slot — applies to BOTH modes
     }
 
-    // Decode + encode with no lock held so other images can be claimed in parallel.
-    //
-    // Memory model (zero-copy load path):
-    //   loadImage  → StbiBuffer (stbi's own allocation, no vector copy)
-    //   resizeImage→ takes ownership of StbiBuffer, allocates small target
-    //                vector, frees StbiBuffer immediately → peak = src + dst
-    //   encodeToWebP→ takes raw pointer; after this call only the WebP output
-    //                remains in memory
+    // RAII cleanup: releases _conversionActive and the per-path slot (if claimed)
+    // on every exit path so the next waiting thread can proceed.
+    auto releaseSlot = [&]() noexcept {
+        {
+            std::lock_guard<std::mutex> lock(_staticCacheMutex);
+            _conversionActive = false;
+            if (claimedPath) _inProgressConversions.erase(outputPath);
+        }
+        _conversionCV.notify_all();
+    };
 
-    // Pre-flight: peek at image dimensions without allocating, then verify
-    // there is enough RAM before committing to the full load + encode.
+    // -----------------------------------------------------------------------
+    // Phase 2 — pre-flight memory check.
+    // Now that we hold the global slot exclusively, getAvailableMemoryBytes()
+    // reflects the true headroom (no other conversion is inflating usage).
+    // -----------------------------------------------------------------------
     int width, height, fileCh = 0;
     if (!stbi_info(sourcePath.c_str(), &width, &height, &fileCh)) {
         std::cerr << "WebPConverter: Cannot read image info: " << sourcePath << std::endl;
-        if (cacheOnly) {
-            { std::lock_guard<std::mutex> lock(_staticCacheMutex); _inProgressConversions.erase(outputPath); }
-            _conversionCV.notify_all();
-        }
+        releaseSlot();
         return false;
     }
+
     const int estChannels = (fileCh == 4) ? 4 : 3;
     const size_t peakEstimate = estimateConversionPeakBytes(width, height, estChannels);
-    constexpr size_t SAFETY_MARGIN = 80ULL * 1024 * 1024; // 80 MB headroom for server overhead
+    constexpr size_t SAFETY_MARGIN = 80ULL * 1024 * 1024; // 80 MB headroom
     const size_t available = getAvailableMemoryBytes();
 
+    const bool verbose = (_serverData && _serverData->shouldLog(LogLevel::Debug));
+
     if (available > 0 && peakEstimate + SAFETY_MARGIN > available) {
-        std::cerr << "WebPConverter: Skipping " << sourcePath
-                  << " — estimated peak " << (peakEstimate / (1024 * 1024))
-                  << " MB + " << (SAFETY_MARGIN / (1024 * 1024))
-                  << " MB margin exceeds available "
-                  << (available / (1024 * 1024)) << " MB" << std::endl;
-        if (cacheOnly) {
-            { std::lock_guard<std::mutex> lock(_staticCacheMutex); _inProgressConversions.erase(outputPath); }
-            _conversionCV.notify_all();
+        if (verbose) {
+            std::cerr << "WebPConverter: Skipping " << sourcePath
+                      << " — estimated peak " << (peakEstimate / (1024 * 1024))
+                      << " MB + " << (SAFETY_MARGIN / (1024 * 1024))
+                      << " MB margin exceeds available "
+                      << (available / (1024 * 1024)) << " MB" << std::endl;
         }
+        releaseSlot();
         return false;
     }
 
-    // channels already determined above — pass it in to skip the second stbi_info
-    int channels = estChannels;
+    // -----------------------------------------------------------------------
+    // Phase 3 — load → resize → encode.
+    // Zero-copy load: stbi_load returns its own allocation (StbiBuffer).
+    // resizeImage takes ownership and frees it immediately after writing the
+    // small target buffer → peak = source + target, then only target remains.
+    // -----------------------------------------------------------------------
+    int channels = estChannels; // already known — skip second stbi_info in loadImage
+
+    if (verbose) {
+        const size_t rawMB = static_cast<size_t>(width) * static_cast<size_t>(height) *
+                             static_cast<size_t>(estChannels) / (1024 * 1024);
+        std::cerr << "WebPConverter: Loading " << sourcePath
+                  << " (" << width << "x" << height
+                  << ", " << estChannels << "ch"
+                  << ", ~" << rawMB << " MB raw)" << std::endl;
+    }
+
     StbiBuffer srcBuf = loadImage(sourcePath, width, height, channels);
 
     if (!srcBuf) {
-        if (cacheOnly) {
-            { std::lock_guard<std::mutex> lock(_staticCacheMutex); _inProgressConversions.erase(outputPath); }
-            _conversionCV.notify_all();
-        }
+        releaseSlot();
         return false;
     }
 
-    // Downscale if needed.  resizeImage moves srcBuf in and resets it before
-    // returning, so the large source allocation is freed immediately.
-    // If no resize is needed, encode directly from the stbi buffer (no copy).
     std::vector<uint8_t> resizedPixels;
     const uint8_t* encodePtr = nullptr;
 
     if (_maxConversionDimension > 0 &&
         (width > _maxConversionDimension || height > _maxConversionDimension)) {
+        if (verbose) {
+            int dstW = width, dstH = height;
+            const float scale = static_cast<float>(_maxConversionDimension) /
+                                static_cast<float>((dstW >= dstH) ? dstW : dstH);
+            dstW = static_cast<int>(static_cast<float>(dstW) * scale);
+            dstH = static_cast<int>(static_cast<float>(dstH) * scale);
+            std::cerr << "WebPConverter: Resizing " << width << "x" << height
+                      << " -> " << dstW << "x" << dstH
+                      << " (~" << (static_cast<size_t>(dstW) * static_cast<size_t>(dstH) *
+                                   static_cast<size_t>(channels) / (1024 * 1024))
+                      << " MB after resize)" << std::endl;
+        }
         resizedPixels = resizeImage(std::move(srcBuf), width, height, channels,
                                     _maxConversionDimension);
         encodePtr = resizedPixels.data();
     } else {
-        // No resize: encode straight from the stbi buffer — zero extra copy.
-        encodePtr = srcBuf.get();
+        encodePtr = srcBuf.get(); // encode straight from stbi buffer — no copy
     }
 
     std::vector<uint8_t> webpData = encodeToWebP(encodePtr, width, height, channels, quality);
 
-    // Release all pixel memory before touching the cache
+    // Free all pixel memory before writing to cache / disk
     srcBuf.reset();
     resizedPixels.clear();
     resizedPixels.shrink_to_fit();
 
     if (webpData.empty()) {
-        if (cacheOnly) {
-            { std::lock_guard<std::mutex> lock(_staticCacheMutex); _inProgressConversions.erase(outputPath); }
-            _conversionCV.notify_all();
-        }
+        releaseSlot();
         return false;
     }
 
+    // -----------------------------------------------------------------------
+    // Phase 4 — store result and release slot.
+    // -----------------------------------------------------------------------
     if (cacheOnly) {
         auto entry = std::make_shared<const std::vector<uint8_t>>(std::move(webpData));
         const size_t entrySize = entry->size();
-
         {
             std::lock_guard<std::mutex> lock(_staticCacheMutex);
 
             if (entrySize <= _staticMaxCacheBytes) {
-                // Evict oldest entries until the new entry fits
                 while (!_staticCacheOrder.empty() &&
                        _staticCacheSizeBytes + entrySize > _staticMaxCacheBytes) {
                     const std::string& oldest = _staticCacheOrder.front();
@@ -578,14 +605,13 @@ bool WebPConverter::convertImage(const std::string& sourcePath, const std::strin
                           << entrySize << " bytes), serving without caching: "
                           << outputPath << std::endl;
             }
-
-            _inProgressConversions.erase(outputPath);
         }
-        // Notify outside the lock so waiting threads re-check the predicate
-        _conversionCV.notify_all();
+        releaseSlot(); // releases _conversionActive + in-progress + notifies
         return true;
     } else {
-        return saveWebP(outputPath, webpData);
+        bool ok = saveWebP(outputPath, webpData);
+        releaseSlot();
+        return ok;
     }
 #else
     (void)sourcePath;

@@ -35,6 +35,9 @@ Geruest::Geruest() {
     std::cout.setf(std::ios::unitbuf);
     std::cerr.setf(std::ios::unitbuf);
 
+    // Share the single log-level source with WebPConverter.
+    WebPConverter::setServerData(&serverData);
+
     std::cout << "Geruest Framework v" << getVersion() << std::endl;
 
 #ifdef _WIN32

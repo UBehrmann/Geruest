@@ -23,6 +23,8 @@
 #include <condition_variable>
 #include <cstdint>
 
+#include "../data/ServerData.hpp"
+
 namespace geruest {
 
 /**
@@ -105,6 +107,14 @@ public:
     static void setMaxConversionDimension(int maxDimension);
 
     /**
+     * @brief Link WebPConverter to the server's ServerData so it shares the
+     *        same log level.  Call once at startup before any conversions.
+     *        Debug level enables Loading / Resizing / Skipping progress lines.
+     * @param sd Pointer to the live ServerData instance (must outlive all conversions)
+     */
+    static void setServerData(const ServerData* sd);
+
+    /**
      * @brief Check if a WebP image exists in static cache
      * @param webpPath The path of the WebP file
      * @return true if the image is in cache
@@ -181,16 +191,29 @@ private:
     static size_t _staticCacheSizeBytes;
     static size_t _staticMaxCacheBytes;
 
-    // In-flight deduplication: tracks image paths that are currently being
-    // decoded/encoded by some thread.  Any other thread that wants the same
-    // path waits on _conversionCV instead of starting a second conversion.
-    // This ensures each unique image is converted by at most one thread at a
-    // time, bounding peak memory to a single decode+encode buffer set.
+    // Conversion serialisation — two-level scheme:
+    //
+    //  1. _conversionActive (global): only ONE decode/encode pipeline runs at a
+    //     time, regardless of image path.  This bounds peak memory to a single
+    //     source-buffer + resize-buffer, preventing concurrent loads from
+    //     different images (e.g. 6 browser tab connections) from collectively
+    //     exhausting the container's RAM.
+    //
+    //  2. _inProgressConversions (per-path): when a second thread wants the same
+    //     image that is already being converted it waits on _conversionCV and
+    //     picks up the result from cache instead of repeating the work.
+    //
+    // Both flags are guarded by _staticCacheMutex and signalled via _conversionCV.
     static std::condition_variable _conversionCV;
     static std::unordered_set<std::string> _inProgressConversions;
+    static bool _conversionActive;
 
     // Maximum pixel dimension (longest side) before downscaling.  0 = disabled.
     static int _maxConversionDimension;
+
+    // Pointer to the server's ServerData — used to read the live log level.
+    // Set once via setServerData(); nullptr means all verbose logs are off.
+    static const ServerData* _serverData;
 
     /**
      * @brief Return the number of bytes currently available to this process.
