@@ -63,7 +63,8 @@ std::unordered_map<std::string, std::shared_ptr<const std::vector<uint8_t>>> Web
 std::deque<std::string> WebPConverter::_staticCacheOrder;
 size_t WebPConverter::_staticCacheSizeBytes = 0;
 size_t WebPConverter::_staticMaxCacheBytes = WebPConverter::WEBP_DEFAULT_MAX_CACHE_BYTES;
-std::mutex WebPConverter::_conversionMutex;
+std::condition_variable WebPConverter::_conversionCV;
+std::unordered_set<std::string> WebPConverter::_inProgressConversions;
 
 // ========== Constructor ==========
 
@@ -116,10 +117,15 @@ bool WebPConverter::hasInCache(const std::string& webpPath) {
 }
 
 void WebPConverter::clearStaticCache() {
-    std::lock_guard<std::mutex> lock(_staticCacheMutex);
-    _staticWebpCache.clear();
-    _staticCacheOrder.clear();
-    _staticCacheSizeBytes = 0;
+    {
+        std::lock_guard<std::mutex> lock(_staticCacheMutex);
+        _staticWebpCache.clear();
+        _staticCacheOrder.clear();
+        _staticCacheSizeBytes = 0;
+        // _inProgressConversions is intentionally NOT cleared here:
+        // any thread currently mid-conversion must still finish and clean up.
+    }
+    _conversionCV.notify_all();
 }
 
 void WebPConverter::setMaxCacheBytes(size_t maxBytes) {
@@ -288,90 +294,100 @@ bool WebPConverter::saveWebP(const std::string& path, const std::vector<uint8_t>
 bool WebPConverter::convertImage(const std::string& sourcePath, const std::string& outputPath,
                                   bool cacheOnly, float quality) {
 #if GERUEST_HAS_WEBP
-    // Check if source exists
     if (!fs::exists(sourcePath)) {
         std::cerr << "WebPConverter: Source file not found: " << sourcePath << std::endl;
         return false;
     }
-    
-    // Check if it's a convertible image
     if (!isConvertibleImage(sourcePath)) {
         std::cerr << "WebPConverter: Not a convertible image: " << sourcePath << std::endl;
         return false;
     }
-    
-    // Serialize the decode+encode pipeline: only one image converts at a time.
-    // This prevents N concurrent requests from each holding a full RGBA + WebP
-    // buffer simultaneously and exhausting the container's RAM.
-    std::lock_guard<std::mutex> convLock(_conversionMutex);
 
-    // Re-check cache after acquiring the lock to handle the TOCTOU race where
-    // multiple threads all passed hasInCache() before any of them converted.
-    if (cacheOnly && hasInCache(outputPath)) {
-        return true;
+    if (cacheOnly) {
+        // --- In-flight deduplication for cache-only (dev) mode ---
+        //
+        // Under _staticCacheMutex we atomically check the cache, and if the
+        // image is already being converted by another thread we wait on
+        // _conversionCV until that thread finishes.  This guarantees:
+        //  • Each image path is decoded/encoded by at most ONE thread at a time,
+        //    bounding peak memory to a single RGBA + WebP buffer set.
+        //  • No TOCTOU race: the check and the "claim" are atomic.
+        //  • Different image paths can still progress independently.
+        {
+            std::unique_lock<std::mutex> lock(_staticCacheMutex);
+            _conversionCV.wait(lock, [&outputPath]() {
+                return _staticWebpCache.count(outputPath) > 0 ||
+                       _inProgressConversions.count(outputPath) == 0;
+            });
+            if (_staticWebpCache.count(outputPath) > 0) {
+                return true; // another thread already converted it
+            }
+            _inProgressConversions.insert(outputPath); // we own this conversion
+        }
     }
 
-    // Load the source image
+    // Decode + encode with no lock held so other images can be claimed in parallel
     int width, height;
     std::vector<uint8_t> rgba = loadImage(sourcePath, width, height);
-    
+
     if (rgba.empty()) {
+        if (cacheOnly) {
+            { std::lock_guard<std::mutex> lock(_staticCacheMutex); _inProgressConversions.erase(outputPath); }
+            _conversionCV.notify_all();
+        }
         return false;
     }
-    
-    // Encode to WebP, then immediately free the RGBA buffer to reduce peak usage
+
+    // Free RGBA immediately after encoding to reduce peak usage
     std::vector<uint8_t> webpData = encodeToWebP(rgba, width, height, quality);
     rgba.clear();
     rgba.shrink_to_fit();
-    
+
     if (webpData.empty()) {
+        if (cacheOnly) {
+            { std::lock_guard<std::mutex> lock(_staticCacheMutex); _inProgressConversions.erase(outputPath); }
+            _conversionCV.notify_all();
+        }
         return false;
     }
-    
+
     if (cacheOnly) {
         auto entry = std::make_shared<const std::vector<uint8_t>>(std::move(webpData));
-        std::lock_guard<std::mutex> lock(_staticCacheMutex);
+        const size_t entrySize = entry->size();
 
-        // Evict oldest entries until the new entry fits within the size limit
-        while (!_staticCacheOrder.empty() &&
-               _staticCacheSizeBytes + entry->size() > _staticMaxCacheBytes) {
-            const std::string& oldest = _staticCacheOrder.front();
-            auto it = _staticWebpCache.find(oldest);
-            if (it != _staticWebpCache.end()) {
-                _staticCacheSizeBytes -= it->second->size();
-                _staticWebpCache.erase(it);
+        {
+            std::lock_guard<std::mutex> lock(_staticCacheMutex);
+
+            if (entrySize <= _staticMaxCacheBytes) {
+                // Evict oldest entries until the new entry fits
+                while (!_staticCacheOrder.empty() &&
+                       _staticCacheSizeBytes + entrySize > _staticMaxCacheBytes) {
+                    const std::string& oldest = _staticCacheOrder.front();
+                    auto it = _staticWebpCache.find(oldest);
+                    if (it != _staticWebpCache.end()) {
+                        _staticCacheSizeBytes -= it->second->size();
+                        _staticWebpCache.erase(it);
+                    }
+                    _staticCacheOrder.pop_front();
+                }
+                _staticCacheSizeBytes += entrySize;
+                _staticWebpCache[outputPath] = std::move(entry);
+                _staticCacheOrder.push_back(outputPath);
+            } else {
+                std::cerr << "WebPConverter: entry too large for cache ("
+                          << entrySize << " bytes), serving without caching: "
+                          << outputPath << std::endl;
             }
-            _staticCacheOrder.pop_front();
-        }
 
-        // If the single entry is larger than the entire limit, skip caching it
-        if (entry->size() > _staticMaxCacheBytes) {
-            std::cerr << "WebPConverter: entry too large to cache (" << entry->size()
-                      << " bytes), serving without caching: " << outputPath << std::endl;
-            return true;
+            _inProgressConversions.erase(outputPath);
         }
-
-        // Remove stale entry for the same path (if it was re-converted)
-        auto existing = _staticWebpCache.find(outputPath);
-        if (existing != _staticWebpCache.end()) {
-            _staticCacheSizeBytes -= existing->second->size();
-            _staticWebpCache.erase(existing);
-            auto orderIt = std::find(_staticCacheOrder.begin(), _staticCacheOrder.end(), outputPath);
-            if (orderIt != _staticCacheOrder.end()) {
-                _staticCacheOrder.erase(orderIt);
-            }
-        }
-
-        _staticCacheSizeBytes += entry->size();
-        _staticWebpCache[outputPath] = std::move(entry);
-        _staticCacheOrder.push_back(outputPath);
+        // Notify outside the lock so waiting threads re-check the predicate
+        _conversionCV.notify_all();
         return true;
     } else {
-        // Save to disk
         return saveWebP(outputPath, webpData);
     }
 #else
-    // WebP not available
     (void)sourcePath;
     (void)outputPath;
     (void)cacheOnly;

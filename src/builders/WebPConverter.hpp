@@ -20,6 +20,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <mutex>
+#include <condition_variable>
 #include <cstdint>
 
 namespace geruest {
@@ -155,16 +156,20 @@ private:
     // Static cache for WebP images (shared across all instances).
     // Values are shared_ptr so callers can hold a reference without copying.
     // A parallel deque tracks insertion order for FIFO eviction.
+    // _staticCacheMutex also guards _inProgressConversions (see below).
     static std::mutex _staticCacheMutex;
     static std::unordered_map<std::string, std::shared_ptr<const std::vector<uint8_t>>> _staticWebpCache;
     static std::deque<std::string> _staticCacheOrder;
     static size_t _staticCacheSizeBytes;
     static size_t _staticMaxCacheBytes;
 
-    // Serializes the decode+encode pipeline so that at most one image is being
-    // converted at a time.  This prevents N concurrent requests from each
-    // allocating a full RGBA + WebP buffer simultaneously and exhausting RAM.
-    static std::mutex _conversionMutex;
+    // In-flight deduplication: tracks image paths that are currently being
+    // decoded/encoded by some thread.  Any other thread that wants the same
+    // path waits on _conversionCV instead of starting a second conversion.
+    // This ensures each unique image is converted by at most one thread at a
+    // time, bounding peak memory to a single decode+encode buffer set.
+    static std::condition_variable _conversionCV;
+    static std::unordered_set<std::string> _inProgressConversions;
 
     /**
      * @brief Load a PNG or JPEG file into RGBA buffer using stb_image
