@@ -29,6 +29,11 @@ namespace geruest {
 // ========== Constructor / Destructor ==========
 
 Geruest::Geruest() {
+    // Disable buffering so log lines are visible even if the process is killed
+    // by the OOM killer (SIGKILL leaves no time for buffer flushing).
+    std::cout.setf(std::ios::unitbuf);
+    std::cerr.setf(std::ios::unitbuf);
+
     std::cout << "Geruest Framework v" << getVersion() << std::endl;
 
 #ifdef _WIN32

@@ -44,6 +44,7 @@ cmake-build-debug
 
 # All the build directories
 build*
+!builders
 
 # All environment files
 .env

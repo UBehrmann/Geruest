@@ -161,6 +161,11 @@ private:
     static size_t _staticCacheSizeBytes;
     static size_t _staticMaxCacheBytes;
 
+    // Serializes the decode+encode pipeline so that at most one image is being
+    // converted at a time.  This prevents N concurrent requests from each
+    // allocating a full RGBA + WebP buffer simultaneously and exhausting RAM.
+    static std::mutex _conversionMutex;
+
     /**
      * @brief Load a PNG or JPEG file into RGBA buffer using stb_image
      * @param path Path to the image file

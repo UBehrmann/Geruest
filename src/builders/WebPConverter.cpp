@@ -63,6 +63,7 @@ std::unordered_map<std::string, std::shared_ptr<const std::vector<uint8_t>>> Web
 std::deque<std::string> WebPConverter::_staticCacheOrder;
 size_t WebPConverter::_staticCacheSizeBytes = 0;
 size_t WebPConverter::_staticMaxCacheBytes = WebPConverter::WEBP_DEFAULT_MAX_CACHE_BYTES;
+std::mutex WebPConverter::_conversionMutex;
 
 // ========== Constructor ==========
 
@@ -299,6 +300,17 @@ bool WebPConverter::convertImage(const std::string& sourcePath, const std::strin
         return false;
     }
     
+    // Serialize the decode+encode pipeline: only one image converts at a time.
+    // This prevents N concurrent requests from each holding a full RGBA + WebP
+    // buffer simultaneously and exhausting the container's RAM.
+    std::lock_guard<std::mutex> convLock(_conversionMutex);
+
+    // Re-check cache after acquiring the lock to handle the TOCTOU race where
+    // multiple threads all passed hasInCache() before any of them converted.
+    if (cacheOnly && hasInCache(outputPath)) {
+        return true;
+    }
+
     // Load the source image
     int width, height;
     std::vector<uint8_t> rgba = loadImage(sourcePath, width, height);
