@@ -459,7 +459,7 @@ bool HtmlBuilder::hasMergedAssetInCache(const std::string& path) {
     return _mergedAssetsCache.find(path) != _mergedAssetsCache.end();
 }
 
-std::vector<uint8_t> HtmlBuilder::getWebPFromCache(const std::string& path) {
+std::shared_ptr<const std::vector<uint8_t>> HtmlBuilder::getWebPFromCache(const std::string& path) {
     return WebPConverter::getFromCache(path);
 }
 
@@ -509,9 +509,12 @@ void HtmlBuilder::processWebPConversion() {
         // Convert image to WebP
         bool success = false;
         if (_serverData.isDevMode()) {
-            // In dev mode: convert and cache in memory, don't save to disk
-            // Regenerate on each build (for devMode behavior)
-            success = WebPConverter::convertImage(fullSourcePath, fullWebPPath, true, _serverData.getWebPQuality());
+            // In dev mode: only convert if not already cached
+            if (WebPConverter::hasInCache(fullWebPPath)) {
+                success = true;
+            } else {
+                success = WebPConverter::convertImage(fullSourcePath, fullWebPPath, true, _serverData.getWebPQuality());
+            }
         } else {
             // Production mode: check if WebP already exists and is newer than source
             if (std::filesystem::exists(fullWebPPath)) {

@@ -59,7 +59,10 @@ namespace geruest {
 
 // Initialize static members
 std::mutex WebPConverter::_staticCacheMutex;
-std::unordered_map<std::string, std::vector<uint8_t>> WebPConverter::_staticWebpCache;
+std::unordered_map<std::string, std::shared_ptr<const std::vector<uint8_t>>> WebPConverter::_staticWebpCache;
+std::deque<std::string> WebPConverter::_staticCacheOrder;
+size_t WebPConverter::_staticCacheSizeBytes = 0;
+size_t WebPConverter::_staticMaxCacheBytes = WebPConverter::WEBP_DEFAULT_MAX_CACHE_BYTES;
 
 // ========== Constructor ==========
 
@@ -97,13 +100,13 @@ std::string WebPConverter::getWebPPath(const std::string& sourcePath) {
 
 // ========== Static cache methods ==========
 
-std::vector<uint8_t> WebPConverter::getFromCache(const std::string& webpPath) {
+std::shared_ptr<const std::vector<uint8_t>> WebPConverter::getFromCache(const std::string& webpPath) {
     std::lock_guard<std::mutex> lock(_staticCacheMutex);
     auto it = _staticWebpCache.find(webpPath);
     if (it != _staticWebpCache.end()) {
         return it->second;
     }
-    return {};
+    return nullptr;
 }
 
 bool WebPConverter::hasInCache(const std::string& webpPath) {
@@ -114,6 +117,13 @@ bool WebPConverter::hasInCache(const std::string& webpPath) {
 void WebPConverter::clearStaticCache() {
     std::lock_guard<std::mutex> lock(_staticCacheMutex);
     _staticWebpCache.clear();
+    _staticCacheOrder.clear();
+    _staticCacheSizeBytes = 0;
+}
+
+void WebPConverter::setMaxCacheBytes(size_t maxBytes) {
+    std::lock_guard<std::mutex> lock(_staticCacheMutex);
+    _staticMaxCacheBytes = maxBytes;
 }
 
 // ========== Static HTML processing methods ==========
@@ -297,17 +307,52 @@ bool WebPConverter::convertImage(const std::string& sourcePath, const std::strin
         return false;
     }
     
-    // Encode to WebP
+    // Encode to WebP, then immediately free the RGBA buffer to reduce peak usage
     std::vector<uint8_t> webpData = encodeToWebP(rgba, width, height, quality);
+    rgba.clear();
+    rgba.shrink_to_fit();
     
     if (webpData.empty()) {
         return false;
     }
     
     if (cacheOnly) {
-        // Store in static cache only
+        auto entry = std::make_shared<const std::vector<uint8_t>>(std::move(webpData));
         std::lock_guard<std::mutex> lock(_staticCacheMutex);
-        _staticWebpCache[outputPath] = std::move(webpData);
+
+        // Evict oldest entries until the new entry fits within the size limit
+        while (!_staticCacheOrder.empty() &&
+               _staticCacheSizeBytes + entry->size() > _staticMaxCacheBytes) {
+            const std::string& oldest = _staticCacheOrder.front();
+            auto it = _staticWebpCache.find(oldest);
+            if (it != _staticWebpCache.end()) {
+                _staticCacheSizeBytes -= it->second->size();
+                _staticWebpCache.erase(it);
+            }
+            _staticCacheOrder.pop_front();
+        }
+
+        // If the single entry is larger than the entire limit, skip caching it
+        if (entry->size() > _staticMaxCacheBytes) {
+            std::cerr << "WebPConverter: entry too large to cache (" << entry->size()
+                      << " bytes), serving without caching: " << outputPath << std::endl;
+            return true;
+        }
+
+        // Remove stale entry for the same path (if it was re-converted)
+        auto existing = _staticWebpCache.find(outputPath);
+        if (existing != _staticWebpCache.end()) {
+            _staticCacheSizeBytes -= existing->second->size();
+            _staticWebpCache.erase(existing);
+            auto orderIt = std::find(_staticCacheOrder.begin(), _staticCacheOrder.end(), outputPath);
+            if (orderIt != _staticCacheOrder.end()) {
+                _staticCacheOrder.erase(orderIt);
+            }
+        }
+
+        _staticCacheSizeBytes += entry->size();
+        _staticWebpCache[outputPath] = std::move(entry);
+        _staticCacheOrder.push_back(outputPath);
         return true;
     } else {
         // Save to disk

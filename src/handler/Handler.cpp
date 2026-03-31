@@ -403,13 +403,13 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
     } else {
         // Check if this is a WebP request and we have it cached (devMode)
         if (contentType == "image/webp" && serverData.isDevMode() && serverData.getWebPConversion()) {
-            // Try to get from WebP cache
-            std::vector<uint8_t> cachedWebP = HtmlBuilder::getWebPFromCache(contentPath);
-            if (!cachedWebP.empty()) {
+            // Try to get from WebP cache (zero-copy: shared_ptr avoids duplicating the buffer)
+            auto cachedWebP = HtmlBuilder::getWebPFromCache(contentPath);
+            if (cachedWebP && !cachedWebP->empty()) {
                 // Serve from cache
                 HTTPResponse htmlResponse("200 OK");
                 htmlResponse.setHeader("Content-Type", contentType);
-                htmlResponse.setHeader("Content-Length", std::to_string(cachedWebP.size()));
+                htmlResponse.setHeader("Content-Length", std::to_string(cachedWebP->size()));
                 
                 std::string response = htmlResponse.toString();
                 
@@ -420,7 +420,7 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
                 }
                 
                 // Send cached WebP data
-                if (!sendSocket(reinterpret_cast<const char*>(cachedWebP.data()), cachedWebP.size())) {
+                if (!sendSocket(reinterpret_cast<const char*>(cachedWebP->data()), cachedWebP->size())) {
                     sendToLoggerError("Failed to send cached WebP data: " + contentPath);
                 }
                 return;
@@ -455,12 +455,12 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
                     bool cacheOnly = serverData.isDevMode();
                     if (WebPConverter::convertImage(sourcePath, contentPath, cacheOnly, serverData.getWebPQuality())) {
                         if (cacheOnly) {
-                            // Serve from cache
-                            std::vector<uint8_t> webpData = WebPConverter::getFromCache(contentPath);
-                            if (!webpData.empty()) {
+                            // Serve from cache (zero-copy: shared_ptr avoids duplicating the buffer)
+                            auto webpData = WebPConverter::getFromCache(contentPath);
+                            if (webpData && !webpData->empty()) {
                                 HTTPResponse webpResponse("200 OK");
                                 webpResponse.setHeader("Content-Type", contentType);
-                                webpResponse.setHeader("Content-Length", std::to_string(webpData.size()));
+                                webpResponse.setHeader("Content-Length", std::to_string(webpData->size()));
                                 
                                 std::string response = webpResponse.toString();
                                 
@@ -469,7 +469,7 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
                                     return;
                                 }
                                 
-                                if (!sendSocket(reinterpret_cast<const char*>(webpData.data()), webpData.size())) {
+                                if (!sendSocket(reinterpret_cast<const char*>(webpData->data()), webpData->size())) {
                                     sendToLoggerError("Failed to send on-demand WebP data: " + contentPath);
                                 }
                                 return;

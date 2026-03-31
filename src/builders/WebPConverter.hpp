@@ -15,6 +15,8 @@
 
 #include <string>
 #include <vector>
+#include <deque>
+#include <memory>
 #include <unordered_map>
 #include <unordered_set>
 #include <mutex>
@@ -34,6 +36,12 @@ public:
      * @brief Default WebP quality (0-100, where 100 is lossless)
      */
     static constexpr float WEBP_DEFAULT_QUALITY = 75.0f;
+
+    /**
+     * @brief Default maximum in-memory cache size (64 MB).
+     *        Oldest entries are evicted once this limit is reached.
+     */
+    static constexpr size_t WEBP_DEFAULT_MAX_CACHE_BYTES = 64ULL * 1024 * 1024;
 
     // ========== Static methods for direct use without instance ==========
 
@@ -64,11 +72,18 @@ public:
     static std::string replaceImageReferencesWithWebP(const std::string& htmlContent);
 
     /**
-     * @brief Get WebP data from the static in-memory cache
+     * @brief Get WebP data from the static in-memory cache (zero-copy).
      * @param webpPath The path of the WebP file
-     * @return The WebP binary data, or empty vector if not found
+     * @return Shared pointer to the WebP binary data, or nullptr if not found
      */
-    static std::vector<uint8_t> getFromCache(const std::string& webpPath);
+    static std::shared_ptr<const std::vector<uint8_t>> getFromCache(const std::string& webpPath);
+
+    /**
+     * @brief Set the maximum total byte size of the in-memory cache.
+     *        Oldest entries are evicted to stay within the limit.
+     * @param maxBytes Maximum cache size in bytes
+     */
+    static void setMaxCacheBytes(size_t maxBytes);
 
     /**
      * @brief Check if a WebP image exists in static cache
@@ -137,9 +152,14 @@ private:
     bool _devMode;
     float _quality;
 
-    // Static cache for WebP images (shared across all instances)
+    // Static cache for WebP images (shared across all instances).
+    // Values are shared_ptr so callers can hold a reference without copying.
+    // A parallel deque tracks insertion order for FIFO eviction.
     static std::mutex _staticCacheMutex;
-    static std::unordered_map<std::string, std::vector<uint8_t>> _staticWebpCache;
+    static std::unordered_map<std::string, std::shared_ptr<const std::vector<uint8_t>>> _staticWebpCache;
+    static std::deque<std::string> _staticCacheOrder;
+    static size_t _staticCacheSizeBytes;
+    static size_t _staticMaxCacheBytes;
 
     /**
      * @brief Load a PNG or JPEG file into RGBA buffer using stb_image
