@@ -192,44 +192,50 @@ private:
     // Maximum pixel dimension (longest side) before downscaling.  0 = disabled.
     static int _maxConversionDimension;
 
+    // RAII wrapper for stbi_load output — avoids copying the raw pixel buffer.
+    // The deleter body is defined in WebPConverter.cpp where stb_image.h lives.
+    struct StbiDeleter { void operator()(uint8_t* p) const noexcept; };
+    using StbiBuffer = std::unique_ptr<uint8_t[], StbiDeleter>;
+
     /**
-     * @brief Downscale pixel data so that its longest side is at most maxDim.
-     *        Aspect ratio is preserved.  The original buffer is freed.
-     * @param pixels   Source pixel data (modified in-place via return value)
+     * @brief Load a PNG or JPEG file using stb_image.
+     *        JPEGs load as RGB (3 ch); PNGs with alpha load as RGBA (4 ch).
+     *        The returned buffer is the raw stbi allocation — no copy is made.
+     * @param path     Path to the image file
+     * @param width    Output: image width in pixels
+     * @param height   Output: image height in pixels
+     * @param channels Output: number of channels loaded (3 or 4)
+     * @return Owning stbi buffer, or nullptr on failure
+     */
+    static StbiBuffer loadImage(const std::string& path,
+                                int& width, int& height, int& channels);
+
+    /**
+     * @brief Downscale a pixel buffer so its longest side is at most maxDim.
+     *        Aspect ratio is preserved.  Takes ownership of the source buffer
+     *        and frees it immediately after writing the resized output, so
+     *        peak memory = source + target (not source + source + target).
+     * @param src      Source stbi buffer (consumed / freed inside)
      * @param width    In/out: source width → target width
      * @param height   In/out: source height → target height
      * @param channels Number of channels (3 or 4)
      * @param maxDim   Maximum allowed dimension on the longest side
-     * @return Resized pixel data, or the original vector if no resize needed
+     * @return Resized pixel data as a vector
      */
-    static std::vector<uint8_t> resizeImage(std::vector<uint8_t> pixels,
+    static std::vector<uint8_t> resizeImage(StbiBuffer src,
                                              int& width, int& height,
                                              int channels, int maxDim);
 
     /**
-     * @brief Load a PNG or JPEG file into a pixel buffer using stb_image.
-     *        JPEGs are loaded as RGB (3 ch); PNGs with alpha as RGBA (4 ch);
-     *        PNGs without alpha as RGB (3 ch).  This minimises the in-memory
-     *        buffer size — loading a large JPEG as RGBA wastes 25 % of RAM.
-     * @param path     Path to the image file
-     * @param width    Output: image width in pixels
-     * @param height   Output: image height in pixels
-     * @param channels Output: number of channels actually loaded (3 or 4)
-     * @return Pixel data (RGB or RGBA), or empty vector on failure
-     */
-    static std::vector<uint8_t> loadImage(const std::string& path,
-                                           int& width, int& height, int& channels);
-
-    /**
-     * @brief Encode pixel data to WebP format.
-     * @param pixels   RGB or RGBA pixel data
+     * @brief Encode a raw pixel buffer to WebP format.
+     * @param pixels   Pointer to RGB or RGBA pixel data
      * @param width    Image width
      * @param height   Image height
      * @param channels 3 (RGB) or 4 (RGBA)
      * @param quality  WebP quality (0-100)
      * @return WebP binary data, or empty vector on failure
      */
-    static std::vector<uint8_t> encodeToWebP(const std::vector<uint8_t>& pixels,
+    static std::vector<uint8_t> encodeToWebP(const uint8_t* pixels,
                                               int width, int height,
                                               int channels, float quality);
 
