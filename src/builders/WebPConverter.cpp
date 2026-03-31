@@ -45,6 +45,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
+#define STB_IMAGE_RESIZE_IMPLEMENTATION
+#include "stb_image_resize2.h"
+
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
@@ -65,6 +68,7 @@ size_t WebPConverter::_staticCacheSizeBytes = 0;
 size_t WebPConverter::_staticMaxCacheBytes = WebPConverter::WEBP_DEFAULT_MAX_CACHE_BYTES;
 std::condition_variable WebPConverter::_conversionCV;
 std::unordered_set<std::string> WebPConverter::_inProgressConversions;
+int WebPConverter::_maxConversionDimension = WebPConverter::WEBP_DEFAULT_MAX_DIMENSION;
 
 // ========== Constructor ==========
 
@@ -131,6 +135,10 @@ void WebPConverter::clearStaticCache() {
 void WebPConverter::setMaxCacheBytes(size_t maxBytes) {
     std::lock_guard<std::mutex> lock(_staticCacheMutex);
     _staticMaxCacheBytes = maxBytes;
+}
+
+void WebPConverter::setMaxConversionDimension(int maxDimension) {
+    _maxConversionDimension = (maxDimension < 0) ? 0 : maxDimension;
 }
 
 // ========== Static HTML processing methods ==========
@@ -212,55 +220,108 @@ std::string WebPConverter::replaceImageReferencesWithWebP(const std::string& htm
     return result;
 }
 
-// ========== Image loading and encoding ==========
+// ========== Image loading, resizing and encoding ==========
 
-std::vector<uint8_t> WebPConverter::loadImage(const std::string& path, int& width, int& height) {
-    // Use stb_image to load PNG or JPEG
-    int channels;
-    unsigned char* data = stbi_load(path.c_str(), &width, &height, &channels, 4); // Force RGBA
-    
+std::vector<uint8_t> WebPConverter::resizeImage(std::vector<uint8_t> pixels,
+                                                  int& width, int& height,
+                                                  int channels, int maxDim) {
+    if (maxDim <= 0 || (width <= maxDim && height <= maxDim)) {
+        return pixels; // no resize needed
+    }
+
+    // Compute target dimensions preserving aspect ratio
+    const float scale = static_cast<float>(maxDim) /
+                        static_cast<float>((width >= height) ? width : height);
+    int dstW = static_cast<int>(static_cast<float>(width)  * scale);
+    int dstH = static_cast<int>(static_cast<float>(height) * scale);
+    // Ensure at least 1 pixel on each side
+    if (dstW < 1) dstW = 1;
+    if (dstH < 1) dstH = 1;
+
+    std::cerr << "WebPConverter: Resizing " << width << "x" << height
+              << " -> " << dstW << "x" << dstH << std::endl;
+
+    std::vector<uint8_t> resized(static_cast<size_t>(dstW) * static_cast<size_t>(dstH)
+                                 * static_cast<size_t>(channels));
+
+    const stbir_pixel_layout layout = (channels == 4) ? STBIR_RGBA : STBIR_RGB;
+
+    stbir_resize_uint8_linear(
+        pixels.data(),  static_cast<int>(width),  static_cast<int>(height),  0,
+        resized.data(), static_cast<int>(dstW),   static_cast<int>(dstH),    0,
+        layout);
+
+    // Free the original large buffer before returning
+    pixels.clear();
+    pixels.shrink_to_fit();
+
+    width  = dstW;
+    height = dstH;
+    return resized;
+}
+
+std::vector<uint8_t> WebPConverter::loadImage(const std::string& path,
+                                               int& width, int& height, int& channels) {
+    // Peek at the file header to find the actual channel count before loading.
+    // This avoids forcing RGBA on images that don't need an alpha channel (e.g.
+    // all JPEGs), which saves up to 25 % of the in-memory pixel buffer.
+    int fileChannels = 0;
+    if (!stbi_info(path.c_str(), &width, &height, &fileChannels)) {
+        std::cerr << "WebPConverter: Failed to read image info: " << path << std::endl;
+        return {};
+    }
+
+    // Use 4 channels (RGBA) only when the source actually has alpha; otherwise
+    // use 3 channels (RGB) — this is valid for every JPEG and most PNGs.
+    channels = (fileChannels == 4) ? 4 : 3;
+
+    const size_t estimatedBytes =
+        static_cast<size_t>(width) * static_cast<size_t>(height) *
+        static_cast<size_t>(channels);
+    std::cerr << "WebPConverter: Loading " << path
+              << " (" << width << "x" << height
+              << ", " << channels << "ch"
+              << ", ~" << (estimatedBytes / (1024 * 1024)) << " MB RGBA)" << std::endl;
+
+    unsigned char* data = stbi_load(path.c_str(), &width, &height, &fileChannels, channels);
     if (!data) {
         std::cerr << "WebPConverter: Failed to load image: " << path << std::endl;
         std::cerr << "  Reason: " << stbi_failure_reason() << std::endl;
         return {};
     }
-    
-    // Copy to vector
-    size_t dataSize = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
-    std::vector<uint8_t> result(data, data + dataSize);
-    
+
+    std::vector<uint8_t> result(data, data + estimatedBytes);
     stbi_image_free(data);
     return result;
 }
 
-std::vector<uint8_t> WebPConverter::encodeToWebP(const std::vector<uint8_t>& rgba, 
-                                                   int width, int height, float quality) {
+std::vector<uint8_t> WebPConverter::encodeToWebP(const std::vector<uint8_t>& pixels,
+                                                   int width, int height,
+                                                   int channels, float quality) {
 #if GERUEST_HAS_WEBP
     uint8_t* output = nullptr;
-    
-    size_t outputSize = WebPEncodeRGBA(
-        rgba.data(),
-        width,
-        height,
-        width * 4,  // stride
-        quality,
-        &output
-    );
-    
+    size_t outputSize = 0;
+
+    if (channels == 4) {
+        outputSize = WebPEncodeRGBA(pixels.data(), width, height, width * 4, quality, &output);
+    } else {
+        // RGB path: ~25 % less memory inside libwebp than the RGBA path
+        outputSize = WebPEncodeRGB(pixels.data(), width, height, width * 3, quality, &output);
+    }
+
     if (outputSize == 0 || output == nullptr) {
         std::cerr << "WebPConverter: Failed to encode WebP" << std::endl;
         return {};
     }
-    
+
     std::vector<uint8_t> result(output, output + outputSize);
     WebPFree(output);
-    
     return result;
 #else
-    // WebP not available
-    (void)rgba;
+    (void)pixels;
     (void)width;
     (void)height;
+    (void)channels;
     (void)quality;
     std::cerr << "WebPConverter: WebP encoding not available (GERUEST_HAS_WEBP=0)" << std::endl;
     return {};
@@ -327,10 +388,10 @@ bool WebPConverter::convertImage(const std::string& sourcePath, const std::strin
     }
 
     // Decode + encode with no lock held so other images can be claimed in parallel
-    int width, height;
-    std::vector<uint8_t> rgba = loadImage(sourcePath, width, height);
+    int width, height, channels;
+    std::vector<uint8_t> pixels = loadImage(sourcePath, width, height, channels);
 
-    if (rgba.empty()) {
+    if (pixels.empty()) {
         if (cacheOnly) {
             { std::lock_guard<std::mutex> lock(_staticCacheMutex); _inProgressConversions.erase(outputPath); }
             _conversionCV.notify_all();
@@ -338,10 +399,15 @@ bool WebPConverter::convertImage(const std::string& sourcePath, const std::strin
         return false;
     }
 
-    // Free RGBA immediately after encoding to reduce peak usage
-    std::vector<uint8_t> webpData = encodeToWebP(rgba, width, height, quality);
-    rgba.clear();
-    rgba.shrink_to_fit();
+    // Downscale if the image exceeds the configured maximum dimension.
+    // resizeImage frees the original buffer before returning the smaller one,
+    // so peak memory = source + target during resize, then only target remains.
+    pixels = resizeImage(std::move(pixels), width, height, channels, _maxConversionDimension);
+
+    // Free the pixel buffer immediately after encoding to reduce peak usage
+    std::vector<uint8_t> webpData = encodeToWebP(pixels, width, height, channels, quality);
+    pixels.clear();
+    pixels.shrink_to_fit();
 
     if (webpData.empty()) {
         if (cacheOnly) {

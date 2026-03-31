@@ -44,6 +44,14 @@ public:
      */
     static constexpr size_t WEBP_DEFAULT_MAX_CACHE_BYTES = 64ULL * 1024 * 1024;
 
+    /**
+     * @brief Default maximum pixel dimension (longest side) before downscaling.
+     *        Images wider or taller than this are scaled down proportionally
+     *        before encoding, dramatically reducing peak memory usage.
+     *        Set to 0 to disable resizing.
+     */
+    static constexpr int WEBP_DEFAULT_MAX_DIMENSION = 1920;
+
     // ========== Static methods for direct use without instance ==========
 
     /**
@@ -85,6 +93,16 @@ public:
      * @param maxBytes Maximum cache size in bytes
      */
     static void setMaxCacheBytes(size_t maxBytes);
+
+    /**
+     * @brief Set the maximum pixel dimension (longest side) for conversion.
+     *        Images larger than this are downscaled proportionally before
+     *        encoding.  This bounds peak decode/encode memory to a predictable
+     *        value regardless of the source image size.
+     *        Set to 0 to disable automatic resizing.
+     * @param maxDimension Maximum width or height in pixels (default 1920)
+     */
+    static void setMaxConversionDimension(int maxDimension);
 
     /**
      * @brief Check if a WebP image exists in static cache
@@ -171,24 +189,49 @@ private:
     static std::condition_variable _conversionCV;
     static std::unordered_set<std::string> _inProgressConversions;
 
-    /**
-     * @brief Load a PNG or JPEG file into RGBA buffer using stb_image
-     * @param path Path to the image file
-     * @param width Output: Image width
-     * @param height Output: Image height
-     * @return RGBA pixel data, or empty vector on failure
-     */
-    static std::vector<uint8_t> loadImage(const std::string& path, int& width, int& height);
+    // Maximum pixel dimension (longest side) before downscaling.  0 = disabled.
+    static int _maxConversionDimension;
 
     /**
-     * @brief Encode RGBA data to WebP format
-     * @param rgba RGBA pixel data
-     * @param width Image width
-     * @param height Image height
-     * @param quality WebP quality (0-100)
+     * @brief Downscale pixel data so that its longest side is at most maxDim.
+     *        Aspect ratio is preserved.  The original buffer is freed.
+     * @param pixels   Source pixel data (modified in-place via return value)
+     * @param width    In/out: source width → target width
+     * @param height   In/out: source height → target height
+     * @param channels Number of channels (3 or 4)
+     * @param maxDim   Maximum allowed dimension on the longest side
+     * @return Resized pixel data, or the original vector if no resize needed
+     */
+    static std::vector<uint8_t> resizeImage(std::vector<uint8_t> pixels,
+                                             int& width, int& height,
+                                             int channels, int maxDim);
+
+    /**
+     * @brief Load a PNG or JPEG file into a pixel buffer using stb_image.
+     *        JPEGs are loaded as RGB (3 ch); PNGs with alpha as RGBA (4 ch);
+     *        PNGs without alpha as RGB (3 ch).  This minimises the in-memory
+     *        buffer size — loading a large JPEG as RGBA wastes 25 % of RAM.
+     * @param path     Path to the image file
+     * @param width    Output: image width in pixels
+     * @param height   Output: image height in pixels
+     * @param channels Output: number of channels actually loaded (3 or 4)
+     * @return Pixel data (RGB or RGBA), or empty vector on failure
+     */
+    static std::vector<uint8_t> loadImage(const std::string& path,
+                                           int& width, int& height, int& channels);
+
+    /**
+     * @brief Encode pixel data to WebP format.
+     * @param pixels   RGB or RGBA pixel data
+     * @param width    Image width
+     * @param height   Image height
+     * @param channels 3 (RGB) or 4 (RGBA)
+     * @param quality  WebP quality (0-100)
      * @return WebP binary data, or empty vector on failure
      */
-    static std::vector<uint8_t> encodeToWebP(const std::vector<uint8_t>& rgba, int width, int height, float quality);
+    static std::vector<uint8_t> encodeToWebP(const std::vector<uint8_t>& pixels,
+                                              int width, int height,
+                                              int channels, float quality);
 
     /**
      * @brief Save WebP data to a file

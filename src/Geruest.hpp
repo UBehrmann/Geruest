@@ -266,6 +266,23 @@ class Geruest {
     void setWebPQuality(float quality);
 
     /**
+     * @brief Set the maximum pixel dimension for WebP conversion.
+     *
+     * Images whose longest side (width or height) exceeds this value are
+     * downscaled proportionally before encoding.  This is the primary way to
+     * control peak memory usage during conversion — a 5120×3413 image decoded
+     * to RGBA uses ~49 MB; the same image resized to max-1920 uses ~7 MB.
+     *
+     * Memory budget estimate: peak ≈ (src_pixels × 3) + (dst_pixels × 3)
+     * Example for a 5120×3413 JPEG with maxDimension=1920:
+     *   peak ≈ 49 MB (load) + 7 MB (resized) + ~10 MB (encode) ≈ 66 MB
+     *
+     * @param maxDimension Maximum width or height in pixels (default: 1920).
+     *                     Set to 0 to disable automatic resizing.
+     */
+    void setWebPMaxDimension(int maxDimension);
+
+    /**
      * @brief Enable development mode for easier debugging and rapid development.
      * 
      * When enabled, development mode:

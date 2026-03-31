@@ -13,6 +13,7 @@
  */
 
 #include "Geruest.hpp"
+#include "builders/WebPConverter.hpp"
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -172,6 +173,20 @@ void Geruest::setWebPQuality(float quality) {
     sendToLogger(oss.str());
 #else
     sendToLoggerError("WebP quality cannot be set - WebP conversion not available (GERUEST_HAS_WEBP=0)");
+#endif
+}
+
+void Geruest::setWebPMaxDimension(int maxDimension) {
+#if GERUEST_HAS_WEBP
+    WebPConverter::setMaxConversionDimension(maxDimension);
+    if (maxDimension > 0) {
+        sendToLogger("WebP max dimension set to " + std::to_string(maxDimension) + "px");
+    } else {
+        sendToLogger("WebP automatic resizing disabled");
+    }
+#else
+    (void)maxDimension;
+    sendToLoggerError("WebP max dimension cannot be set - WebP conversion not available (GERUEST_HAS_WEBP=0)");
 #endif
 }
 
