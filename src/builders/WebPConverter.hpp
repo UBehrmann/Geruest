@@ -192,6 +192,21 @@ private:
     // Maximum pixel dimension (longest side) before downscaling.  0 = disabled.
     static int _maxConversionDimension;
 
+    /**
+     * @brief Return the number of bytes currently available to this process.
+     *        Reads the Docker/cgroup memory limit when running in a container
+     *        so the estimate is correct even inside a memory-limited container.
+     *        Returns 0 if the limit cannot be determined.
+     */
+    static size_t getAvailableMemoryBytes();
+
+    /**
+     * @brief Estimate peak memory (bytes) needed to convert an image.
+     *        With resize: source buffer + resized buffer (source freed mid-way).
+     *        Without resize: source buffer × 2.5 (libwebp working memory).
+     */
+    static size_t estimateConversionPeakBytes(int srcW, int srcH, int channels);
+
     // RAII wrapper for stbi_load output — avoids copying the raw pixel buffer.
     // The deleter body is defined in WebPConverter.cpp where stb_image.h lives.
     struct StbiDeleter { void operator()(uint8_t* p) const noexcept; };

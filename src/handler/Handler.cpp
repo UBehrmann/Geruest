@@ -481,6 +481,42 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
                                 // Continue with normal file serving below
                             }
                         }
+                    } else {
+                        // Conversion skipped (e.g. insufficient memory) —
+                        // serve the original JPG/PNG so the browser still gets
+                        // an image instead of a 404.
+                        sendToLoggerError("WebP conversion failed for " + sourcePath
+                                          + ", serving original format instead");
+                        std::ifstream origFile(sourcePath, std::ios::binary);
+                        if (origFile.is_open()) {
+                            origFile.seekg(0, std::ios::end);
+                            size_t origSize = static_cast<size_t>(origFile.tellg());
+                            origFile.seekg(0, std::ios::beg);
+
+                            const std::string origType =
+                                getContentType(getExtension(sourcePath));
+                            HTTPResponse origResp("200 OK");
+                            origResp.setHeader("Content-Type", origType);
+                            origResp.setHeader("Content-Length", std::to_string(origSize));
+                            std::string origHeader = origResp.toString();
+
+                            if (!sendSocket(origHeader.c_str(), origHeader.size())) {
+                                sendToLoggerError("Failed to send fallback image header: "
+                                                  + sourcePath);
+                                return;
+                            }
+                            char fallbackBuf[BUFFER_SIZE];
+                            while (!origFile.eof()) {
+                                origFile.read(fallbackBuf, BUFFER_SIZE);
+                                if (!sendSocket(fallbackBuf,
+                                                static_cast<size_t>(origFile.gcount()))) {
+                                    sendToLoggerError("Failed to send fallback image data: "
+                                                      + sourcePath);
+                                    break;
+                                }
+                            }
+                        }
+                        return;
                     }
                 }
             }

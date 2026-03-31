@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -266,17 +267,17 @@ std::vector<uint8_t> WebPConverter::resizeImage(StbiBuffer src,
 
 WebPConverter::StbiBuffer WebPConverter::loadImage(const std::string& path,
                                                     int& width, int& height, int& channels) {
-    // Peek at the file header to find actual dimensions and channel count.
-    // This lets us log memory usage and choose RGB vs RGBA before allocating.
-    int fileChannels = 0;
-    if (!stbi_info(path.c_str(), &width, &height, &fileChannels)) {
-        std::cerr << "WebPConverter: Failed to read image info: " << path << std::endl;
-        return nullptr;
+    // Peek at file header only if dimensions/channels haven't been read yet.
+    if (channels == 0) {
+        int fileChannels = 0;
+        if (!stbi_info(path.c_str(), &width, &height, &fileChannels)) {
+            std::cerr << "WebPConverter: Failed to read image info: " << path << std::endl;
+            return nullptr;
+        }
+        // Use 4 channels (RGBA) only when the source actually has alpha.
+        // All JPEGs and most PNGs are 3-channel (RGB), saving 25 % of buffer.
+        channels = (fileChannels == 4) ? 4 : 3;
     }
-
-    // Use 4 channels (RGBA) only when the source actually has alpha.
-    // All JPEGs and most PNGs are 3-channel (RGB), saving 25 % of buffer size.
-    channels = (fileChannels == 4) ? 4 : 3;
 
     const size_t rawBytes =
         static_cast<size_t>(width) * static_cast<size_t>(height) *
@@ -288,7 +289,8 @@ WebPConverter::StbiBuffer WebPConverter::loadImage(const std::string& path,
 
     // stbi_load returns its own allocation; we wrap it in StbiBuffer so it is
     // freed via stbi_image_free — no copy is made here.
-    unsigned char* data = stbi_load(path.c_str(), &width, &height, &fileChannels, channels);
+    int dummy;
+    unsigned char* data = stbi_load(path.c_str(), &width, &height, &dummy, channels);
     if (!data) {
         std::cerr << "WebPConverter: Failed to load image: " << path << std::endl;
         std::cerr << "  Reason: " << stbi_failure_reason() << std::endl;
@@ -353,6 +355,84 @@ bool WebPConverter::saveWebP(const std::string& path, const std::vector<uint8_t>
     return file.good();
 }
 
+// ========== Memory helpers ==========
+
+size_t WebPConverter::getAvailableMemoryBytes() {
+    // Try cgroupv2 first — this is what modern Docker uses.
+    // The container limit lives in /sys/fs/cgroup/memory.max
+    // and current usage in /sys/fs/cgroup/memory.current.
+    {
+        std::ifstream limitFile("/sys/fs/cgroup/memory.max");
+        std::ifstream usageFile("/sys/fs/cgroup/memory.current");
+        if (limitFile.is_open() && usageFile.is_open()) {
+            std::string limitStr;
+            size_t usage = 0;
+            if (std::getline(limitFile, limitStr) && usageFile >> usage) {
+                if (limitStr != "max") {
+                    try {
+                        size_t limit = std::stoull(limitStr);
+                        return (usage < limit) ? (limit - usage) : 0;
+                    } catch (...) {}
+                }
+            }
+        }
+    }
+
+    // Try cgroupv1 — older Docker / kernels.
+    {
+        std::ifstream limitFile("/sys/fs/cgroup/memory/memory.limit_in_bytes");
+        std::ifstream usageFile("/sys/fs/cgroup/memory/memory.usage_in_bytes");
+        if (limitFile.is_open() && usageFile.is_open()) {
+            size_t limit = 0, usage = 0;
+            if (limitFile >> limit && usageFile >> usage) {
+                // cgroupv1 uses a near-max value (> 1 PB) for "unlimited"
+                constexpr size_t UNLIMITED = 1ULL << 50; // 1 PB sentinel
+                if (limit < UNLIMITED) {
+                    return (usage < limit) ? (limit - usage) : 0;
+                }
+            }
+        }
+    }
+
+    // Fall back to /proc/meminfo (works on bare-metal Linux, unreliable in Docker)
+    {
+        std::ifstream meminfo("/proc/meminfo");
+        std::string line;
+        while (std::getline(meminfo, line)) {
+            if (line.rfind("MemAvailable:", 0) == 0) {
+                size_t kb = 0;
+                if (std::sscanf(line.c_str(), "MemAvailable: %zu kB", &kb) == 1) {
+                    return kb * 1024;
+                }
+            }
+        }
+    }
+
+    return 0; // cannot determine
+}
+
+size_t WebPConverter::estimateConversionPeakBytes(int srcW, int srcH, int channels) {
+    const size_t srcBytes =
+        static_cast<size_t>(srcW) * static_cast<size_t>(srcH) *
+        static_cast<size_t>(channels);
+
+    if (_maxConversionDimension > 0 &&
+        (srcW > _maxConversionDimension || srcH > _maxConversionDimension)) {
+        // Resize path: peak = source + small destination (source freed mid-resize)
+        const float scale = static_cast<float>(_maxConversionDimension) /
+                            static_cast<float>(std::max(srcW, srcH));
+        const size_t dstBytes =
+            static_cast<size_t>(static_cast<float>(srcW) * scale) *
+            static_cast<size_t>(static_cast<float>(srcH) * scale) *
+            static_cast<size_t>(channels);
+        return srcBytes + dstBytes;
+    }
+
+    // No-resize path: source stays alive during libwebp encode.
+    // libwebp typically needs ~1.5× the input for working buffers.
+    return srcBytes + srcBytes / 2;
+}
+
 // ========== Main conversion method ==========
 
 bool WebPConverter::convertImage(const std::string& sourcePath, const std::string& outputPath,
@@ -398,7 +478,38 @@ bool WebPConverter::convertImage(const std::string& sourcePath, const std::strin
     //                vector, frees StbiBuffer immediately → peak = src + dst
     //   encodeToWebP→ takes raw pointer; after this call only the WebP output
     //                remains in memory
-    int width, height, channels;
+
+    // Pre-flight: peek at image dimensions without allocating, then verify
+    // there is enough RAM before committing to the full load + encode.
+    int width, height, fileCh = 0;
+    if (!stbi_info(sourcePath.c_str(), &width, &height, &fileCh)) {
+        std::cerr << "WebPConverter: Cannot read image info: " << sourcePath << std::endl;
+        if (cacheOnly) {
+            { std::lock_guard<std::mutex> lock(_staticCacheMutex); _inProgressConversions.erase(outputPath); }
+            _conversionCV.notify_all();
+        }
+        return false;
+    }
+    const int estChannels = (fileCh == 4) ? 4 : 3;
+    const size_t peakEstimate = estimateConversionPeakBytes(width, height, estChannels);
+    constexpr size_t SAFETY_MARGIN = 80ULL * 1024 * 1024; // 80 MB headroom for server overhead
+    const size_t available = getAvailableMemoryBytes();
+
+    if (available > 0 && peakEstimate + SAFETY_MARGIN > available) {
+        std::cerr << "WebPConverter: Skipping " << sourcePath
+                  << " — estimated peak " << (peakEstimate / (1024 * 1024))
+                  << " MB + " << (SAFETY_MARGIN / (1024 * 1024))
+                  << " MB margin exceeds available "
+                  << (available / (1024 * 1024)) << " MB" << std::endl;
+        if (cacheOnly) {
+            { std::lock_guard<std::mutex> lock(_staticCacheMutex); _inProgressConversions.erase(outputPath); }
+            _conversionCV.notify_all();
+        }
+        return false;
+    }
+
+    // channels already determined above — pass it in to skip the second stbi_info
+    int channels = estChannels;
     StbiBuffer srcBuf = loadImage(sourcePath, width, height, channels);
 
     if (!srcBuf) {
