@@ -342,3 +342,16 @@ TEST_F(AssetMergerTest, PreserveExternalAssetsInModifiedHtml) {
     // External CSS should still be in modified HTML
     EXPECT_NE(result.modifiedHtml.find("https://cdn.example.com/style.css"), std::string::npos);
 }
+
+// Regression: nested backticks inside template `${outer(`inner`)}` must not close the outer
+// literal early; otherwise // inside following regex (/^\//) is mistaken for a line comment.
+TEST(AssetMergerRemoveJsCommentsTest, NestedTemplatePreservesFollowingRegex) {
+    const std::string js =
+        "v=`${window.origin}${path(`checkUserBooks?u=${id}`)}`;\n"
+        "function x(p){return String(p).replace(/^\\//,'');}\n"
+        "// trailing\n";
+    std::string out = AssetMerger::removeJsComments(js);
+    EXPECT_NE(out.find("checkUserBooks?u=${id}"), std::string::npos) << out;
+    EXPECT_NE(out.find(".replace(/^\\//"), std::string::npos) << out;
+    EXPECT_EQ(out.find("trailing"), std::string::npos) << "line comment should be removed";
+}

@@ -95,6 +95,11 @@ public:
      */
     std::string mergeJsFiles(const std::vector<std::string>& jsFiles);
 
+    /**
+     * Remove comments from JS content (used when merging; exposed for tests / tooling).
+     */
+    static std::string removeJsComments(const std::string& content);
+
 private:
     std::string _serverRoot;
     bool _removeComments;
@@ -127,13 +132,6 @@ private:
      * @return Content with comments removed
      */
     static std::string removeCssComments(const std::string& content);
-
-    /**
-     * Remove comments from JS content
-     * @param content JS content
-     * @return Content with comments removed
-     */
-    static std::string removeJsComments(const std::string& content);
 
     /**
      * Resolve a relative path to an absolute path based on server root

@@ -31,6 +31,164 @@ bool isEscapedSlashBefore(const std::string& code, size_t pos) {
     return (backslashes % 2U) == 1U;
 }
 
+/** Close brace for '${' inside template interpolation (matches JSObfuscator / Acorn-style skipping). */
+size_t templateInterpolationCloseAm(const std::string& s, size_t innerBegin) {
+    size_t pos = innerBegin;
+    int depth = 1;
+    bool inDq = false;
+    bool inSq = false;
+    bool inBt = false;
+
+    while (pos < s.size()) {
+        const char c = s[pos];
+        if (!inDq && !inSq && !inBt) {
+            if (c == '/' && pos + 1 < s.size() && s[pos + 1] == '/') {
+                pos += 2;
+                while (pos < s.size() && s[pos] != '\n') {
+                    ++pos;
+                }
+                continue;
+            }
+            if (c == '/' && pos + 1 < s.size() && s[pos + 1] == '*') {
+                pos += 2;
+                while (pos + 1 < s.size() && !(s[pos] == '*' && s[pos + 1] == '/')) {
+                    ++pos;
+                }
+                pos = (pos + 1 < s.size()) ? pos + 2 : s.size();
+                continue;
+            }
+            if (c == '"') {
+                inDq = true;
+                ++pos;
+                continue;
+            }
+            if (c == '\'') {
+                inSq = true;
+                ++pos;
+                continue;
+            }
+            if (c == '`') {
+                inBt = true;
+                ++pos;
+                continue;
+            }
+            if (c == '{') {
+                ++depth;
+                ++pos;
+                continue;
+            }
+            if (c == '}') {
+                --depth;
+                if (depth == 0) {
+                    return pos;
+                }
+                ++pos;
+                continue;
+            }
+            ++pos;
+            continue;
+        }
+        if (inDq) {
+            if (c == '\\' && pos + 1 < s.size()) {
+                pos += 2;
+                continue;
+            }
+            if (c == '"') {
+                inDq = false;
+            }
+            ++pos;
+            continue;
+        }
+        if (inSq) {
+            if (c == '\\' && pos + 1 < s.size()) {
+                pos += 2;
+                continue;
+            }
+            if (c == '\'') {
+                inSq = false;
+            }
+            ++pos;
+            continue;
+        }
+        if (inBt) {
+            if (c == '\\' && pos + 1 < s.size()) {
+                pos += 2;
+                continue;
+            }
+            if (c == '`') {
+                inBt = false;
+                ++pos;
+                continue;
+            }
+            if (c == '$' && pos + 1 < s.size() && s[pos + 1] == '{') {
+                pos += 2;
+                const size_t closeInner = templateInterpolationCloseAm(s, pos);
+                if (closeInner == std::string::npos) {
+                    return std::string::npos;
+                }
+                pos = closeInner + 1;
+                continue;
+            }
+            ++pos;
+            continue;
+        }
+    }
+    return std::string::npos;
+}
+
+/// From opening '`', return index past closing '`' (handles `${...}` and nested templates).
+size_t skipTemplateLiteralAm(const std::string& code, size_t openTick) {
+    if (openTick >= code.size() || code[openTick] != '`') {
+        return openTick + 1;
+    }
+    size_t pos = openTick + 1;
+    const size_t n = code.size();
+    while (pos < n) {
+        if (code[pos] == '\\' && pos + 1 < n) {
+            pos += 2;
+            continue;
+        }
+        if (code[pos] == '`') {
+            return pos + 1;
+        }
+        if (code[pos] == '$' && pos + 1 < n && code[pos + 1] == '{') {
+            pos += 2;
+            const size_t close = templateInterpolationCloseAm(code, pos);
+            if (close == std::string::npos) {
+                return n;
+            }
+            pos = close + 1;
+            continue;
+        }
+        ++pos;
+    }
+    return n;
+}
+
+static void skipJsStringOrTemplate(const std::string& s, size_t& pos) {
+    if (pos >= s.size()) {
+        return;
+    }
+    if (s[pos] == '`') {
+        pos = skipTemplateLiteralAm(s, pos);
+        return;
+    }
+    if (s[pos] == '"' || s[pos] == '\'') {
+        const char quote = s[pos];
+        ++pos;
+        while (pos < s.size()) {
+            if (s[pos] == '\\' && pos + 1 < s.size()) {
+                pos += 2;
+            } else if (s[pos] == quote) {
+                ++pos;
+                break;
+            } else {
+                ++pos;
+            }
+        }
+    }
+}
+
 }  // namespace
 
 AssetMerger::AssetMerger(const std::string& serverRoot, bool removeComments,
@@ -81,22 +239,8 @@ std::string AssetMerger::removeJsComments(const std::string& content) {
     // Remove /* ... */ comments (handling string literals)
     size_t pos = 0;
     while (pos < result.length()) {
-        // Check if we're inside a string literal
         if (result[pos] == '"' || result[pos] == '\'' || result[pos] == '`') {
-            char quote = result[pos];
-            pos++; // Skip opening quote
-            
-            // Find the closing quote, handling escaped quotes
-            while (pos < result.length()) {
-                if (result[pos] == '\\' && pos + 1 < result.length()) {
-                    pos += 2; // Skip escaped character
-                } else if (result[pos] == quote) {
-                    pos++; // Skip closing quote
-                    break;
-                } else {
-                    pos++;
-                }
-            }
+            skipJsStringOrTemplate(result, pos);
             continue;
         }
         
@@ -114,22 +258,8 @@ std::string AssetMerger::removeJsComments(const std::string& content) {
     // Remove // ... comments (single line)
     pos = 0;
     while (pos < result.length()) {
-        // Check if we're inside a string literal
         if (result[pos] == '"' || result[pos] == '\'' || result[pos] == '`') {
-            char quote = result[pos];
-            pos++; // Skip opening quote
-            
-            // Find the closing quote, handling escaped quotes
-            while (pos < result.length()) {
-                if (result[pos] == '\\' && pos + 1 < result.length()) {
-                    pos += 2; // Skip escaped character
-                } else if (result[pos] == quote) {
-                    pos++; // Skip closing quote
-                    break;
-                } else {
-                    pos++;
-                }
-            }
+            skipJsStringOrTemplate(result, pos);
             continue;
         }
         
