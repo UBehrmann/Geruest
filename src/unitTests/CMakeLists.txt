@@ -75,6 +75,7 @@ set(GERUEST_SOURCES
     ../builders/CSSBuilder.cpp
     ../builders/JSBuilder.cpp
     ../builders/JSObfuscator.cpp
+    ../builders/JSObfuscatorScope.cpp
     ../builders/WebPConverter.cpp
     ../handler/Handler.cpp
     ../security/Security.cpp
@@ -118,6 +119,7 @@ add_executable(ContentBuilder_Tests
     ../builders/CSSBuilder.cpp
     ../builders/JSBuilder.cpp
     ../builders/JSObfuscator.cpp
+    ../builders/JSObfuscatorScope.cpp
     ../builders/WebPConverter.cpp
     ../parser/JSONParser.cpp
     ../security/Security.cpp
@@ -128,8 +130,10 @@ target_link_libraries(ContentBuilder_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 add_executable(JSObfuscator_Tests 
     JSObfuscator/JSObfuscator_tests.cpp 
     ../builders/JSObfuscator.cpp
+    ../builders/JSObfuscatorScope.cpp
 )
 target_link_libraries(JSObfuscator_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+# Optional syntax check: npm i acorn && js < tools/acorn_validate_stdin.js (repo root)
 
 add_executable(BasicAuth_Tests 
     BasicAuth/BasicAuth_tests.cpp 

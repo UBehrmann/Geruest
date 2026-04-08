@@ -20,6 +20,8 @@
 #include <ws2tcpip.h>
 #endif
 
+#include <fstream>
+#include <filesystem>
 #include <iostream>
 #include <sstream>
 
@@ -207,6 +209,41 @@ void Geruest::setObfuscationCacheExpiry(int days) {
 void Geruest::addObfuscationExclusion(const std::string& filename) {
     serverData.addObfuscationExclusion(filename);
     sendToLogger("Added obfuscation exclusion: " + filename);
+}
+
+void Geruest::addObfuscationPreserveIdent(const std::string& name) {
+    serverData.addObfuscationPreserveIdent(name);
+}
+
+void Geruest::addObfuscationExternGlobal(const std::string& name) {
+    serverData.addObfuscationExternGlobal(name);
+}
+
+bool Geruest::loadObfuscationExternsFile(const std::string& pathRelativeToRoot) {
+    namespace fs = std::filesystem;
+    fs::path p = fs::path(serverData.getRoot()) / pathRelativeToRoot;
+    std::ifstream f(p);
+    if (!f) {
+        sendToLoggerError("Obfuscation externs file not readable: " + p.string());
+        return false;
+    }
+    std::ostringstream ss;
+    ss << f.rdbuf();
+    serverData.loadObfuscationExternsFromText(ss.str());
+    sendToLogger("Loaded obfuscation externs from: " + p.string());
+    return true;
+}
+
+void Geruest::setObfuscationStrictUndefined(bool enabled) {
+    serverData.setObfuscationStrictUndefined(enabled);
+}
+
+void Geruest::setObfuscationEmitGlobalThisAssignments(bool enabled) {
+    serverData.setObfuscationEmitGlobalThisAssignments(enabled);
+}
+
+void Geruest::setObfuscationValidateWithAcorn(bool enabled) {
+    serverData.setObfuscationValidateWithAcorn(enabled);
 }
 
 void Geruest::enableDevMode() {

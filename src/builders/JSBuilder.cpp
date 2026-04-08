@@ -8,7 +8,13 @@
  * 
  * When mergeAssets=false: Serves individual JS files as-is.
  * When mergeAssets=true: Serves pre-generated merged JS files created by HTMLBuilder.
- * 
+ *
+ * Obfuscation compilation unit: The string passed to JSObfuscator is always the exact
+ * bytes served for that script URL (per-file source or the merged bundle). Rename maps
+ * are computed once per obfuscate() call — use merged output as the input when mergeAssets
+ * is true so cross-script bindings share one scope pass. Per-file obfuscation caches for
+ * later concatenation are unsupported and would desynchronize names.
+ *
  * Obfuscation flow:
  * 1. Check if file is excluded -> serve original
  * 2. Check if dev mode or level=0 -> serve original (possibly merged)
@@ -93,7 +99,10 @@ void JSBuilder::builJS() {
         try {
             builtFile = obfuscateAndCache(builtFile, cacheFilePath);
         } catch (const std::exception&) {
-            // Obfuscation failed - builtFile already contains original content
+            if (_serverData.getObfuscationStrictUndefined()) {
+                throw;
+            }
+            // Obfuscation failed - builtFile still contains original content
         }
     }
 }
@@ -146,10 +155,15 @@ bool JSBuilder::hasValidObfuscationCache(const std::string& filePath) {
 }
 
 std::string JSBuilder::obfuscateAndCache(const std::string& content, const std::string& cacheFilePath) {
-    // Create obfuscator with configured level
-    JSObfuscator obfuscator(_serverData.getObfuscationLevel());
-    
-    // Obfuscate the content
+    JSObfuscateSettings st;
+    st.preserveIdentNames = _serverData.getObfuscationPreserveIdents();
+    st.externGlobalNames = _serverData.getObfuscationExternGlobals();
+    st.strictUndefinedSymbols = _serverData.getObfuscationStrictUndefined();
+    st.emitGlobalThisAssignments = _serverData.getObfuscationEmitGlobalThisAssignments();
+    st.validateOutputWithAcorn = _serverData.getObfuscationValidateWithAcorn();
+
+    JSObfuscator obfuscator(_serverData.getObfuscationLevel(), st);
+
     std::string obfuscated = obfuscator.obfuscate(content);
     
     // Save to disk cache file (e.g., utils.obfuscated.js)

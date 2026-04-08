@@ -10,6 +10,7 @@
 #include "../Geruest.hpp"
 
 #include <algorithm>
+#include <cctype>
 
 namespace geruest {
 
@@ -178,7 +179,71 @@ void Geruest::loadConfig(const std::string& envFilePath) {
         // Email sender not initialized — email functionality is optional
     }
 #endif  // GERUEST_HAS_CURL
-    
+
+    {
+        auto trimToken = [](std::string w) -> std::string {
+            size_t a = 0;
+            while (a < w.size() && std::isspace(static_cast<unsigned char>(w[a]))) {
+                ++a;
+            }
+            size_t b = w.size();
+            while (b > a && std::isspace(static_cast<unsigned char>(w[b - 1]))) {
+                --b;
+            }
+            return w.substr(a, b - a);
+        };
+        auto consumeCommaList = [&](const std::string& s, const auto& onToken) {
+            size_t i = 0;
+            while (i < s.size()) {
+                while (i < s.size()
+                       && (std::isspace(static_cast<unsigned char>(s[i])) || s[i] == ',')) {
+                    ++i;
+                }
+                if (i >= s.size()) {
+                    break;
+                }
+                size_t j = i;
+                while (j < s.size() && s[j] != ',') {
+                    ++j;
+                }
+                std::string w = trimToken(s.substr(i, j - i));
+                if (!w.empty()) {
+                    onToken(w);
+                }
+                i = j + 1;
+            }
+        };
+
+        std::string preserveList = ConfigLoader::get("OBFUSCATE_PRESERVE", "");
+        if (!preserveList.empty()) {
+            consumeCommaList(preserveList,
+                             [this](const std::string& w) { serverData.addObfuscationPreserveIdent(w); });
+            sendToLogger("OBFUSCATE_PRESERVE applied");
+        }
+        std::string externList = ConfigLoader::get("OBFUSCATE_EXTERNS", "");
+        if (!externList.empty()) {
+            consumeCommaList(externList,
+                             [this](const std::string& w) { serverData.addObfuscationExternGlobal(w); });
+            sendToLogger("OBFUSCATE_EXTERNS applied");
+        }
+        std::string externFile = ConfigLoader::get("OBFUSCATE_EXTERNS_FILE", "");
+        if (!externFile.empty()) {
+            loadObfuscationExternsFile(externFile);
+        }
+        if (ConfigLoader::getBool("OBFUSCATE_STRICT_UNDEFINED", false)) {
+            serverData.setObfuscationStrictUndefined(true);
+            sendToLogger("OBFUSCATE_STRICT_UNDEFINED enabled");
+        }
+        if (ConfigLoader::getBool("OBFUSCATE_EMIT_GLOBALTHIS", false)) {
+            serverData.setObfuscationEmitGlobalThisAssignments(true);
+            sendToLogger("OBFUSCATE_EMIT_GLOBALTHIS enabled");
+        }
+        if (ConfigLoader::getBool("OBFUSCATE_VALIDATE_ACORN", false)) {
+            serverData.setObfuscationValidateWithAcorn(true);
+            sendToLogger("OBFUSCATE_VALIDATE_ACORN enabled");
+        }
+    }
+
     sendToLogger("Configuration loading complete");
 }
 

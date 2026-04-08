@@ -6,8 +6,11 @@
  */
 
 #include <gtest/gtest.h>
-#include <string>
+#include <cstdlib>
 #include <regex>
+#include <stdexcept>
+#include <string>
+#include <vector>
 #include "../../builders/JSObfuscator.hpp"
 
 using namespace geruest;
@@ -1131,4 +1134,76 @@ const msg = `data: ${JSON.stringify({ key: 1 })}`;
         << "Nested braces in template expr should not truncate substitution: " << obfuscated;
     EXPECT_TRUE(contains(obfuscated, "key"))
         << "Object key inside ${} should remain: " << obfuscated;
+}
+
+TEST(JSObfuscatorTest, LetShadowingUsesDistinctMangledNames) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+let outer = 1;
+function f() {
+  let outer = 2;
+  return outer;
+}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    std::regex letDecl(R"(let\s+([a-zA-Z_$][a-zA-Z0-9_$]*))");
+    std::vector<std::string> names;
+    for (std::sregex_iterator it(obfuscated.begin(), obfuscated.end(), letDecl), end; it != end; ++it) {
+        names.push_back((*it)[1].str());
+    }
+    ASSERT_GE(names.size(), 2u);
+    EXPECT_NE(names[0], names[1]) << obfuscated;
+}
+
+TEST(JSObfuscatorTest, PreserveDirectiveKeepsName) {
+    JSObfuscator obfuscator(1);
+    std::string original = "// @obfuscate:preserve apiUrl\nvar apiUrl = 1;\nvar secret = 2;\n";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_TRUE(contains(obfuscated, "apiUrl")) << obfuscated;
+    EXPECT_FALSE(contains(obfuscated, "secret")) << obfuscated;
+}
+
+TEST(JSObfuscatorTest, StrictUndefinedThrows) {
+    JSObfuscateSettings st;
+    st.strictUndefinedSymbols = true;
+    JSObfuscator obfuscator(1, st);
+    EXPECT_THROW(obfuscator.obfuscate("notARealGlobal();"), std::runtime_error);
+}
+
+TEST(JSObfuscatorTest, ExternSkipsStrictUndefined) {
+    JSObfuscateSettings st;
+    st.strictUndefinedSymbols = true;
+    st.externGlobalNames.insert("notARealGlobal");
+    JSObfuscator obfuscator(1, st);
+    EXPECT_NO_THROW(obfuscator.obfuscate("notARealGlobal();"));
+}
+
+TEST(JSObfuscatorTest, EmitGlobalThisForPreservedTopLevelFunction) {
+    JSObfuscateSettings st;
+    st.emitGlobalThisAssignments = true;
+    st.preserveIdentNames.insert("getCookie");
+    JSObfuscator obfuscator(1, st);
+    std::string original = "function getCookie() { return 1; }\n";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_TRUE(contains(obfuscated, "globalThis['getCookie']")) << obfuscated;
+}
+
+// Optional: set GERUEST_RUN_ACORN_VALIDATE=1 and npm i acorn in cwd for this to pass.
+TEST(JSObfuscatorTest, AcornValidationWhenNodeAndAcornAvailable) {
+    if (std::getenv("GERUEST_RUN_ACORN_VALIDATE") == nullptr) {
+        GTEST_SKIP() << "Set GERUEST_RUN_ACORN_VALIDATE=1 with acorn installed";
+    }
+    JSObfuscateSettings st;
+    st.validateOutputWithAcorn = true;
+    JSObfuscator obfuscator(1, st);
+    std::string out = obfuscator.obfuscate("var x = 1;\n");
+    EXPECT_FALSE(out.empty());
+    const auto& diag = obfuscator.getLastDiagnostics();
+    bool acornOk = true;
+    for (const auto& line : diag) {
+        if (line.find("Acorn validation failed") != std::string::npos) {
+            acornOk = false;
+        }
+    }
+    EXPECT_TRUE(acornOk) << "Install acorn: npm i acorn";
 }

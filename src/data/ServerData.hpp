@@ -14,6 +14,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cctype>
 #include <cstdint>
 #include <functional>
 #include <mutex>
@@ -21,6 +22,7 @@
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -69,6 +71,11 @@ class ServerData {
     unsigned int _obfuscationLevel = 0;  // JS obfuscation level (0=disabled, 1-3=increasing complexity)
     int _obfuscationCacheExpiryDays = 7;  // Days to keep obfuscated files cached
     std::vector<std::string> _obfuscationExclusions;  // Files excluded from obfuscation and merging
+    std::unordered_set<std::string> _obfuscationPreserveIdents;   // Never rename (API / cross-chunk)
+    std::unordered_set<std::string> _obfuscationExternGlobals;    // Assumed global at runtime
+    bool _obfuscationStrictUndefined = false;   // Throw if obfuscator reports undefined free identifiers
+    bool _obfuscationEmitGlobalThisBracket = false;  // Append globalThis['name']=name for preserved top-level
+    bool _obfuscationValidateWithAcorn = false; // Optional parse via node+acorn after transform
     std::vector<std::string> _availableLanguages;
     std::string _defaultLanguage;
     std::string _notFoundPage;
@@ -302,14 +309,22 @@ class ServerData {
     ServerData(const ServerData& other)
         : _routes(other._routes),
           _wildcardRoutes(other._wildcardRoutes),
-                    _redirects(other._redirects),
-                    _wildcardRedirects(other._wildcardRedirects),
+          _redirects(other._redirects),
+          _wildcardRedirects(other._wildcardRedirects),
           _root(other._root),
           _removeComments(other._removeComments),
           _mergeAssets(other._mergeAssets),
           _devMode(other._devMode),
           _webpConversion(other._webpConversion),
           _webpQuality(other._webpQuality),
+          _obfuscationLevel(other._obfuscationLevel),
+          _obfuscationCacheExpiryDays(other._obfuscationCacheExpiryDays),
+          _obfuscationExclusions(other._obfuscationExclusions),
+          _obfuscationPreserveIdents(other._obfuscationPreserveIdents),
+          _obfuscationExternGlobals(other._obfuscationExternGlobals),
+          _obfuscationStrictUndefined(other._obfuscationStrictUndefined),
+          _obfuscationEmitGlobalThisBracket(other._obfuscationEmitGlobalThisBracket),
+          _obfuscationValidateWithAcorn(other._obfuscationValidateWithAcorn),
           _availableLanguages(other._availableLanguages),
           _defaultLanguage(other._defaultLanguage),
           _notFoundPage(other._notFoundPage),
@@ -329,6 +344,14 @@ class ServerData {
             _devMode = other._devMode;
             _webpConversion = other._webpConversion;
             _webpQuality = other._webpQuality;
+            _obfuscationLevel = other._obfuscationLevel;
+            _obfuscationCacheExpiryDays = other._obfuscationCacheExpiryDays;
+            _obfuscationExclusions = other._obfuscationExclusions;
+            _obfuscationPreserveIdents = other._obfuscationPreserveIdents;
+            _obfuscationExternGlobals = other._obfuscationExternGlobals;
+            _obfuscationStrictUndefined = other._obfuscationStrictUndefined;
+            _obfuscationEmitGlobalThisBracket = other._obfuscationEmitGlobalThisBracket;
+            _obfuscationValidateWithAcorn = other._obfuscationValidateWithAcorn;
             _availableLanguages = other._availableLanguages;
             _defaultLanguage = other._defaultLanguage;
             _notFoundPage = other._notFoundPage;
@@ -681,6 +704,66 @@ class ServerData {
     const std::vector<std::string>& getObfuscationExclusions() const {
         return _obfuscationExclusions;
     }
+
+    void addObfuscationPreserveIdent(const std::string& name) {
+        if (!name.empty()) {
+            _obfuscationPreserveIdents.insert(name);
+        }
+    }
+
+    void addObfuscationExternGlobal(const std::string& name) {
+        if (!name.empty()) {
+            _obfuscationExternGlobals.insert(name);
+        }
+    }
+
+    const std::unordered_set<std::string>& getObfuscationPreserveIdents() const {
+        return _obfuscationPreserveIdents;
+    }
+
+    const std::unordered_set<std::string>& getObfuscationExternGlobals() const {
+        return _obfuscationExternGlobals;
+    }
+
+    /**
+     * One name per line; empty lines and lines starting with # ignored.
+     */
+    void loadObfuscationExternsFromText(const std::string& text) {
+        size_t pos = 0;
+        while (pos < text.size()) {
+            size_t end = text.find('\n', pos);
+            if (end == std::string::npos) {
+                end = text.size();
+            }
+            std::string line = text.substr(pos, end - pos);
+            size_t a = 0;
+            while (a < line.size()
+                   && std::isspace(static_cast<unsigned char>(line[a]))) {
+                ++a;
+            }
+            size_t b = line.size();
+            while (b > a && std::isspace(static_cast<unsigned char>(line[b - 1]))) {
+                --b;
+            }
+            line = line.substr(a, b - a);
+            if (!line.empty() && line[0] != '#') {
+                addObfuscationExternGlobal(line);
+            }
+            pos = end + 1;
+        }
+    }
+
+    void setObfuscationStrictUndefined(bool v) { _obfuscationStrictUndefined = v; }
+
+    bool getObfuscationStrictUndefined() const { return _obfuscationStrictUndefined; }
+
+    void setObfuscationEmitGlobalThisAssignments(bool v) { _obfuscationEmitGlobalThisBracket = v; }
+
+    bool getObfuscationEmitGlobalThisAssignments() const { return _obfuscationEmitGlobalThisBracket; }
+
+    void setObfuscationValidateWithAcorn(bool v) { _obfuscationValidateWithAcorn = v; }
+
+    bool getObfuscationValidateWithAcorn() const { return _obfuscationValidateWithAcorn; }
 
     /**
      * Check if obfuscation should be applied

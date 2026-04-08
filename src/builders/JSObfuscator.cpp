@@ -8,12 +8,20 @@
  */
 
 #include "JSObfuscator.hpp"
+#include "JSObfuscatorScope.hpp"
 #include <algorithm>
-#include <sstream>
-#include <regex>
 #include <chrono>
-#include <iomanip>
 #include <cctype>
+#include <cstdio>
+#include <iomanip>
+#include <regex>
+#include <sstream>
+#include <stdexcept>
+
+#if !defined(_WIN32)
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 
 namespace geruest {
 
@@ -109,34 +117,6 @@ static const std::unordered_set<std::string> RESERVED_KEYWORDS = {
 // Pre-compiled regex patterns for performance (compiled once, reused throughout)
 static const std::regex IDENTIFIER_REGEX(R"(\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b)");
 static const std::regex IDENTIFIER_WITH_DOT_REGEX(R"(([.]?)\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b)");
-
-// Detect whether an identifier at [identStart, identEnd) in `segment` is an
-// object-literal key.  An object-literal key is preceded by '{' or ',' (the
-// start of an object literal or the separator between properties) and followed
-// by ':'.  Whitespace between those characters and the identifier is skipped.
-// Ternary expressions (cond ? val : …) are excluded because '?' – not '{' or ',' –
-// precedes the value before ':'.
-static bool isObjectLiteralKey(const std::string& segment, size_t identStart, size_t identEnd) {
-    // 1) The identifier must be followed by ':' (skipping whitespace)
-    bool followedByColon = false;
-    for (size_t i = identEnd; i < segment.size(); ++i) {
-        char c = segment[i];
-        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') continue;
-        followedByColon = (c == ':');
-        break;
-    }
-    if (!followedByColon) return false;
-
-    // 2) The identifier must be preceded by '{' or ',' (skipping whitespace)
-    //    This distinguishes object keys from ternary values (preceded by '?'),
-    //    case labels (preceded by 'case'), and other constructs.
-    for (int i = static_cast<int>(identStart) - 1; i >= 0; --i) {
-        char c = segment[i];
-        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') continue;
-        return (c == '{' || c == ',');
-    }
-    return false;
-}
 
 static bool isRegexAllowedAfterChar(char c) {
     switch (c) {
@@ -414,8 +394,11 @@ static void encodeStringsProcessCodeSegment(const std::string& segment, std::str
 }
 
 JSObfuscator::JSObfuscator(unsigned int level)
-    : _level(level) {
-    // Seed random number generator with current time
+    : JSObfuscator(level, JSObfuscateSettings{}) {
+}
+
+JSObfuscator::JSObfuscator(unsigned int level, JSObfuscateSettings settings)
+    : _level(level), _settings(std::move(settings)) {
     auto seed = std::chrono::high_resolution_clock::now().time_since_epoch().count();
     _rng.seed(static_cast<unsigned int>(seed));
 }
@@ -425,24 +408,53 @@ std::string JSObfuscator::obfuscate(const std::string& code) {
         return code;
     }
 
+    _lastDiagnostics.clear();
+    _lastTopLevelPreserved.clear();
+
     std::string result = code;
 
-    // Level 1: Basic obfuscation
     if (_level >= 1) {
         result = mangleNames(result);
         result = removeWhitespace(result);
     }
 
-    // Level 2: Intermediate obfuscation
     if (_level >= 2) {
         result = encodeStrings(result);
         result = obfuscateNumbers(result);
     }
 
-    // Level 3: Advanced obfuscation
     if (_level >= 3) {
         result = injectDeadCode(result);
         result = obfuscateControlFlow(result);
+    }
+
+    if (_level >= 1 && _settings.emitGlobalThisAssignments && !_lastTopLevelPreserved.empty()) {
+        std::sort(_lastTopLevelPreserved.begin(), _lastTopLevelPreserved.end());
+        _lastTopLevelPreserved.erase(
+            std::unique(_lastTopLevelPreserved.begin(), _lastTopLevelPreserved.end()),
+            _lastTopLevelPreserved.end());
+        for (const std::string& n : _lastTopLevelPreserved) {
+            std::string esc;
+            esc.reserve(n.size());
+            for (char c : n) {
+                if (c == '\\' || c == '\'' || c == '\"') {
+                    esc += '\\';
+                }
+                esc += c;
+            }
+            result += "\nglobalThis['";
+            result += esc;
+            result += "']=";
+            result += n;
+            result += ';';
+        }
+    }
+
+    if (_settings.validateOutputWithAcorn) {
+        if (!tryValidateWithAcorn(result)) {
+            _lastDiagnostics.push_back(
+                "Acorn validation failed or node/acorn not available (output still returned)");
+        }
     }
 
     return result;
@@ -608,181 +620,92 @@ std::string JSObfuscator::escapeForRegex(const std::string& str) {
     return escaped;
 }
 
-std::string JSObfuscator::processTemplateLiteral(const std::string& templateLiteral,
-                                                 const std::unordered_map<std::string, std::string>& nameMap) {
-    // Template literals are in the form: `text ${expr} more text ${expr2}`
-    // We need to find ${...} expressions and replace variable names inside them
-    
-    // Pre-allocate with extra space for potentially longer mangled names
-    // Estimate: original size + 30% for mangled names which may be longer/shorter
-    std::string result;
-    const size_t estimatedCapacity = templateLiteral.size() + (templateLiteral.size() / 3) + 1;
-    result.reserve(estimatedCapacity);
-    
-    size_t pos = 0;
-    while (pos < templateLiteral.size()) {
-        // Look for ${
-        size_t exprStart = templateLiteral.find("${", pos);
-        
-        if (exprStart == std::string::npos) {
-            // No more expressions, copy rest of the string
-            result.append(templateLiteral, pos, std::string::npos);
-            break;
-        }
-        
-        // Static span before this substitution, plus `${`
-        result.append(templateLiteral, pos, exprStart - pos + 2);
-        
-        const size_t exprContentStart = exprStart + 2;
-        const size_t exprEnd = templateInterpolationClose(templateLiteral, exprContentStart);
-        if (exprEnd == std::string::npos) {
-            result.append(templateLiteral, exprContentStart, std::string::npos);
-            break;
-        }
-        
-        const size_t exprContentLen = exprEnd - exprContentStart;
-        
-        // Use string_view-like approach to avoid copying when possible
-        std::string expression(templateLiteral.data() + exprContentStart, exprContentLen);
-        
-        // Replace identifiers in the expression using the name map
-        // Use the pre-compiled static regex for performance
-        std::sregex_iterator it(expression.begin(), expression.end(), IDENTIFIER_REGEX);
-        std::sregex_iterator endIt;
-        size_t lastExprPos = 0;
-        
-        while (it != endIt) {
-            const std::smatch& m = *it;
-            size_t matchStart = static_cast<size_t>(m.position());
-            size_t matchLen = static_cast<size_t>(m.length());
-            std::string identifier = m[1].str();
-            
-            // Append text before the match
-            result.append(expression, lastExprPos, matchStart - lastExprPos);
-            
-            // Check if preceded by '.' (member access)
-            bool isMemberAccess = (matchStart > 0 && expression[matchStart - 1] == '.');
-            
-            if (!isMemberAccess) {
-                auto mapIt = nameMap.find(identifier);
-                if (mapIt != nameMap.end()) {
-                    result.append(mapIt->second);
-                } else {
-                    result.append(identifier);
-                }
-            } else {
-                result.append(identifier);
-            }
-            
-            lastExprPos = matchStart + matchLen;
-            ++it;
-        }
-        
-        // Append remaining text after last match in expression and closing }
-        result.append(expression, lastExprPos, std::string::npos);
-        result.push_back('}');
-        
-        pos = exprEnd + 1;
-    }
-    
-    return result;
-}
-
 std::string JSObfuscator::mangleNames(const std::string& code) {
-    // Tokenize the source so we can skip strings and comments
-    std::vector<Token> tokens = tokenize(code);
+    _lastTopLevelPreserved.clear();
 
-    // 1) Collect identifiers that appear in CODE tokens,
-    //    skipping those preceded by '.' (member access).
-    std::unordered_map<std::string, std::string> nameMap;
+    js_scope::ScopeRenameOptions opt;
+    opt.reserved = &RESERVED_KEYWORDS;
+    opt.preserve = _settings.preserveIdentNames;
+    opt.externNames = _settings.externGlobalNames;
+    opt.generateMangledName = [this]() { return generateRandomName(6); };
+    opt.strictFreeIdentifiers = _settings.strictUndefinedSymbols;
+    std::vector<std::string>* topPreservePtr =
+        _settings.emitGlobalThisAssignments ? &_lastTopLevelPreserved : nullptr;
 
-    for (const auto& tok : tokens) {
-        if (tok.type != TokenType::CODE) continue;
+    js_scope::ScopeRenamePlan plan = js_scope::computeScopedRenames(code, opt, topPreservePtr);
 
-        auto searchStart = tok.text.cbegin();
-        std::smatch match;
-        while (std::regex_search(searchStart, tok.text.cend(), match, IDENTIFIER_WITH_DOT_REGEX)) {
-            std::string dotPrefix = match[1].str();
-            std::string identifier = match[2].str();
-
-            // Compute absolute position of group 2 within tok.text
-            size_t offset = static_cast<size_t>(searchStart - tok.text.cbegin());
-            size_t identStart = offset + static_cast<size_t>(match.position(2));
-            size_t identEnd = identStart + identifier.length();
-
-            // Skip member-access identifiers (preceded by '.'),
-            // reserved words, identifiers starting with '_' (internal/private),
-            // and object-literal keys (e.g. { email: … })
-            if (dotPrefix.empty() && !isReservedKeyword(identifier) 
-                && !identifier.empty() && identifier[0] != '_'
-                && !isObjectLiteralKey(tok.text, identStart, identEnd)) {
-                if (nameMap.find(identifier) == nameMap.end()) {
-                    nameMap[identifier] = generateRandomName(6);
-                }
+    if (plan.usedLegacyFallback) {
+        _lastDiagnostics.push_back("obfuscator: spelling-keyed rename fallback was used");
+    }
+    for (const auto& u : plan.undefinedSymbols) {
+        _lastDiagnostics.push_back(std::string("obfuscator: undefined symbol reference: ") + u);
+    }
+    if (_settings.strictUndefinedSymbols && !plan.undefinedSymbols.empty()) {
+        std::string msg = "JS obfuscation: strict undefined symbols (declare, add extern, or fix): ";
+        for (size_t k = 0; k < plan.undefinedSymbols.size(); ++k) {
+            if (k > 0) {
+                msg += ", ";
             }
-            searchStart = match.suffix().first;
+            msg += plan.undefinedSymbols[k];
         }
+        throw std::runtime_error(msg);
     }
 
-    // 2) Replace identifiers only inside CODE tokens, using position-based
-    //    replacement to avoid lookbehind (unsupported by std::regex).
-    std::string result;
-    result.reserve(code.size());
-
-    for (const auto& tok : tokens) {
-        if (tok.type != TokenType::CODE) {
-            // Check if it's a template literal (starts and ends with backtick)
-            if (tok.type == TokenType::STRING_LITERAL && 
-                tok.text.size() >= 2 && 
-                tok.text[0] == '`' && 
-                tok.text[tok.text.size() - 1] == '`') {
-                // Process template literal to replace variables inside ${...}
-                result += processTemplateLiteral(tok.text, nameMap);
-            } else {
-                // Preserve strings, comments verbatim
-                result += tok.text;
-            }
+    std::string out = code;
+    std::vector<js_scope::RenameSpan> spans = plan.spans;
+    std::sort(spans.begin(), spans.end(), [](const js_scope::RenameSpan& a, const js_scope::RenameSpan& b) {
+        return a.start > b.start;
+    });
+    for (const auto& s : spans) {
+        if (s.start > out.size() || s.end > out.size() || s.start >= s.end) {
             continue;
         }
-
-        // Walk through the code segment and replace identifiers
-        // that are NOT preceded by '.'
-        const std::string& segment = tok.text;
-        std::string replaced;
-        replaced.reserve(segment.size());
-
-        std::sregex_iterator it(segment.begin(), segment.end(), IDENTIFIER_REGEX);
-        std::sregex_iterator endIt;
-        size_t lastPos = 0;
-
-        while (it != endIt) {
-            const std::smatch& m = *it;
-            size_t matchStart = static_cast<size_t>(m.position());
-            size_t matchLen = static_cast<size_t>(m.length());
-            std::string identifier = m[1].str();
-
-            // Append text before the match
-            replaced += segment.substr(lastPos, matchStart - lastPos);
-
-            // Check if preceded by '.' (member access) or is an object-literal key
-            bool isMemberAccess = (matchStart > 0 && segment[matchStart - 1] == '.');
-            bool isObjKey = isObjectLiteralKey(segment, matchStart, matchStart + matchLen);
-
-            if (!isMemberAccess && !isObjKey && nameMap.find(identifier) != nameMap.end()) {
-                replaced += nameMap[identifier];
-            } else {
-                replaced += identifier;
-            }
-
-            lastPos = matchStart + matchLen;
-            ++it;
-        }
-        // Append remaining text after last match
-        replaced += segment.substr(lastPos);
-        result += replaced;
+        out.replace(s.start, s.end - s.start, s.mangled);
     }
+    return out;
+}
 
-    return result;
+bool JSObfuscator::tryValidateWithAcorn(const std::string& js) const {
+#if defined(_WIN32)
+    (void)js;
+    return true;
+#else
+    static const char kSnippet[] =
+        "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{"
+        "try{require('acorn').parse(d,{ecmaVersion:2022,allowReturnOutsideFunction:true});"
+        "process.exit(0);}catch(e){process.stderr.write(String(e)+'\\n');process.exit(1);}"
+        "});";
+    char tmpPath[] = "/tmp/geruest_acorn_chkXXXXXX";
+    int tfd = mkstemp(tmpPath);
+    if (tfd < 0) {
+        return false;
+    }
+    {
+        const ssize_t n = static_cast<ssize_t>(sizeof(kSnippet) - 1);
+        if (write(tfd, kSnippet, static_cast<size_t>(n)) != n) {
+            close(tfd);
+            unlink(tmpPath);
+            return false;
+        }
+        close(tfd);
+    }
+    std::string cmd = std::string("node \"") + tmpPath + "\"";
+    FILE* pipe = popen(cmd.c_str(), "w");
+    if (!pipe) {
+        unlink(tmpPath);
+        return false;
+    }
+    if (!js.empty()) {
+        size_t w = fwrite(js.data(), 1, js.size(), pipe);
+        (void)w;
+    }
+    int st = pclose(pipe);
+    unlink(tmpPath);
+    if (st == -1) {
+        return false;
+    }
+    return WIFEXITED(st) && WEXITSTATUS(st) == 0;
+#endif
 }
 
 std::string JSObfuscator::encodeStrings(const std::string& code) {

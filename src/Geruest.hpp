@@ -211,6 +211,20 @@ class Geruest {
      */
     void addObfuscationExclusion(const std::string& filename);
 
+    void addObfuscationPreserveIdent(const std::string& name);
+    void addObfuscationExternGlobal(const std::string& name);
+
+    /**
+     * Load extern global names from a UTF-8 text file (one per line, # comments).
+     * @param pathRelativeToRoot Path relative to server content root
+     * @return false if file missing or unreadable
+     */
+    bool loadObfuscationExternsFile(const std::string& pathRelativeToRoot);
+
+    void setObfuscationStrictUndefined(bool enabled);
+    void setObfuscationEmitGlobalThisAssignments(bool enabled);
+    void setObfuscationValidateWithAcorn(bool enabled);
+
     /**
      * @brief Load configuration from .env file and environment variables
      * 
@@ -229,6 +243,12 @@ class Geruest {
      * - WORKER_THREADS (size_t): Number of worker threads (default: CPU cores * 2)
      * - MAX_QUEUE_SIZE (size_t): Maximum connection queue size (default: 500)
      * - LOG_LEVEL (string): Log level: "none", "error", "warning", "info", "debug" (default: "error")
+     * - OBFUSCATE_PRESERVE (string): Comma-separated identifiers to never rename
+     * - OBFUSCATE_EXTERNS (string): Comma-separated global names (host-provided)
+     * - OBFUSCATE_EXTERNS_FILE (string): Path under content root with one name per line
+     * - OBFUSCATE_STRICT_UNDEFINED (bool): Fail obfuscation on undefined free identifiers
+     * - OBFUSCATE_EMIT_GLOBALTHIS (bool): Append globalThis['name']=name for preserved top-level decls
+     * - OBFUSCATE_VALIDATE_ACORN (bool): Run optional Acorn parse when node+acorn are installed
      * 
      * Email Configuration:
      * - SMTP_SERVER (string): SMTP server hostname
