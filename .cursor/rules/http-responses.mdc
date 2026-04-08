@@ -36,6 +36,7 @@ return res;
 | `responseForbidden()` | 403 |
 | `responseNotFound()` | 404 |
 | `responseMethodNotAllowed()` | 405 |
+| `responseMethodNotAllowed(request, "GET, HEAD")` | 405 + `Allow` header |
 | `responseConflict()` | 409 |
 | `responseInternalServerError()` | 500 |
 

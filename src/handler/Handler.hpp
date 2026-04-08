@@ -66,9 +66,15 @@ private:
 	std::unique_ptr<char[]> buffer;
 	ssize_t bufferLength = 0;
 
+	/** Unread bytes after the last fully parsed request (HTTP/1.1 pipelining / partial reads). */
+	std::string pendingRequestData;
+
 	bool readSocket() { return readSocket(buffer.get(), BUFFER_SIZE); }
 
 	bool readSocket(char *bufferToUse, size_t size);
+
+	/** Discard exactly byteCount bytes from the socket (e.g. oversized or unread body). */
+	bool discardFromSocket(size_t byteCount);
 
 	bool sendSocket(const char *bufferToSend, size_t size) const;
 

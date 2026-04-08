@@ -10,8 +10,9 @@
 #ifndef GERUEST_HTTPRESPONSE_HPP
 #define GERUEST_HTTPRESPONSE_HPP
 
-#include <string>
 #include <map>
+#include <string>
+#include <string_view>
 #include <sstream>
 #include "HTTPRequest.hpp"
 
@@ -120,6 +121,9 @@ public:
 [[maybe_unused]] HTTPResponse responseNotFound(const HTTPRequest* request = nullptr);
 // 405 Method Not Allowed
 [[maybe_unused]] HTTPResponse responseMethodNotAllowed(const HTTPRequest* request = nullptr);
+// 405 with optional Allow header (comma-separated methods, e.g. "GET, HEAD")
+[[maybe_unused]] HTTPResponse responseMethodNotAllowed(const HTTPRequest* request,
+                                                       std::string_view allowMethods);
 // 409 Conflict
 [[maybe_unused]] HTTPResponse responseConflict(const HTTPRequest* request = nullptr);
 // 500 Internal Server Error

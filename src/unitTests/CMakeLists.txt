@@ -65,6 +65,7 @@ set(GERUEST_SOURCES
     ../config/ConfigLoader.cpp
     ../data/HTTPRequest.cpp
     ../data/HTTPResponse.cpp
+    ../data/MethodNotAllowed.cpp
     ../parser/JSONParser.cpp
     ../FileManagement/FileManagement.cpp
     ../builders/AssetMerger.cpp
@@ -100,6 +101,7 @@ add_executable(HTTPResponse_Tests
     HTTPResponse/HTTPResponse_tests.cpp 
     ../data/HTTPResponse.cpp 
     ../data/HTTPRequest.cpp
+    ../data/MethodNotAllowed.cpp
 )
 target_link_libraries(HTTPResponse_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 

@@ -9,6 +9,8 @@
 
 #include "HTTPResponse.hpp"
 
+#include <string_view>
+
 #include "HTTPRequest.hpp"
 
 namespace geruest {
@@ -212,6 +214,14 @@ HTTPResponse responseNotFound(const HTTPRequest* request) {
 
 HTTPResponse responseMethodNotAllowed(const HTTPRequest* request) {
     return buildResponse("405 Method Not Allowed", "405 Method Not Allowed", request);
+}
+
+HTTPResponse responseMethodNotAllowed(const HTTPRequest* request, std::string_view allowMethods) {
+    HTTPResponse response = buildResponse("405 Method Not Allowed", "405 Method Not Allowed", request);
+    if (!allowMethods.empty()) {
+        response.setHeader("Allow", std::string(allowMethods));
+    }
+    return response;
 }
 
 HTTPResponse responseConflict(const HTTPRequest* request) {

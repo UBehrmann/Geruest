@@ -41,6 +41,19 @@ server->addRoute("/api/data", [](const HTTPRequest& req) {
 });
 ```
 
+Handlers always return `HTTPResponse` on success. For an unsupported HTTP method on that route, throw `method_not_allowed` (optionally with an `Allow` list string such as `"GET, HEAD"`). The framework maps that to **405**; any other `std::exception` from the handler becomes **500** with logging.
+
+```cpp
+#include "data/MethodNotAllowed.hpp"
+
+server->addRoute("/api/read", [](const HTTPRequest& req) {
+    if (req.getMethod() != "GET" && req.getMethod() != "HEAD") {
+        throw method_not_allowed("GET, HEAD");
+    }
+    return responseOK(&req);
+});
+```
+
 ## Logging
 ```cpp
 sendToLogger("Info message");        // General info / debug

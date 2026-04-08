@@ -12,8 +12,11 @@
 #include <algorithm>
 #include <chrono>
 #include <climits>
+#include <cstddef>
+#include <exception>
 #include <filesystem>
 #include <fstream>
+#include <string>
 
 #include "builders/AssetMerger.hpp"
 #include "builders/CSSBuilder.hpp"
@@ -22,7 +25,41 @@
 #include "builders/JSBuilder.hpp"
 #include "builders/WebPConverter.hpp"
 #include "data/HTTPResponse.hpp"
+#include "data/MethodNotAllowed.hpp"
 #include "security/Security.hpp"
+
+namespace {
+
+constexpr size_t kMaxHttpHeaderBytes = 65536;
+constexpr size_t kMaxHttpBodyBytes = 16 * 1024 * 1024;
+
+size_t findHeaderEndPos(const std::string& raw) {
+    size_t p = raw.find("\r\n\r\n");
+    if (p != std::string::npos) {
+        return p + 4;
+    }
+    p = raw.find("\n\n");
+    if (p != std::string::npos) {
+        return p + 2;
+    }
+    return std::string::npos;
+}
+
+bool parseContentLengthBytes(const geruest::HTTPRequest& req, size_t* out) {
+    if (!req.hasHeader("content-length")) {
+        return false;
+    }
+    const std::string cl = req.getHeader("content-length");
+    try {
+        unsigned long long v = std::stoull(cl);
+        *out = static_cast<size_t>(v);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+}  // namespace
 
 namespace geruest {
 
@@ -83,6 +120,21 @@ bool Handler::readSocket(char* bufferToUse, size_t size) {
     return false;
 }
 
+bool Handler::discardFromSocket(size_t byteCount) {
+    while (byteCount > 0) {
+        const size_t chunk = std::min(byteCount, static_cast<size_t>(BUFFER_SIZE));
+        if (!readSocket(buffer.get(), chunk)) {
+            return false;
+        }
+        if (bufferLength <= 0) {
+            return false;
+        }
+        const size_t got = static_cast<size_t>(bufferLength);
+        byteCount -= got;
+    }
+    return true;
+}
+
 bool Handler::sendSocket(const char* bufferToSend, size_t size) const {
     char bufferToSocket[BUFFER_SIZE];
 
@@ -138,41 +190,87 @@ void Handler::sendToLoggerError(const std::string& message) const {
 }
 
 void Handler::run() {
-    // Read the socket
-    // Message count is used to prevent infinite loops
-    while (++messageCount < 100 && readSocket()) {
-        // Check if the buffer exists
-        if (!buffer) {
-            buffer = std::make_unique<char[]>(BUFFER_SIZE);
-        }
+    if (!buffer) {
+        buffer = std::make_unique<char[]>(BUFFER_SIZE);
+    }
 
-        // Ensure bufferLength is valid before creating string
-        if (bufferLength <= 0) {
-            sendToLoggerError("Invalid buffer length in run loop.");
-            break;
-        }
+    while (++messageCount < 100) {
+        std::string raw = std::move(pendingRequestData);
+        pendingRequestData.clear();
 
-        std::string rawRequest(buffer.get(), static_cast<size_t>(bufferLength));
-        requestStream = std::istringstream(rawRequest);
-
-        HTTPRequest hTTPRequest(rawRequest, IP, serverData.getRoot());
-
-        // Check if body was read with the request, otherwise it was sent in the next read
-        if (hTTPRequest.hasHeader("content-length") && hTTPRequest.getBody().empty()) {
-            readSocket();
-
-            // Ensure bufferLength is valid before creating string
-            if (bufferLength <= 0) {
-                sendToLoggerError("Invalid buffer length when reading body.");
+        if (raw.empty()) {
+            if (!readSocket()) {
                 break;
             }
-
-            // Append the new data to the existing buffer
-            std::string newData(buffer.get(), static_cast<size_t>(bufferLength));
-            requestStream.str(requestStream.str() + newData);
-
-            hTTPRequest = HTTPRequest(requestStream.str(), IP, serverData.getRoot());
+            if (bufferLength <= 0) {
+                sendToLoggerError("Invalid buffer length in run loop.");
+                break;
+            }
+            raw.assign(buffer.get(), static_cast<size_t>(bufferLength));
         }
+
+        while (findHeaderEndPos(raw) == std::string::npos) {
+            if (raw.size() >= kMaxHttpHeaderBytes) {
+                sendToLoggerError("HTTP headers exceed maximum size.");
+                return;
+            }
+            if (!readSocket()) {
+                return;
+            }
+            if (bufferLength <= 0) {
+                sendToLoggerError("Invalid buffer length while reading headers.");
+                return;
+            }
+            raw.append(buffer.get(), static_cast<size_t>(bufferLength));
+        }
+
+        const size_t headerEnd = findHeaderEndPos(raw);
+
+        bool hasCL = false;
+        size_t bodyExpected = 0;
+        {
+            HTTPRequest probe(raw, IP, serverData.getRoot());
+            if (probe.hasHeader("content-length")) {
+                if (!parseContentLengthBytes(probe, &bodyExpected)) {
+                    HTTPResponse br = responseBadRequest(&probe);
+                    const std::string s = br.toString();
+                    sendSocket(s.c_str(), s.size());
+                    return;
+                }
+                hasCL = true;
+            }
+        }
+
+        if (hasCL && bodyExpected > kMaxHttpBodyBytes) {
+            HTTPRequest probe(raw, IP, serverData.getRoot());
+            HTTPResponse br = responseBadRequest(&probe);
+            const std::string s = br.toString();
+            sendSocket(s.c_str(), s.size());
+            const size_t already = raw.size() > headerEnd ? raw.size() - headerEnd : 0;
+            const size_t remain = bodyExpected > already ? bodyExpected - already : 0;
+            static_cast<void>(discardFromSocket(remain));
+            return;
+        }
+
+        const size_t needTotal = headerEnd + (hasCL ? bodyExpected : 0);
+        while (raw.size() < needTotal) {
+            if (!readSocket()) {
+                return;
+            }
+            if (bufferLength <= 0) {
+                sendToLoggerError("Invalid buffer length when reading body.");
+                return;
+            }
+            raw.append(buffer.get(), static_cast<size_t>(bufferLength));
+        }
+
+        std::string message = raw.substr(0, needTotal);
+        if (raw.size() > needTotal) {
+            pendingRequestData = raw.substr(needTotal);
+        }
+
+        HTTPRequest hTTPRequest(message, IP, serverData.getRoot());
+        requestStream = std::istringstream(message);
 
         serverData.recordRequest();
         {
@@ -186,7 +284,6 @@ void Handler::run() {
                 : static_cast<uint32_t>(_elapsedUs));
         }
 
-        // Clear the buffer, so we don't send the same data again
         memset(buffer.get(), 0, BUFFER_SIZE);
     }
 }
@@ -223,19 +320,45 @@ void Handler::handleRequest(HTTPRequest* request) {
     // Priority rule 3+4: normal routes (exact route, then wildcard route)
     auto routeHandler = serverData.findMatchingRoute(request->getPathString());
     if (routeHandler) {
-        // Call the route handler  
-        HTTPResponse response = (*routeHandler)(*request);
+        try {
+            HTTPResponse response = (*routeHandler)(*request);
 
-        const std::string& _st = response.getStatus();
-        if (!_st.empty()) {
-            if (_st[0] == '4') { serverData.record4xx(); }
-            else if (_st[0] == '5') { serverData.record5xx(); }
-        }
+            const std::string& _st = response.getStatus();
+            if (!_st.empty()) {
+                if (_st[0] == '4') {
+                    serverData.record4xx();
+                } else if (_st[0] == '5') {
+                    serverData.record5xx();
+                }
+            }
 
-        // Send the response
-        std::string responseStr = response.toString();
-        if (!sendSocket(responseStr.c_str(), responseStr.size())) {
-            sendToLoggerError("Failed to send route response for: " + request->getPathString());
+            const std::string responseStr = response.toString();
+            if (!sendSocket(responseStr.c_str(), responseStr.size())) {
+                sendToLoggerError("Failed to send route response for: " + request->getPathString());
+            }
+        } catch (const method_not_allowed& e) {
+            HTTPResponse response = responseMethodNotAllowed(request, e.allowMethods());
+            serverData.record4xx();
+            const std::string responseStr = response.toString();
+            if (!sendSocket(responseStr.c_str(), responseStr.size())) {
+                sendToLoggerError("Failed to send 405 for: " + request->getPathString());
+            }
+        } catch (const std::exception& e) {
+            sendToLoggerError(std::string("Exception in route handler: ") + e.what());
+            HTTPResponse response = responseInternalServerError(request);
+            serverData.record5xx();
+            const std::string responseStr = response.toString();
+            if (!sendSocket(responseStr.c_str(), responseStr.size())) {
+                sendToLoggerError("Failed to send 500 for: " + request->getPathString());
+            }
+        } catch (...) {
+            sendToLoggerError("Unknown exception in route handler");
+            HTTPResponse response = responseInternalServerError(request);
+            serverData.record5xx();
+            const std::string responseStr = response.toString();
+            if (!sendSocket(responseStr.c_str(), responseStr.size())) {
+                sendToLoggerError("Failed to send 500 for: " + request->getPathString());
+            }
         }
 
         return;
