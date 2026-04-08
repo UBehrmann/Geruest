@@ -1239,6 +1239,49 @@ TEST(JSObfuscatorTest, TemplateLiteralSlashAfterInterpolationIntact) {
 }
 
 // Regression: tokenize must not treat \/ + / in /^\// as // line comment (level ≥2 uses tokenize).
+// Regression: after ';' the lexer allows a regex; failed parse of "//" must not consume
+// only the first slash — otherwise "// ... doesn't" is misparsed and apostrophes break strings.
+TEST(JSObfuscatorTest, LineCommentSlashSlashAfterSemicolonSurvivesLevel2) {
+    JSObfuscator obfuscator(2);
+    std::string original =
+        "function f(){return false;// Ensure form doesn't submit\n"
+        "g();}\n";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_NE(obfuscated.find("doesn't"), std::string::npos) << obfuscated;
+}
+
+// Regression: window._languages= used to trip lodash-style passthrough and break
+// HTML attribute quotes; quoted fragments must always be JSON-style encoded.
+TEST(JSObfuscatorTest, Level2WindowUnderscorePropertyDoesNotBreakHtmlStrings) {
+    JSObfuscator obfuscator(2);
+    std::string original = R"(
+window._languages = [];
+function devNoticeHtml(wrap) {
+  wrap.innerHTML = '<h3 id="dev-heading" class="overlay__title"></h3>';
+}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_EQ(obfuscated.find("innerHTML=\"<h3 id=\""), std::string::npos)
+        << "double-quoted innerHTML with raw attribute quotes: " << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "dev-heading") || contains(obfuscated, "\\x22dev-heading\\x22"))
+        << obfuscated;
+}
+
+// Identifiers inside nested template literals (${...} containing `...${id}...`) must rename.
+TEST(JSObfuscatorTest, NestedTemplateLiteralIdentRenamed) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+function pathHelper(x) { return x; }
+function f() {
+  const encToken = 'u1';
+  return `${pathHelper(`checkUserBooks?username=${encToken}`)}`;
+}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_FALSE(contains(obfuscated, "encToken")) << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "checkUserBooks")) << obfuscated;
+}
+
 TEST(JSObfuscatorTest, Level2PreservesRegexWithEscapedSlash) {
     JSObfuscator obfuscator(2);
     std::string original = R"(

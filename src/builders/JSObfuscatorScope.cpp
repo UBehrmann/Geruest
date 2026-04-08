@@ -528,6 +528,8 @@ struct Parser {
                 for (const Tok& tt : sub) {
                     if (tt.kind == Tk::Ident) {
                         referenceIdent(inner + tt.a, inner + tt.b);
+                    } else if (tt.kind == Tk::Tpl) {
+                        scanTemplateToken(inner + tt.a, inner + tt.b);
                     }
                 }
                 j = close + 1;

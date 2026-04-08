@@ -147,6 +147,10 @@ static bool parseRegexLiteralEnd(const std::string& code, size_t openSlash, size
     if (openSlash >= code.size() || code[openSlash] != '/') {
         return false;
     }
+    // "//" starts a line comment, not a zero-width RegularExpressionLiteral.
+    if (openSlash + 1 < code.size() && code[openSlash + 1] == '/') {
+        return false;
+    }
     size_t i = openSlash + 1;
     bool inCharClass = false;
     while (i < code.size()) {
@@ -179,6 +183,18 @@ static bool parseRegexLiteralEnd(const std::string& code, size_t openSlash, size
         ++i;
     }
     return false;
+}
+
+/// True iff code[pos] is '/' and the immediately preceding run of '\\' has odd length (escaped slash).
+static bool isEscapedSlashBeforeForTokenize(const std::string& code, size_t pos) {
+    if (pos == 0 || code[pos] != '/') {
+        return false;
+    }
+    size_t backslashes = 0;
+    for (size_t k = pos; k > 0 && code[k - 1] == '\\'; --k) {
+        ++backslashes;
+    }
+    return (backslashes % 2U) == 1U;
 }
 
 static bool canStartRegexLiteral(const std::string& code, size_t slashPos) {
@@ -388,40 +404,6 @@ static std::string extractQuotedInner(const std::string& tok) {
     return inner;
 }
 
-static void encodeStringsProcessCodeSegment(const std::string& segment, std::string& result, bool& inUnderscoreContext,
-                            int& braceDepth) {
-    for (size_t i = 0; i < segment.size(); ++i) {
-        const char c = segment[i];
-        if (c == '_' && (i == 0 || (!std::isalnum(static_cast<unsigned char>(segment[i - 1])) && segment[i - 1] != '$'))) {
-            size_t j = i + 1;
-            while (j < segment.size() &&
-                   (std::isalnum(static_cast<unsigned char>(segment[j])) || segment[j] == '_' || segment[j] == '$')) {
-                ++j;
-            }
-            if (j > i + 1) {
-                size_t k = j;
-                while (k < segment.size() && std::isspace(static_cast<unsigned char>(segment[k]))) {
-                    ++k;
-                }
-                if (k < segment.size() && (segment[k] == '(' || segment[k] == '=')) {
-                    inUnderscoreContext = true;
-                    braceDepth = 0;
-                }
-            }
-        }
-        if (c == '{') {
-            ++braceDepth;
-        } else if (c == '}') {
-            --braceDepth;
-            if (braceDepth <= 0) {
-                inUnderscoreContext = false;
-                braceDepth = 0;
-            }
-        }
-        result += c;
-    }
-}
-
 JSObfuscator::JSObfuscator(unsigned int level)
     : JSObfuscator(level, JSObfuscateSettings{}) {
 }
@@ -525,29 +507,6 @@ std::string JSObfuscator::removeWhitespace(const std::string& code) {
             // Inside string literals, preserve everything
             result += c;
         } else if (c == '/' && i + 1 < code.size()) {
-            // Line comments must include the terminating LineTerminator. Otherwise
-            // removeWhitespace can drop the newline and merge the next statement onto
-            // the same line as the //, swallowing it as comment text (syntax error).
-            if (code[i + 1] == '/') {
-                size_t start = i;
-                i += 2;
-                while (i < code.size() && code[i] != '\n' && code[i] != '\r') {
-                    ++i;
-                }
-                if (i < code.size()) {
-                    if (code[i] == '\r' && i + 1 < code.size() && code[i + 1] == '\n') {
-                        i += 2;
-                    } else {
-                        ++i;
-                    }
-                }
-                result.append(code, start, i - start);
-                if (i > start) {
-                    prevChar = code[i - 1];
-                }
-                --i;
-                continue;
-            }
             // Block comments — copy verbatim so internals are not rescanned as code.
             if (code[i + 1] == '*') {
                 size_t start = i;
@@ -571,8 +530,7 @@ std::string JSObfuscator::removeWhitespace(const std::string& code) {
                 --i;
                 continue;
             }
-            // Same regex detection as tokenize; consume whole literal via parseRegexLiteralEnd
-            // so escaped slashes (e.g. /^\//) do not confuse delimiter detection.
+            // Regex before // so /^\// and /\/\// are not mistaken for line comments.
             if (canStartRegexLiteral(code, i)) {
                 size_t end = 0;
                 if (parseRegexLiteralEnd(code, i, end)) {
@@ -581,6 +539,29 @@ std::string JSObfuscator::removeWhitespace(const std::string& code) {
                     i = end - 1;
                     continue;
                 }
+            }
+            // Line comments must include the terminating LineTerminator. Otherwise
+            // removeWhitespace can drop the newline and merge the next statement onto
+            // the same line as the //, swallowing it as comment text (syntax error).
+            if (code[i + 1] == '/' && !isEscapedSlashBeforeForTokenize(code, i)) {
+                size_t start = i;
+                i += 2;
+                while (i < code.size() && code[i] != '\n' && code[i] != '\r') {
+                    ++i;
+                }
+                if (i < code.size()) {
+                    if (code[i] == '\r' && i + 1 < code.size() && code[i + 1] == '\n') {
+                        i += 2;
+                    } else {
+                        ++i;
+                    }
+                }
+                result.append(code, start, i - start);
+                if (i > start) {
+                    prevChar = code[i - 1];
+                }
+                --i;
+                continue;
             }
             result += c;
         } else if (std::isspace(static_cast<unsigned char>(c))) {
@@ -599,18 +580,6 @@ std::string JSObfuscator::removeWhitespace(const std::string& code) {
     return result;
 }
 
-/// Same rule as AssetMerger::removeJsComments: \/ + / at end of regex is not // line comment.
-static bool isEscapedSlashBeforeForTokenize(const std::string& code, size_t pos) {
-    if (pos == 0 || code[pos] != '/') {
-        return false;
-    }
-    size_t backslashes = 0;
-    for (size_t k = pos; k > 0 && code[k - 1] == '\\'; --k) {
-        ++backslashes;
-    }
-    return (backslashes % 2U) == 1U;
-}
-
 std::vector<JSObfuscator::Token> JSObfuscator::tokenize(const std::string& code) {
     std::vector<Token> tokens;
     std::string current;
@@ -625,19 +594,6 @@ std::vector<JSObfuscator::Token> JSObfuscator::tokenize(const std::string& code)
 
     while (i < code.size()) {
         char c = code[i];
-
-        // --- line comment ---
-        if (c == '/' && i + 1 < code.size() && code[i + 1] == '/' &&
-            !isEscapedSlashBeforeForTokenize(code, i)) {
-            flushCode();
-            std::string comment;
-            while (i < code.size() && code[i] != '\n') {
-                comment += code[i++];
-            }
-            if (i < code.size()) comment += code[i++]; // include the newline
-            tokens.push_back({TokenType::LINE_COMMENT, comment});
-            continue;
-        }
 
         // --- block comment ---
         if (c == '/' && i + 1 < code.size() && code[i + 1] == '*') {
@@ -681,6 +637,9 @@ std::vector<JSObfuscator::Token> JSObfuscator::tokenize(const std::string& code)
 
         // --- regex literal (/.../flags) ---
         // We only treat '/' as regex start in expression contexts.
+        // If parseRegexLiteralEnd fails (e.g. "//" line comment after ';'), fall through to
+        // the '//' line-comment rule — do not consume only the first '/' (that strands the
+        // second '/' as code and breaks comments containing apostrophes: 'doesn't').
         if (c == '/' && canStartRegexLiteral(code, i)) {
             flushCode();
             size_t regexStart = i;
@@ -688,10 +647,20 @@ std::vector<JSObfuscator::Token> JSObfuscator::tokenize(const std::string& code)
             if (parseRegexLiteralEnd(code, i, end)) {
                 tokens.push_back({TokenType::REGEX_LITERAL, code.substr(regexStart, end - regexStart)});
                 i = end;
-            } else {
-                i = regexStart + 1;
-                current += '/';
+                continue;
             }
+        }
+
+        // --- line comment (after regex attempt; parseRegexLiteralEnd rejects "//") ---
+        if (c == '/' && i + 1 < code.size() && code[i + 1] == '/' &&
+            !isEscapedSlashBeforeForTokenize(code, i)) {
+            flushCode();
+            std::string comment;
+            while (i < code.size() && code[i] != '\n') {
+                comment += code[i++];
+            }
+            if (i < code.size()) comment += code[i++]; // include the newline
+            tokens.push_back({TokenType::LINE_COMMENT, comment});
             continue;
         }
 
@@ -808,12 +777,9 @@ std::string JSObfuscator::encodeStrings(const std::string& code) {
     std::string result;
     result.reserve(static_cast<size_t>(static_cast<double>(code.size()) * 1.5));
 
-    bool inUnderscoreContext = false;
-    int braceDepth = 0;
-
     for (const auto& tok : tokens) {
         if (tok.type == TokenType::CODE) {
-            encodeStringsProcessCodeSegment(tok.text, result, inUnderscoreContext, braceDepth);
+            result += tok.text;
             continue;
         }
         if (tok.type == TokenType::STRING_LITERAL) {
@@ -825,13 +791,7 @@ std::string JSObfuscator::encodeStrings(const std::string& code) {
                 const char q = tok.text[0];
                 if (q == '"' || q == '\'') {
                     const std::string inner = extractQuotedInner(tok.text);
-                    if (inUnderscoreContext) {
-                        result += q;
-                        result += inner;
-                        result += q;
-                    } else {
-                        result += encodeStringLiteral(inner);
-                    }
+                    result += encodeStringLiteral(inner);
                     continue;
                 }
             }
