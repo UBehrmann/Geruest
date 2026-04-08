@@ -464,6 +464,19 @@ struct Parser {
         return bid;
     }
 
+    /// Hoisted declarations (function name, var) may appear after skip regions referenced the same
+    /// spelling as a free name at script level — reuse that binding (JS hoisting). Nested scopes use
+    /// a separate Env; do not reuse file-level implicits or inner locals could alias globals.
+    int bidForHoistedDecl(const std::string& name) {
+        if (curEnv == &rootEnv) {
+            auto ig = implicitGlobalSpellingToBid.find(name);
+            if (ig != implicitGlobalSpellingToBid.end()) {
+                return ig->second;
+            }
+        }
+        return makeBinding(name);
+    }
+
     std::optional<int> lookup(const std::string& name) const {
         for (const Env* e = curEnv; e != nullptr; e = e->parentFn) {
             for (auto it = e->blockStack.rbegin(); it != e->blockStack.rend(); ++it) {
@@ -536,7 +549,7 @@ struct Parser {
             }
             return;
         }
-        int bid = makeBinding(name);
+        int bid = bidForHoistedDecl(name);
         curEnv->hoisted[name] = bid;
         recordSpan(a, b, bindMangled[static_cast<size_t>(bid)].second);
         if (topLevelPreservedOut && atScriptTopLevel && shouldPreserve(name)) {
@@ -734,7 +747,7 @@ struct Parser {
             if (ex != curEnv->hoisted.end()) {
                 recordSpan(a, bb, bindMangled[static_cast<size_t>(ex->second)].second);
             } else {
-                int bid = makeBinding(n);
+                int bid = bidForHoistedDecl(n);
                 curEnv->hoisted[n] = bid;
                 recordSpan(a, bb, bindMangled[static_cast<size_t>(bid)].second);
             }

@@ -1169,6 +1169,25 @@ TEST(JSObfuscatorTest, ManyTopLevelFunctionsStableScope) {
     EXPECT_FALSE(contains(obfuscated, "local0")) << obfuscated;
 }
 
+// Regression: DOMContentLoaded (skipUntilTerminal) sees call before later function decl — must reuse
+// implicit binding so mangled call matches mangled hoisted name (avoid ReferenceError).
+TEST(JSObfuscatorTest, ForwardReferenceToHoistedFunctionSharesBinding) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+document.addEventListener('DOMContentLoaded', function () {
+  initializeTheme();
+});
+function initializeTheme() { return 1; }
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_FALSE(contains(obfuscated, "initializeTheme")) << obfuscated;
+    std::regex declPat(R"(function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(\s*\)\s*\{)");
+    std::smatch m;
+    ASSERT_TRUE(std::regex_search(obfuscated, m, declPat)) << obfuscated;
+    std::string mangled = m[1].str();
+    EXPECT_NE(obfuscated.find(mangled + "();"), std::string::npos) << obfuscated;
+}
+
 TEST(JSObfuscatorTest, BracketStringKeyPreservesBareIdentifier) {
     JSObfuscator obfuscator(1);
     std::string original = R"(
