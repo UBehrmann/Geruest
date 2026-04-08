@@ -12,9 +12,61 @@
 #include "AssetMerger.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <filesystem>
 
 namespace geruest {
+
+namespace {
+
+bool translationBracketInsideScript(const std::string& html, size_t bracketPos) {
+    size_t scriptStart = html.rfind("<script", bracketPos);
+    if (scriptStart == std::string::npos) {
+        return false;
+    }
+    size_t scriptEnd = html.find("</script>", scriptStart);
+    if (scriptEnd == std::string::npos) {
+        return false;
+    }
+    return bracketPos > scriptStart && bracketPos < scriptEnd;
+}
+
+/// Escape for text substituted inside a double-quoted JavaScript string literal (e.g. "...[...]...").
+std::string escapeTranslationForJsDoubleQuoted(const std::string& s) {
+    std::string out;
+    out.reserve(s.size() + 8);
+    for (unsigned char c : s) {
+        switch (c) {
+            case '"':
+                out += "\\\"";
+                break;
+            case '\\':
+                out += "\\\\";
+                break;
+            case '\n':
+                out += "\\n";
+                break;
+            case '\r':
+                out += "\\r";
+                break;
+            case '\t':
+                out += "\\t";
+                break;
+            default:
+                if (c < 0x20U) {
+                    char buf[7];
+                    std::snprintf(buf, sizeof(buf), "\\u%04x", static_cast<unsigned>(c));
+                    out += buf;
+                } else {
+                    out += static_cast<char>(c);
+                }
+                break;
+        }
+    }
+    return out;
+}
+
+}  // namespace
 
 // Initialize static members
 std::unordered_map<std::string, std::string> HtmlBuilder::_mergedAssetsCache;
@@ -228,6 +280,10 @@ void HtmlBuilder::replaceTranslations(const std::string& language) {
 
             // Get the element
             toInsert = languageArray.getString(element);
+        }
+
+        if (!toInsert.empty() && translationBracketInsideScript(builtFile, startPos)) {
+            toInsert = escapeTranslationForJsDoubleQuoted(toInsert);
         }
 
         builtFile.replace(startPos, keyword.size() + 1, toInsert);

@@ -161,6 +161,7 @@ std::string JSBuilder::obfuscateAndCache(const std::string& content, const std::
     st.strictUndefinedSymbols = _serverData.getObfuscationStrictUndefined();
     st.emitGlobalThisAssignments = _serverData.getObfuscationEmitGlobalThisAssignments();
     st.validateOutputWithAcorn = _serverData.getObfuscationValidateWithAcorn();
+    st.autoPreserveBracketStringKeys = _serverData.getObfuscationAutoBracketKeys();
 
     JSObfuscator obfuscator(_serverData.getObfuscationLevel(), st);
 

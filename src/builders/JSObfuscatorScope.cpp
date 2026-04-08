@@ -1075,6 +1075,64 @@ static void collectDirectives(const std::string& code, std::unordered_set<std::s
     }
 }
 
+static bool isSimpleQuotedIdentifierKey(const std::string& code, const Tok& strTok, std::string& outKey) {
+    if (strTok.kind != Tk::Str || strTok.b <= strTok.a + 2) {
+        return false;
+    }
+    if (strTok.b > code.size() || strTok.a >= code.size()) {
+        return false;
+    }
+    char q = code[strTok.a];
+    if (q != '\'' && q != '"') {
+        return false;
+    }
+    if (code[strTok.b - 1] != q) {
+        return false;
+    }
+    std::string inner = code.substr(strTok.a + 1, strTok.b - strTok.a - 2);
+    if (inner.empty()) {
+        return false;
+    }
+    for (char ch : inner) {
+        if (ch == '\\') {
+            return false;
+        }
+    }
+    if (!isIdentStart(inner[0])) {
+        return false;
+    }
+    for (size_t i = 1; i < inner.size(); ++i) {
+        if (!isIdentPart(inner[i])) {
+            return false;
+        }
+    }
+    outKey = std::move(inner);
+    return true;
+}
+
+static void collectBracketStringKeys(const std::string& code, const std::vector<Tok>& toks,
+                                     const std::unordered_set<std::string>* reserved,
+                                     std::unordered_set<std::string>& preserve) {
+    for (size_t k = 0; k + 2 < toks.size(); ++k) {
+        const Tok& t0 = toks[k];
+        if (t0.kind != Tk::Pun || t0.a >= code.size() || code[t0.a] != '[') {
+            continue;
+        }
+        std::string key;
+        if (!isSimpleQuotedIdentifierKey(code, toks[k + 1], key)) {
+            continue;
+        }
+        const Tok& t2 = toks[k + 2];
+        if (t2.kind != Tk::Pun || t2.a >= code.size() || code[t2.a] != ']') {
+            continue;
+        }
+        if (reserved && reserved->find(key) != reserved->end()) {
+            continue;
+        }
+        preserve.insert(key);
+    }
+}
+
 static void legacySpellingMap(const std::string& code, const ScopeRenameOptions& opt,
                               std::vector<RenameSpan>& spans) {
     std::unordered_map<std::string, std::string> map;
@@ -1123,12 +1181,20 @@ ScopeRenamePlan computeScopedRenames(const std::string& code, const ScopeRenameO
     ScopeRenamePlan plan;
     if (!opt.reserved || !opt.generateMangledName) {
         plan.usedLegacyFallback = true;
+        if (opt.autoPreserveBracketStringKeys) {
+            std::vector<Tok> keyToks;
+            lexAll(code, keyToks);
+            collectBracketStringKeys(code, keyToks, opt.reserved, opt.preserve);
+        }
         legacySpellingMap(code, opt, plan.spans);
         return plan;
     }
 
     std::vector<Tok> toks;
     lexAll(code, toks);
+    if (opt.autoPreserveBracketStringKeys) {
+        collectBracketStringKeys(code, toks, opt.reserved, opt.preserve);
+    }
     Parser p;
     p.opt = opt;
     p.code = &code;

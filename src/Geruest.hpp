@@ -224,6 +224,7 @@ class Geruest {
     void setObfuscationStrictUndefined(bool enabled);
     void setObfuscationEmitGlobalThisAssignments(bool enabled);
     void setObfuscationValidateWithAcorn(bool enabled);
+    void setObfuscationAutoBracketKeys(bool enabled);
 
     /**
      * @brief Load configuration from .env file and environment variables
@@ -249,6 +250,7 @@ class Geruest {
      * - OBFUSCATE_STRICT_UNDEFINED (bool): Fail obfuscation on undefined free identifiers
      * - OBFUSCATE_EMIT_GLOBALTHIS (bool): Append globalThis['name']=name for preserved top-level decls
      * - OBFUSCATE_VALIDATE_ACORN (bool): Run optional Acorn parse when node+acorn are installed
+     * - OBFUSCATE_AUTO_BRACKET_KEYS (bool): Add static ['id']/[\"id\"] keys to preserve (default: true)
      * 
      * Email Configuration:
      * - SMTP_SERVER (string): SMTP server hostname

@@ -39,6 +39,9 @@ struct ScopeRenameOptions {
     /// unchanged so the caller can fail. When false, legacy spelling-keyed mangling applies (same as
     /// old obfuscator for globals / skipped regions like class bodies).
     bool strictFreeIdentifiers = false;
+    /// Add identifiers from static computed-member keys ['name'] or ["name"] to preserve (aligns
+    /// window['getCookie'] with bare getCookie() in merged bundles). Keys must be unescaped identifier spellings.
+    bool autoPreserveBracketStringKeys = true;
 };
 
 /// Build per-occurrence renames using lexical scopes (var hoisting, let/const blocks, functions, catch).

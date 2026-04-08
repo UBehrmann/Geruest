@@ -1169,6 +1169,48 @@ TEST(JSObfuscatorTest, ManyTopLevelFunctionsStableScope) {
     EXPECT_FALSE(contains(obfuscated, "local0")) << obfuscated;
 }
 
+TEST(JSObfuscatorTest, BracketStringKeyPreservesBareIdentifier) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+window['getCookie'] = function() { return 1; };
+var x = getCookie();
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_TRUE(contains(obfuscated, "getCookie")) << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "'getCookie'") || contains(obfuscated, "\"getCookie\"")) << obfuscated;
+}
+
+TEST(JSObfuscatorTest, BracketStringKeyDoubleQuotes) {
+    JSObfuscator obfuscator(1);
+    std::string original = "globalThis[\"localizedPath\"] = 1;\nfoo(localizedPath);\n";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_TRUE(contains(obfuscated, "localizedPath")) << obfuscated;
+}
+
+TEST(JSObfuscatorTest, AutoBracketKeysCanBeDisabled) {
+    JSObfuscateSettings st;
+    st.autoPreserveBracketStringKeys = false;
+    JSObfuscator obfuscator(1, st);
+    std::string original = "window['api'] = 1;\nfunction g() { api(); }\n";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_FALSE(contains(obfuscated, "api();")) << obfuscated;
+}
+
+TEST(JSObfuscatorTest, TemplateLiteralSlashAfterInterpolationIntact) {
+    JSObfuscator obfuscator(1);
+    std::string original = "function fn() { return 1; } var u = `x${fn()}/y`;\n";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_GE(countOccurrences(obfuscated, "`"), 2);
+    EXPECT_TRUE(contains(obfuscated, "/y")) << obfuscated;
+}
+
+TEST(JSObfuscatorTest, QuotedPathAfterPlusSurvivesMinify) {
+    JSObfuscator obfuscator(1);
+    std::string original = "var a = fn() + \"/path/to/x\";\n";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_TRUE(contains(obfuscated, "/path/to/x")) << obfuscated;
+}
+
 TEST(JSObfuscatorTest, PreserveDirectiveKeepsName) {
     JSObfuscator obfuscator(1);
     std::string original = "// @obfuscate:preserve apiUrl\nvar apiUrl = 1;\nvar secret = 2;\n";
@@ -1220,4 +1262,30 @@ TEST(JSObfuscatorTest, AcornValidationWhenNodeAndAcornAvailable) {
         }
     }
     EXPECT_TRUE(acornOk) << "Install acorn: npm i acorn";
+}
+
+// Same gate: merged-style snippets that previously risked regex/division confusion after minify.
+TEST(JSObfuscatorTest, AcornValidatesTemplateAndBracketPreserveGolden) {
+    if (std::getenv("GERUEST_RUN_ACORN_VALIDATE") == nullptr) {
+        GTEST_SKIP() << "Set GERUEST_RUN_ACORN_VALIDATE=1 with acorn installed";
+    }
+    JSObfuscateSettings st;
+    st.validateOutputWithAcorn = true;
+    JSObfuscator obfuscator(1, st);
+    const char* snippets[] = {
+        "function fn() { return 1; } var u = `x${fn()}/y`;\n",
+        "window['getCookie'] = function(){}; getCookie();\n",
+        "var a = fn() + \"/api/v1\";\nfunction fn(){return 1;}\n",
+    };
+    for (const char* src : snippets) {
+        std::string out = obfuscator.obfuscate(src);
+        EXPECT_FALSE(out.empty()) << src;
+        bool acornOk = true;
+        for (const auto& line : obfuscator.getLastDiagnostics()) {
+            if (line.find("Acorn validation failed") != std::string::npos) {
+                acornOk = false;
+            }
+        }
+        EXPECT_TRUE(acornOk) << src << " -> " << out;
+    }
 }

@@ -18,7 +18,8 @@
  *   without preserving hoisting and TDZ semantics; unsafe lowering can produce "use before init"
  *   or break calls that relied on hoisting.
  * - Dynamic property access with string literals (e.g. globalThis['api']) remains the supported
- *   boundary for names that must stay stable across bundles; preserved identifiers follow the same rules.
+ *   boundary for names that must stay stable across bundles. Static ['name'] / ["name"] keys are
+ *   merged into the preserve set by default (autoPreserveBracketStringKeys) so bare call sites match.
  */
 
 #ifndef GERUEST_JSOBFUSCATOR_HPP
@@ -42,6 +43,8 @@ struct JSObfuscateSettings {
     bool emitGlobalThisAssignments = false;
     /// If true, run optional Acorn parse via Node when `node` and `acorn` are available.
     bool validateOutputWithAcorn = false;
+    /// Collect ['id'] / ["id"] string keys into the preserve set before rename (default on).
+    bool autoPreserveBracketStringKeys = true;
 };
 
 class JSObfuscator {

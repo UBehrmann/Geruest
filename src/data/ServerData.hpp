@@ -76,6 +76,7 @@ class ServerData {
     bool _obfuscationStrictUndefined = false;   // Throw if obfuscator reports undefined free identifiers
     bool _obfuscationEmitGlobalThisBracket = false;  // Append globalThis['name']=name for preserved top-level
     bool _obfuscationValidateWithAcorn = false; // Optional parse via node+acorn after transform
+    bool _obfuscationAutoBracketKeys = true;    // Add ['name'] / ["name"] keys to preserve set
     std::vector<std::string> _availableLanguages;
     std::string _defaultLanguage;
     std::string _notFoundPage;
@@ -325,6 +326,7 @@ class ServerData {
           _obfuscationStrictUndefined(other._obfuscationStrictUndefined),
           _obfuscationEmitGlobalThisBracket(other._obfuscationEmitGlobalThisBracket),
           _obfuscationValidateWithAcorn(other._obfuscationValidateWithAcorn),
+          _obfuscationAutoBracketKeys(other._obfuscationAutoBracketKeys),
           _availableLanguages(other._availableLanguages),
           _defaultLanguage(other._defaultLanguage),
           _notFoundPage(other._notFoundPage),
@@ -352,6 +354,7 @@ class ServerData {
             _obfuscationStrictUndefined = other._obfuscationStrictUndefined;
             _obfuscationEmitGlobalThisBracket = other._obfuscationEmitGlobalThisBracket;
             _obfuscationValidateWithAcorn = other._obfuscationValidateWithAcorn;
+            _obfuscationAutoBracketKeys = other._obfuscationAutoBracketKeys;
             _availableLanguages = other._availableLanguages;
             _defaultLanguage = other._defaultLanguage;
             _notFoundPage = other._notFoundPage;
@@ -764,6 +767,9 @@ class ServerData {
     void setObfuscationValidateWithAcorn(bool v) { _obfuscationValidateWithAcorn = v; }
 
     bool getObfuscationValidateWithAcorn() const { return _obfuscationValidateWithAcorn; }
+
+    void setObfuscationAutoBracketKeys(bool v) { _obfuscationAutoBracketKeys = v; }
+    bool getObfuscationAutoBracketKeys() const { return _obfuscationAutoBracketKeys; }
 
     /**
      * Check if obfuscation should be applied

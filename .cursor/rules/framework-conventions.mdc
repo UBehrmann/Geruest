@@ -66,3 +66,10 @@ sendToLoggerError("Error message");  // Errors and warnings
 - Prefer `std::move` for large strings/responses
 - `ServerData` is read-only after `init()` — no locking needed for reads
 - Route handlers must be stateless
+
+## JavaScript merge and obfuscation
+
+- **One rename pass per served script**: Merged bundles must be obfuscated as a single input (see `JSBuilder.cpp`). Do not rely on per-file obfuscation caches for code that is later concatenated.
+- **Stable globals / HTML boundary**: Assigning `window['api']` or `globalThis['api']` does **not** declare the identifier `api`. Bare `api()` call sites are mangled unless `api` is preserved. By default **`OBFUSCATE_AUTO_BRACKET_KEYS`** (`ServerData::getObfuscationAutoBracketKeys`, default true) adds every static `['name']` / `["name"]` member key to the preserve set so names align across merged files. Disable with `OBFUSCATE_AUTO_BRACKET_KEYS=false` if needed. You can still list symbols in **`OBFUSCATE_PRESERVE`** or use `// @obfuscate:preserve` in source; **`OBFUSCATE_EMIT_GLOBALTHIS`** only wires preserved top-level bindings to `globalThis['name']=name`.
+- **Minify and `/`**: Path fragments must stay inside **string literals** or template literals (e.g. `fn()+"/path"` or `` `...${fn()}/path` ``). Unquoted `+/` is parsed as start of a `RegExpLiteral` in JavaScript; optional **Acorn** validation (`OBFUSCATE_VALIDATE_ACORN` / `GERUEST_RUN_ACORN_VALIDATE` in tests) helps catch bad output.
+- **Translations in HTML**: `replaceTranslations` substitutes `[path.json:key]` placeholders. Inside **`<script>...</script>`**, inserted text is escaped for **double-quoted JavaScript string** context (`"`, `\`, newlines, control chars). Placeholders in inline JS should sit inside **double-quoted** strings; other patterns may still need manual quoting or `type="application/json"` + `JSON.parse`.

@@ -629,6 +629,7 @@ std::string JSObfuscator::mangleNames(const std::string& code) {
     opt.externNames = _settings.externGlobalNames;
     opt.generateMangledName = [this]() { return generateRandomName(6); };
     opt.strictFreeIdentifiers = _settings.strictUndefinedSymbols;
+    opt.autoPreserveBracketStringKeys = _settings.autoPreserveBracketStringKeys;
     std::vector<std::string>* topPreservePtr =
         _settings.emitGlobalThisAssignments ? &_lastTopLevelPreserved : nullptr;
 

@@ -242,6 +242,11 @@ void Geruest::loadConfig(const std::string& envFilePath) {
             serverData.setObfuscationValidateWithAcorn(true);
             sendToLogger("OBFUSCATE_VALIDATE_ACORN enabled");
         }
+        serverData.setObfuscationAutoBracketKeys(
+            ConfigLoader::getBool("OBFUSCATE_AUTO_BRACKET_KEYS", true));
+        if (!serverData.getObfuscationAutoBracketKeys()) {
+            sendToLogger("OBFUSCATE_AUTO_BRACKET_KEYS disabled");
+        }
     }
 
     sendToLogger("Configuration loading complete");

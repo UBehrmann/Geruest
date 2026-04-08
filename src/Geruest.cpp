@@ -246,6 +246,10 @@ void Geruest::setObfuscationValidateWithAcorn(bool enabled) {
     serverData.setObfuscationValidateWithAcorn(enabled);
 }
 
+void Geruest::setObfuscationAutoBracketKeys(bool enabled) {
+    serverData.setObfuscationAutoBracketKeys(enabled);
+}
+
 void Geruest::enableDevMode() {
     serverData.enableDevMode();
     _configFlags.devModeSet = true;
