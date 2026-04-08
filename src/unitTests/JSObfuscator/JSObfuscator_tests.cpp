@@ -1238,6 +1238,27 @@ TEST(JSObfuscatorTest, TemplateLiteralSlashAfterInterpolationIntact) {
     EXPECT_TRUE(contains(obfuscated, "/y")) << obfuscated;
 }
 
+// Regression: tokenize must not treat \/ + / in /^\// as // line comment (level ≥2 uses tokenize).
+TEST(JSObfuscatorTest, Level2PreservesRegexWithEscapedSlash) {
+    JSObfuscator obfuscator(2);
+    std::string original = R"(
+function localizedPath(pathAndQuery) {
+    const lang = getLanguageFromURL();
+    const trimmed = String(pathAndQuery).replace(/^\//, '');
+    const qi = trimmed.indexOf('?');
+    if (qi === -1) {
+        return `/${lang}/${trimmed}`;
+    }
+    return `/${lang}/${trimmed.slice(0, qi)}${trimmed.slice(qi)}`;
+}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    // Regex literal is /^\/ with closing / — bytes: / ^ \ / /
+    EXPECT_NE(obfuscated.find("/^\\//"), std::string::npos) << obfuscated;
+    EXPECT_EQ(obfuscated.find(".replace(/^\\\n"), std::string::npos) << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "${") || contains(obfuscated, "`/${")) << obfuscated;
+}
+
 // Regression: single inBacktick flag treated inner ` of nested template as closing outer —
 // following `/` in markup was scanned as RegExpLiteral and corrupt output (SyntaxError: '{').
 TEST(JSObfuscatorTest, NestedTemplateLiteralMinifyPreservesContent) {

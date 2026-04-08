@@ -599,6 +599,18 @@ std::string JSObfuscator::removeWhitespace(const std::string& code) {
     return result;
 }
 
+/// Same rule as AssetMerger::removeJsComments: \/ + / at end of regex is not // line comment.
+static bool isEscapedSlashBeforeForTokenize(const std::string& code, size_t pos) {
+    if (pos == 0 || code[pos] != '/') {
+        return false;
+    }
+    size_t backslashes = 0;
+    for (size_t k = pos; k > 0 && code[k - 1] == '\\'; --k) {
+        ++backslashes;
+    }
+    return (backslashes % 2U) == 1U;
+}
+
 std::vector<JSObfuscator::Token> JSObfuscator::tokenize(const std::string& code) {
     std::vector<Token> tokens;
     std::string current;
@@ -615,7 +627,8 @@ std::vector<JSObfuscator::Token> JSObfuscator::tokenize(const std::string& code)
         char c = code[i];
 
         // --- line comment ---
-        if (c == '/' && i + 1 < code.size() && code[i + 1] == '/') {
+        if (c == '/' && i + 1 < code.size() && code[i + 1] == '/' &&
+            !isEscapedSlashBeforeForTokenize(code, i)) {
             flushCode();
             std::string comment;
             while (i < code.size() && code[i] != '\n') {
