@@ -122,6 +122,16 @@ TEST_F(AssetMergerTest, MergeMultipleJsFiles) {
     EXPECT_NE(result.mergedJs.find("const x = 42;"), std::string::npos);
 }
 
+TEST_F(AssetMergerTest, RemoveJsCommentsDoesNotEatRegexEscapedSlash) {
+    // /^\//, '' — closing \/ + / must not be mistaken for // line comment
+    createFile(testRoot + "/assets/js/regexslash.js",
+               "function f(s){return String(s).replace(/^\\//, '');}\n");
+    std::vector<std::string> files = {testRoot + "/assets/js/regexslash.js"};
+    std::string merged = merger->mergeJsFiles(files);
+    EXPECT_NE(merged.find(".replace(/^\\//"), std::string::npos) << merged;
+    EXPECT_EQ(merged.find("replace(/^\\n"), std::string::npos) << merged;
+}
+
 // Mixed CSS and JS
 TEST_F(AssetMergerTest, MergeBothCssAndJs) {
     std::string html = R"(<html>

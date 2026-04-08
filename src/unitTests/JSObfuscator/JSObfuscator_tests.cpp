@@ -399,6 +399,21 @@ console.log(myVar);
         << "Identifiers inside block comments must not be mangled";
 }
 
+TEST(JSObfuscatorTest, LineCommentMinifyDoesNotSwallowNextStatement) {
+    JSObfuscator obfuscator(1);
+    // Strip newlines like removeWhitespace would without the // fix: the next
+    // line must still parse (must not merge into // ... as comment text).
+    std::string original = R"(const x=1;
+// section marker
+function f(){return x;}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_TRUE(contains(obfuscated, "function"))
+        << "Statement after line comment must remain code, not comment tail";
+    EXPECT_FALSE(contains(obfuscated, "// section markerfunction"))
+        << "Newline after // comment must be preserved before the next token";
+}
+
 TEST(JSObfuscatorTest, PreservesMemberAccessIdentifiers) {
     JSObfuscator obfuscator(1);
     std::string original = R"(

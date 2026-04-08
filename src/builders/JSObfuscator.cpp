@@ -525,6 +525,52 @@ std::string JSObfuscator::removeWhitespace(const std::string& code) {
             // Inside string literals, preserve everything
             result += c;
         } else if (c == '/' && i + 1 < code.size()) {
+            // Line comments must include the terminating LineTerminator. Otherwise
+            // removeWhitespace can drop the newline and merge the next statement onto
+            // the same line as the //, swallowing it as comment text (syntax error).
+            if (code[i + 1] == '/') {
+                size_t start = i;
+                i += 2;
+                while (i < code.size() && code[i] != '\n' && code[i] != '\r') {
+                    ++i;
+                }
+                if (i < code.size()) {
+                    if (code[i] == '\r' && i + 1 < code.size() && code[i + 1] == '\n') {
+                        i += 2;
+                    } else {
+                        ++i;
+                    }
+                }
+                result.append(code, start, i - start);
+                if (i > start) {
+                    prevChar = code[i - 1];
+                }
+                --i;
+                continue;
+            }
+            // Block comments — copy verbatim so internals are not rescanned as code.
+            if (code[i + 1] == '*') {
+                size_t start = i;
+                i += 2;
+                bool closed = false;
+                while (i + 1 < code.size()) {
+                    if (code[i] == '*' && code[i + 1] == '/') {
+                        i += 2;
+                        closed = true;
+                        break;
+                    }
+                    ++i;
+                }
+                if (!closed) {
+                    i = code.size();
+                }
+                result.append(code, start, i - start);
+                if (i > start) {
+                    prevChar = code[i - 1];
+                }
+                --i;
+                continue;
+            }
             // Same regex detection as tokenize; consume whole literal via parseRegexLiteralEnd
             // so escaped slashes (e.g. /^\//) do not confuse delimiter detection.
             if (canStartRegexLiteral(code, i)) {

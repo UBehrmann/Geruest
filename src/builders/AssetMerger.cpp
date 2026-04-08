@@ -17,6 +17,22 @@ namespace fs = std::filesystem;
 
 namespace geruest {
 
+namespace {
+
+/** True iff code[pos] is '/' and the immediately preceding run of '\\' has odd length (escaped slash). */
+bool isEscapedSlashBefore(const std::string& code, size_t pos) {
+    if (pos == 0 || code[pos] != '/') {
+        return false;
+    }
+    size_t backslashes = 0;
+    for (size_t k = pos; k > 0 && code[k - 1] == '\\'; --k) {
+        ++backslashes;
+    }
+    return (backslashes % 2U) == 1U;
+}
+
+}  // namespace
+
 AssetMerger::AssetMerger(const std::string& serverRoot, bool removeComments,
                          const std::vector<std::string>& exclusions)
     : _serverRoot(serverRoot), _removeComments(removeComments), _exclusions(exclusions) {
@@ -117,8 +133,9 @@ std::string AssetMerger::removeJsComments(const std::string& content) {
             continue;
         }
         
-        // Look for // comment outside of strings
-        if (pos < result.length() - 1 && result[pos] == '/' && result[pos + 1] == '/') {
+        // Look for // comment outside of strings. Do not treat \/ + / (end of regex) as // .
+        if (pos < result.length() - 1 && result[pos] == '/' && result[pos + 1] == '/' &&
+            !isEscapedSlashBefore(result, pos)) {
             size_t lineEnd = result.find('\n', pos);
             if (lineEnd == std::string::npos) {
                 result.erase(pos);
