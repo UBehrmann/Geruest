@@ -335,6 +335,35 @@ static size_t templateInterpolationClose(const std::string& s, size_t innerBegin
     return std::string::npos;
 }
 
+/// From opening '`', return index past closing '`' (handles `${...}` and nested templates).
+static size_t skipTemplateLiteral(const std::string& code, size_t openTick) {
+    if (openTick >= code.size() || code[openTick] != '`') {
+        return openTick + 1;
+    }
+    size_t pos = openTick + 1;
+    const size_t n = code.size();
+    while (pos < n) {
+        if (code[pos] == '\\' && pos + 1 < n) {
+            pos += 2;
+            continue;
+        }
+        if (code[pos] == '`') {
+            return pos + 1;
+        }
+        if (code[pos] == '$' && pos + 1 < n && code[pos + 1] == '{') {
+            pos += 2;
+            const size_t close = templateInterpolationClose(code, pos);
+            if (close == std::string::npos) {
+                return n;
+            }
+            pos = close + 1;
+            continue;
+        }
+        ++pos;
+    }
+    return n;
+}
+
 /** Raw string between quotes (excluding delimiters), honoring backslash escapes. */
 static std::string extractQuotedInner(const std::string& tok) {
     if (tok.size() < 2) {
@@ -470,23 +499,29 @@ std::string JSObfuscator::removeWhitespace(const std::string& code) {
     
     bool inString = false;
     bool inSingleQuote = false;
-    bool inBacktick = false;
     char prevChar = '\0';
     
     for (size_t i = 0; i < code.size(); ++i) {
         char c = code[i];
         
         // Track string literals
-        if (c == '"' && prevChar != '\\' && !inSingleQuote && !inBacktick) {
+        if (c == '"' && prevChar != '\\' && !inSingleQuote) {
             inString = !inString;
             result += c;
-        } else if (c == '\'' && prevChar != '\\' && !inString && !inBacktick) {
+        } else if (c == '\'' && prevChar != '\\' && !inString) {
             inSingleQuote = !inSingleQuote;
             result += c;
         } else if (c == '`' && prevChar != '\\' && !inString && !inSingleQuote) {
-            inBacktick = !inBacktick;
-            result += c;
-        } else if (inString || inSingleQuote || inBacktick) {
+            size_t end = skipTemplateLiteral(code, i);
+            result.append(code, i, end - i);
+            if (end > i) {
+                prevChar = code[end - 1];
+            } else {
+                prevChar = c;
+            }
+            i = end - 1;
+            continue;
+        } else if (inString || inSingleQuote) {
             // Inside string literals, preserve everything
             result += c;
         } else if (c == '/' && i + 1 < code.size()) {

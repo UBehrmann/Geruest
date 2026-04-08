@@ -1204,6 +1204,18 @@ TEST(JSObfuscatorTest, TemplateLiteralSlashAfterInterpolationIntact) {
     EXPECT_TRUE(contains(obfuscated, "/y")) << obfuscated;
 }
 
+// Regression: single inBacktick flag treated inner ` of nested template as closing outer —
+// following `/` in markup was scanned as RegExpLiteral and corrupt output (SyntaxError: '{').
+TEST(JSObfuscatorTest, NestedTemplateLiteralMinifyPreservesContent) {
+    JSObfuscator obfuscator(1);
+    std::string original =
+        "function t(k){return k;} var authors='A'; var x = `hdr${"
+        " authors ? `<div class=\"flex/basis\">${t('a')}</div>` : ''}tail`;\n";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_TRUE(contains(obfuscated, "flex/basis")) << obfuscated;
+    EXPECT_GE(countOccurrences(obfuscated, "`"), 4);
+}
+
 TEST(JSObfuscatorTest, QuotedPathAfterPlusSurvivesMinify) {
     JSObfuscator obfuscator(1);
     std::string original = "var a = fn() + \"/path/to/x\";\n";
