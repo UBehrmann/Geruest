@@ -1155,6 +1155,20 @@ function f() {
     EXPECT_NE(names[0], names[1]) << obfuscated;
 }
 
+// Regression: fnPool used to be std::vector<Env>; growth reallocated storage and left
+// parentFn/curEnv dangling (SIGSEGV) when obfuscating bundles with many functions.
+TEST(JSObfuscatorTest, ManyTopLevelFunctionsStableScope) {
+    JSObfuscator obfuscator(1);
+    std::string original;
+    for (int i = 0; i < 32; ++i) {
+        original += "function fn" + std::to_string(i) + "(){ var local" + std::to_string(i) + " = 1; return local"
+            + std::to_string(i) + ";}\n";
+    }
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_FALSE(obfuscated.empty());
+    EXPECT_FALSE(contains(obfuscated, "local0")) << obfuscated;
+}
+
 TEST(JSObfuscatorTest, PreserveDirectiveKeepsName) {
     JSObfuscator obfuscator(1);
     std::string original = "// @obfuscate:preserve apiUrl\nvar apiUrl = 1;\nvar secret = 2;\n";

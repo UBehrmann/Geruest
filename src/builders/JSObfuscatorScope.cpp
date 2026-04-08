@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <memory>
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
@@ -402,7 +403,8 @@ struct Parser {
 
     Env rootEnv;
     Env* curEnv = nullptr;
-    std::vector<Env> fnPool;
+    /// Heap-allocated function Envs so curEnv/parentFn stay valid when this vector grows.
+    std::vector<std::unique_ptr<Env>> fnPool;
     int nextBind = 0;
 
     std::vector<std::string>* topLevelPreservedOut = nullptr;
@@ -836,8 +838,8 @@ struct Parser {
         bool savedTop = atScriptTopLevel;
         atScriptTopLevel = false;
 
-        fnPool.emplace_back();
-        Env* ne = &fnPool.back();
+        fnPool.push_back(std::make_unique<Env>());
+        Env* ne = fnPool.back().get();
         ne->parentFn = curEnv;
         ne->hoisted.clear();
         ne->blockStack.clear();
