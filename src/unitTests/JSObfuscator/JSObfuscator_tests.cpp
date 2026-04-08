@@ -1077,3 +1077,58 @@ var width = 768;
     EXPECT_FALSE(contains(obfuscated, "768"))
         << "768 should be obfuscated: " << obfuscated;
 }
+
+// Lexer regression: escaped slash inside regex literal + whitespace pass.
+TEST(JSObfuscatorTest, RegexLiteralWithEscapedSlashAfterReplace) {
+    JSObfuscator obfuscator(2);
+    std::string original =
+        "const trimmed = String(path).replace(/^\\//, '');\n";
+    std::string obfuscated = obfuscator.obfuscate(original);
+
+    EXPECT_TRUE(contains(obfuscated, "^") && contains(obfuscated, "/"))
+        << "Regex literal with leading slash strip must survive: " << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, ".replace("))
+        << "replace() call must survive: " << obfuscated;
+}
+
+// Lexer regression: double quotes inside HTML embedded in template static spans.
+TEST(JSObfuscatorTest, TemplateLiteralHtmlQuotesPreserved) {
+    JSObfuscator obfuscator(2);
+    std::string original = R"(
+disclaimer.innerHTML = `
+    <span>We only use necessary cookies</span>
+    <button id="accept-cookies-btn">OK</button>
+`;
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+
+    EXPECT_TRUE(contains(obfuscated, "<span>"))
+        << "HTML in template must not be garbled: " << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "accept-cookies-btn"))
+        << "HTML id attribute must stay intact: " << obfuscated;
+}
+
+TEST(JSObfuscatorTest, QuerySelectorStringWithBracketsPreserved) {
+    JSObfuscator obfuscator(2);
+    std::string original =
+        "document.querySelector('input[placeholder*=\"search\" i]');\n";
+    std::string obfuscated = obfuscator.obfuscate(original);
+
+    EXPECT_TRUE(contains(obfuscated, "placeholder") && contains(obfuscated, "search"))
+        << "Selector string content must be preserved: " << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "querySelector"))
+        << "API name should remain (reserved): " << obfuscated;
+}
+
+// Brace matching inside ${ ... } (nested object in expression).
+TEST(JSObfuscatorTest, TemplateLiteralNestedBracesInSubstitution) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+const msg = `data: ${JSON.stringify({ key: 1 })}`;
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_TRUE(contains(obfuscated, "JSON.stringify"))
+        << "Nested braces in template expr should not truncate substitution: " << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "key"))
+        << "Object key inside ${} should remain: " << obfuscated;
+}

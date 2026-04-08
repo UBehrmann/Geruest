@@ -159,6 +159,48 @@ static bool isRegexPrefixKeyword(const std::string& word) {
     return regexKeywords.find(word) != regexKeywords.end();
 }
 
+/**
+ * If code[openSlash] is '/', scan a RegularExpressionLiteral through flags.
+ * On success returns true and sets endOut to the index one past the last consumed character (flags).
+ */
+static bool parseRegexLiteralEnd(const std::string& code, size_t openSlash, size_t& endOut) {
+    if (openSlash >= code.size() || code[openSlash] != '/') {
+        return false;
+    }
+    size_t i = openSlash + 1;
+    bool inCharClass = false;
+    while (i < code.size()) {
+        const char rc = code[i];
+        if (rc == '\\') {
+            i += 2;
+            if (i > code.size()) {
+                return false;
+            }
+            continue;
+        }
+        if (rc == '[') {
+            inCharClass = true;
+            ++i;
+            continue;
+        }
+        if (rc == ']' && inCharClass) {
+            inCharClass = false;
+            ++i;
+            continue;
+        }
+        if (rc == '/' && !inCharClass) {
+            ++i;
+            while (i < code.size() && std::isalpha(static_cast<unsigned char>(code[i]))) {
+                ++i;
+            }
+            endOut = i;
+            return true;
+        }
+        ++i;
+    }
+    return false;
+}
+
 static bool canStartRegexLiteral(const std::string& code, size_t slashPos) {
     // Scan backward for previous significant non-whitespace character.
     int j = static_cast<int>(slashPos) - 1;
@@ -204,6 +246,171 @@ static bool canStartRegexLiteral(const std::string& code, size_t slashPos) {
     }
 
     return false;
+}
+
+/**
+ * Find the index of '}' that closes '${' whose expression starts at innerBegin (first char inside { }).
+ */
+static size_t templateInterpolationClose(const std::string& s, size_t innerBegin) {
+    size_t pos = innerBegin;
+    int depth = 1;
+    bool inDq = false;
+    bool inSq = false;
+    bool inBt = false;
+
+    while (pos < s.size()) {
+        const char c = s[pos];
+        if (!inDq && !inSq && !inBt) {
+            if (c == '/' && pos + 1 < s.size() && s[pos + 1] == '/') {
+                pos += 2;
+                while (pos < s.size() && s[pos] != '\n') {
+                    ++pos;
+                }
+                continue;
+            }
+            if (c == '/' && pos + 1 < s.size() && s[pos + 1] == '*') {
+                pos += 2;
+                while (pos + 1 < s.size() && !(s[pos] == '*' && s[pos + 1] == '/')) {
+                    ++pos;
+                }
+                pos = (pos + 1 < s.size()) ? pos + 2 : s.size();
+                continue;
+            }
+            if (c == '"') {
+                inDq = true;
+                ++pos;
+                continue;
+            }
+            if (c == '\'') {
+                inSq = true;
+                ++pos;
+                continue;
+            }
+            if (c == '`') {
+                inBt = true;
+                ++pos;
+                continue;
+            }
+            if (c == '{') {
+                ++depth;
+                ++pos;
+                continue;
+            }
+            if (c == '}') {
+                --depth;
+                if (depth == 0) {
+                    return pos;
+                }
+                ++pos;
+                continue;
+            }
+            ++pos;
+            continue;
+        }
+        if (inDq) {
+            if (c == '\\' && pos + 1 < s.size()) {
+                pos += 2;
+                continue;
+            }
+            if (c == '"') {
+                inDq = false;
+            }
+            ++pos;
+            continue;
+        }
+        if (inSq) {
+            if (c == '\\' && pos + 1 < s.size()) {
+                pos += 2;
+                continue;
+            }
+            if (c == '\'') {
+                inSq = false;
+            }
+            ++pos;
+            continue;
+        }
+        if (inBt) {
+            if (c == '\\' && pos + 1 < s.size()) {
+                pos += 2;
+                continue;
+            }
+            if (c == '`') {
+                inBt = false;
+                ++pos;
+                continue;
+            }
+            if (c == '$' && pos + 1 < s.size() && s[pos + 1] == '{') {
+                pos += 2;
+                const size_t closeInner = templateInterpolationClose(s, pos);
+                if (closeInner == std::string::npos) {
+                    return std::string::npos;
+                }
+                pos = closeInner + 1;
+                continue;
+            }
+            ++pos;
+            continue;
+        }
+    }
+    return std::string::npos;
+}
+
+/** Raw string between quotes (excluding delimiters), honoring backslash escapes. */
+static std::string extractQuotedInner(const std::string& tok) {
+    if (tok.size() < 2) {
+        return "";
+    }
+    const char q = tok[0];
+    std::string inner;
+    size_t i = 1;
+    while (i < tok.size()) {
+        if (tok[i] == '\\' && i + 1 < tok.size()) {
+            inner += tok[i];
+            inner += tok[i + 1];
+            i += 2;
+            continue;
+        }
+        if (tok[i] == q) {
+            break;
+        }
+        inner += tok[i];
+        ++i;
+    }
+    return inner;
+}
+
+static void encodeStringsProcessCodeSegment(const std::string& segment, std::string& result, bool& inUnderscoreContext,
+                            int& braceDepth) {
+    for (size_t i = 0; i < segment.size(); ++i) {
+        const char c = segment[i];
+        if (c == '_' && (i == 0 || (!std::isalnum(static_cast<unsigned char>(segment[i - 1])) && segment[i - 1] != '$'))) {
+            size_t j = i + 1;
+            while (j < segment.size() &&
+                   (std::isalnum(static_cast<unsigned char>(segment[j])) || segment[j] == '_' || segment[j] == '$')) {
+                ++j;
+            }
+            if (j > i + 1) {
+                size_t k = j;
+                while (k < segment.size() && std::isspace(static_cast<unsigned char>(segment[k]))) {
+                    ++k;
+                }
+                if (k < segment.size() && (segment[k] == '(' || segment[k] == '=')) {
+                    inUnderscoreContext = true;
+                    braceDepth = 0;
+                }
+            }
+        }
+        if (c == '{') {
+            ++braceDepth;
+        } else if (c == '}') {
+            --braceDepth;
+            if (braceDepth <= 0) {
+                inUnderscoreContext = false;
+                braceDepth = 0;
+            }
+        }
+        result += c;
+    }
 }
 
 JSObfuscator::JSObfuscator(unsigned int level)
@@ -252,55 +459,37 @@ std::string JSObfuscator::removeWhitespace(const std::string& code) {
     bool inString = false;
     bool inSingleQuote = false;
     bool inBacktick = false;
-    bool inRegex = false;
-    bool inCharClass = false;
     char prevChar = '\0';
     
     for (size_t i = 0; i < code.size(); ++i) {
         char c = code[i];
         
         // Track string literals
-        if (!inRegex && c == '"' && prevChar != '\\' && !inSingleQuote && !inBacktick) {
+        if (c == '"' && prevChar != '\\' && !inSingleQuote && !inBacktick) {
             inString = !inString;
             result += c;
-        } else if (!inRegex && c == '\'' && prevChar != '\\' && !inString && !inBacktick) {
+        } else if (c == '\'' && prevChar != '\\' && !inString && !inBacktick) {
             inSingleQuote = !inSingleQuote;
             result += c;
-        } else if (!inRegex && c == '`' && prevChar != '\\' && !inString && !inSingleQuote) {
+        } else if (c == '`' && prevChar != '\\' && !inString && !inSingleQuote) {
             inBacktick = !inBacktick;
             result += c;
         } else if (inString || inSingleQuote || inBacktick) {
             // Inside string literals, preserve everything
             result += c;
-        } else if (!inRegex && c == '/' && i + 1 < code.size()) {
-            // Check if '/' starts a regex literal
+        } else if (c == '/' && i + 1 < code.size()) {
+            // Same regex detection as tokenize; consume whole literal via parseRegexLiteralEnd
+            // so escaped slashes (e.g. /^\//) do not confuse delimiter detection.
             if (canStartRegexLiteral(code, i)) {
-                inRegex = true;
-                inCharClass = false;
-                result += c;
-            } else {
-                // Regular division operator
-                result += c;
-            }
-        } else if (inRegex) {
-            // Inside regex literal, preserve everything including whitespace
-            result += c;
-            
-            // Handle regex escape sequences
-            if (c == '\\' && i + 1 < code.size()) {
-                result += code[++i];  // Add escaped character
-            } else if (c == '[' && prevChar != '\\') {
-                inCharClass = true;
-            } else if (c == ']' && prevChar != '\\' && inCharClass) {
-                inCharClass = false;
-            } else if (c == '/' && prevChar != '\\' && !inCharClass) {
-                // End of regex literal
-                inRegex = false;
-                // Consume flags (g, i, m, s, u, y)
-                while (i + 1 < code.size() && std::isalpha(static_cast<unsigned char>(code[i + 1]))) {
-                    result += code[++i];
+                size_t end = 0;
+                if (parseRegexLiteralEnd(code, i, end)) {
+                    result.append(code, i, end - i);
+                    prevChar = code[end - 1];
+                    i = end - 1;
+                    continue;
                 }
             }
+            result += c;
         } else if (std::isspace(static_cast<unsigned char>(c))) {
             // Outside strings and regex, collapse whitespace
             // Keep space between alphanumeric characters
@@ -388,52 +577,12 @@ std::vector<JSObfuscator::Token> JSObfuscator::tokenize(const std::string& code)
         // We only treat '/' as regex start in expression contexts.
         if (c == '/' && canStartRegexLiteral(code, i)) {
             flushCode();
-            std::string regexLiteral;
-            size_t regexStart = i;  // Save position of opening '/'
-            regexLiteral += code[i++]; // opening '/'
-
-            bool inCharClass = false;
-            bool foundClosing = false;
-            while (i < code.size()) {
-                char rc = code[i];
-
-                if (rc == '\\') {
-                    regexLiteral += code[i++];
-                    if (i < code.size()) regexLiteral += code[i++];
-                    continue;
-                }
-
-                if (rc == '[') {
-                    inCharClass = true;
-                    regexLiteral += code[i++];
-                    continue;
-                }
-
-                if (rc == ']' && inCharClass) {
-                    inCharClass = false;
-                    regexLiteral += code[i++];
-                    continue;
-                }
-
-                if (rc == '/' && !inCharClass) {
-                    regexLiteral += code[i++]; // closing '/'
-                    while (i < code.size() && std::isalpha(static_cast<unsigned char>(code[i]))) {
-                        regexLiteral += code[i++];
-                    }
-                    foundClosing = true;
-                    break;
-                }
-
-                regexLiteral += code[i++];
-            }
-
-            // Only emit REGEX_LITERAL if we found a valid closing '/'.
-            // Otherwise, treat '/' as normal code (division operator).
-            if (foundClosing) {
-                tokens.push_back({TokenType::REGEX_LITERAL, regexLiteral});
+            size_t regexStart = i;
+            size_t end = 0;
+            if (parseRegexLiteralEnd(code, i, end)) {
+                tokens.push_back({TokenType::REGEX_LITERAL, code.substr(regexStart, end - regexStart)});
+                i = end;
             } else {
-                // Restore position to just after the opening '/',
-                // treat '/' as division operator, and continue normal processing
                 i = regexStart + 1;
                 current += '/';
             }
@@ -481,24 +630,20 @@ std::string JSObfuscator::processTemplateLiteral(const std::string& templateLite
             break;
         }
         
-        // Copy everything before the expression (including "${")
+        // Static span before this substitution, plus `${`
         result.append(templateLiteral, pos, exprStart - pos + 2);
         
-        // Find the matching }
-        size_t exprEnd = templateLiteral.find("}", exprStart + 2);
+        const size_t exprContentStart = exprStart + 2;
+        const size_t exprEnd = templateInterpolationClose(templateLiteral, exprContentStart);
         if (exprEnd == std::string::npos) {
-            // Malformed template literal, copy rest as-is
-            result.append(templateLiteral, exprStart + 2, std::string::npos);
+            result.append(templateLiteral, exprContentStart, std::string::npos);
             break;
         }
         
-        // Extract the expression content
-        size_t exprContentStart = exprStart + 2;
-        size_t exprContentLen = exprEnd - exprContentStart;
+        const size_t exprContentLen = exprEnd - exprContentStart;
         
         // Use string_view-like approach to avoid copying when possible
-        const char* exprStart_ptr = templateLiteral.data() + exprContentStart;
-        std::string expression(exprStart_ptr, exprContentLen);
+        std::string expression(templateLiteral.data() + exprContentStart, exprContentLen);
         
         // Replace identifiers in the expression using the name map
         // Use the pre-compiled static regex for performance
@@ -641,92 +786,43 @@ std::string JSObfuscator::mangleNames(const std::string& code) {
 }
 
 std::string JSObfuscator::encodeStrings(const std::string& code) {
+    const std::vector<Token> tokens = tokenize(code);
     std::string result;
-    result.reserve(static_cast<size_t>(static_cast<double>(code.size()) * 1.5));  // Encoded strings are longer
-    
-    bool inString = false;
-    bool inSingleQuote = false;
-    bool inUnderscoreContext = false;  // Track if we're in a _-prefixed function/variable
-    int braceDepth = 0;  // Track nesting depth
-    char prevChar = '\0';
-    std::string currentString;
-    
-    for (size_t i = 0; i < code.size(); ++i) {
-        char c = code[i];
-        
-        // Update context by tracking identifiers and braces
-        if (!inString && !inSingleQuote && c == '_' && (i == 0 || (!std::isalnum(static_cast<unsigned char>(code[i-1])) && code[i-1] != '$'))) {
-            // Check if this is the start of a _-prefixed identifier
-            size_t j = i + 1;
-            while (j < code.size() && (std::isalnum(static_cast<unsigned char>(code[j])) || code[j] == '_' || code[j] == '$')) {
-                j++;
-            }
-            if (j > i + 1) {  // Valid identifier starting with _
-                // Look ahead to see if followed by ( or = (function or variable)
-                while (j < code.size() && std::isspace(static_cast<unsigned char>(code[j]))) j++;
-                if (j < code.size() && (code[j] == '(' || code[j] == '=')) {
-                    inUnderscoreContext = true;
-                    braceDepth = 0;
-                }
-            }
+    result.reserve(static_cast<size_t>(static_cast<double>(code.size()) * 1.5));
+
+    bool inUnderscoreContext = false;
+    int braceDepth = 0;
+
+    for (const auto& tok : tokens) {
+        if (tok.type == TokenType::CODE) {
+            encodeStringsProcessCodeSegment(tok.text, result, inUnderscoreContext, braceDepth);
+            continue;
         }
-        
-        // Track braces to know when _-context ends
-        if (!inString && !inSingleQuote) {
-            if (c == '{') {
-                braceDepth++;
-            } else if (c == '}') {
-                braceDepth--;
-                if (braceDepth <= 0) {
-                    inUnderscoreContext = false;
-                    braceDepth = 0;
+        if (tok.type == TokenType::STRING_LITERAL) {
+            if (!tok.text.empty() && tok.text[0] == '`') {
+                result += tok.text;
+                continue;
+            }
+            if (tok.text.size() >= 2) {
+                const char q = tok.text[0];
+                if (q == '"' || q == '\'') {
+                    const std::string inner = extractQuotedInner(tok.text);
+                    if (inUnderscoreContext) {
+                        result += q;
+                        result += inner;
+                        result += q;
+                    } else {
+                        result += encodeStringLiteral(inner);
+                    }
+                    continue;
                 }
             }
+            result += tok.text;
+            continue;
         }
-        
-        // Process strings
-        if (c == '"' && prevChar != '\\' && !inSingleQuote) {
-            if (inString) {
-                // End of string - encode it only if NOT in _-context
-                if (inUnderscoreContext) {
-                    result += '"';
-                    result += currentString;
-                    result += '"';
-                } else {
-                    result += encodeStringLiteral(currentString);
-                }
-                currentString.clear();
-                inString = false;
-            } else {
-                // Start of string
-                inString = true;
-            }
-        } else if (c == '\'' && prevChar != '\\' && !inString) {
-            if (inSingleQuote) {
-                // End of string - encode it only if NOT in _-context
-                if (inUnderscoreContext) {
-                    result += '\'';
-                    result += currentString;
-                    result += '\'';
-                } else {
-                    // Single quotes also get encoded at level 2
-                    result += encodeStringLiteral(currentString);
-                }
-                currentString.clear();
-                inSingleQuote = false;
-            } else {
-                // Start of string
-                inSingleQuote = true;
-            }
-        } else if (inString || inSingleQuote) {
-            currentString += c;
-        } else {
-            result += c;
-        }
-        
-        prevChar = c;
+        result += tok.text;
     }
-    
+
     return result;
 }
 

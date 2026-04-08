@@ -16,6 +16,7 @@ configure_file(
 )
 
 # Fetch Google Test
+# DOWNLOAD_EXTRACT_TIMESTAMP requires CMake 3.24+; this directory sets 3.28+.
 include(FetchContent)
 FetchContent_Declare(
   googletest
