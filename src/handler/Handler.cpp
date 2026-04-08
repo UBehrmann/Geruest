@@ -13,6 +13,7 @@
 #include <chrono>
 #include <climits>
 #include <cstddef>
+#include <cstring>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -33,12 +34,17 @@ namespace {
 constexpr size_t kMaxHttpHeaderBytes = 65536;
 constexpr size_t kMaxHttpBodyBytes = 16 * 1024 * 1024;
 
+// Same delimiter precedence as HTTPRequest::parseHeadersAndBody ("\\r\\n\\r\\n", "\\n\\n", "\\r\\r").
 size_t findHeaderEndPos(const std::string& raw) {
     size_t p = raw.find("\r\n\r\n");
     if (p != std::string::npos) {
         return p + 4;
     }
     p = raw.find("\n\n");
+    if (p != std::string::npos) {
+        return p + 2;
+    }
+    p = raw.find("\r\r");
     if (p != std::string::npos) {
         return p + 2;
     }
@@ -225,6 +231,18 @@ void Handler::run() {
         }
 
         const size_t headerEnd = findHeaderEndPos(raw);
+
+        // RFC 7231: clients may send Expect: 100-continue and wait (e.g. httpx POST with Content-Length: 0).
+        // Respond before reading the body or finalizing the message so the client does not stall.
+        {
+            HTTPRequest headOnly(raw.substr(0, headerEnd), IP, serverData.getRoot());
+            if (headOnly.hasHeader("expect") && httpExpectIs100Continue(headOnly.getHeader("expect"))) {
+                static const char k100[] = "HTTP/1.1 100 Continue\r\n\r\n";
+                if (!sendSocket(k100, sizeof(k100) - 1)) {
+                    return;
+                }
+            }
+        }
 
         bool hasCL = false;
         size_t bodyExpected = 0;

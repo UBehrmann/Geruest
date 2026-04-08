@@ -92,3 +92,13 @@ TEST(HTTPRequestTest, CaseInsensitiveHeaders) {
     EXPECT_TRUE(request.hasHeader("Host"));
     EXPECT_EQ(request.getHeader("host"), "example.com");
 }
+
+TEST(HTTPRequestTest, HttpExpect100ContinueMatcher) {
+    EXPECT_TRUE(httpExpectIs100Continue("100-continue"));
+    EXPECT_TRUE(httpExpectIs100Continue("100-Continue"));
+    EXPECT_TRUE(httpExpectIs100Continue("  100-continue  "));
+    EXPECT_TRUE(httpExpectIs100Continue("100-continue, continue"));
+    EXPECT_FALSE(httpExpectIs100Continue("continue"));
+    EXPECT_FALSE(httpExpectIs100Continue(""));
+    EXPECT_FALSE(httpExpectIs100Continue("100"));
+}

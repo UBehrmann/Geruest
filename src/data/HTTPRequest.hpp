@@ -86,6 +86,36 @@ class HTTPRequest {
     static std::string toLower(const std::string& str);
 };
 
+/** True when an Expect header value requests 100-continue (trimmed, case-insensitive, RFC 7231). */
+[[nodiscard]] inline bool httpExpectIs100Continue(const std::string& value) {
+    size_t i = 0;
+    while (i < value.size() && std::isspace(static_cast<unsigned char>(value[i]))) {
+        ++i;
+    }
+    size_t j = value.size();
+    while (j > i && std::isspace(static_cast<unsigned char>(value[j - 1]))) {
+        --j;
+    }
+    static const char kExpected[] = "100-continue";
+    constexpr size_t kLen = sizeof(kExpected) - 1;
+    if (j - i < kLen) {
+        return false;
+    }
+    for (size_t k = 0; k < kLen; ++k) {
+        if (std::tolower(static_cast<unsigned char>(value[i + k])) !=
+            static_cast<unsigned char>(kExpected[k])) {
+            return false;
+        }
+    }
+    if (j - i > kLen) {
+        const unsigned char next = static_cast<unsigned char>(value[i + kLen]);
+        if (next != ',' && !std::isspace(next)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 }  // namespace geruest
 
 #endif  // GERUEST_HTTPREQUEST_HPP

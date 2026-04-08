@@ -43,6 +43,8 @@ server->addRoute("/api/data", [](const HTTPRequest& req) {
 
 Handlers always return `HTTPResponse` on success. For an unsupported HTTP method on that route, throw `method_not_allowed` (optionally with an `Allow` list string such as `"GET, HEAD"`). The framework maps that to **405**; any other `std::exception` from the handler becomes **500** with logging.
 
+The server replies with **`100 Continue`** when a request includes **`Expect: 100-continue`** (for example **`httpx.post(url)`** with an empty body and **`Content-Length: 0`**). Without that interim response, some clients block until timeout while the server waits for a body.
+
 ```cpp
 #include "data/MethodNotAllowed.hpp"
 
