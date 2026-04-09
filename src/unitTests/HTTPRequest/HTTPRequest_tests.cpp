@@ -46,6 +46,22 @@ TEST(HTTPRequestTest, PostWithBody) {
     EXPECT_EQ(request.getBody(), "{\"name\":\"John Doe\"}");
 }
 
+TEST(HTTPRequestTest, JsonBodyCommaInsideStringValue) {
+    const std::string body = R"({"user_id":"1","key":"k","author":"Alpha, Beta","title":"T","genre":"fiction"})";
+    std::string rawRequest = "PUT /v1/books HTTP/1.1\r\n"
+                            "Host: example.com\r\n"
+                            "Content-Type: application/json\r\n"
+                            "Content-Length: " + std::to_string(body.size()) + "\r\n"
+                            "\r\n" + body;
+
+    HTTPRequest request(rawRequest, "127.0.0.1", "/test/root");
+
+    EXPECT_TRUE(request.hasParam("author"));
+    EXPECT_EQ(request.getParam("author"), "Alpha, Beta");
+    EXPECT_EQ(request.getParam("title"), "T");
+    EXPECT_EQ(request.getParam("genre"), "fiction");
+}
+
 TEST(HTTPRequestTest, QueryParameters) {
     std::string rawRequest = "GET /search?q=test&limit=10 HTTP/1.1\r\n"
                             "Host: example.com\r\n"
