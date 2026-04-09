@@ -197,5 +197,44 @@ TEST_F(ContentBuilderTest, NonexistentFile) {
     EXPECT_TRUE(builder.file().empty());
 }
 
-// Note: Testing HTMLBuilder, CSSBuilder, and JSBuilder would require more complex setup
-// and may depend on JSON parsing functionality. These are integration tests.
+TEST_F(ContentBuilderTest, JSBuilderWithMergeAssetsBuildsOneBundleFromHtmlTemplate) {
+    namespace fs = std::filesystem;
+    cleanup_test_environment();
+    fs::create_directories(TEST_ROOT + "/html");
+    fs::create_directories(TEST_ROOT + "/assets/js");
+
+    {
+        std::ofstream html(TEST_ROOT + "/html/mergepage.html");
+        html << "<!DOCTYPE html><html><body>\n";
+        html << "<script src=\"a.js\"></script>\n";
+        html << "<script src=\"b.js\"></script>\n";
+        html << "</body></html>\n";
+    }
+    {
+        std::ofstream a(TEST_ROOT + "/assets/js/a.js");
+        a << "var A_MERGE_MARKER = 1;\n";
+    }
+    {
+        std::ofstream b(TEST_ROOT + "/assets/js/b.js");
+        b << "var B_MERGE_MARKER = 2;\n";
+    }
+    {
+        std::ofstream stub(TEST_ROOT + "/assets/js/mergepage.js");
+        stub << "DISK_STUB_SHOULD_NOT_APPEAR_IN_OUTPUT\n";
+    }
+
+    const std::string absRoot = fs::absolute(TEST_ROOT).string();
+    const std::string jsPath = absRoot + "/assets/js/mergepage.js";
+
+    ServerData serverData;
+    serverData.setRoot(absRoot);
+    serverData.setMergeAssets(true);
+    serverData.setRemoveComments(true);
+
+    JSBuilder builder(jsPath, serverData);
+    const std::string out = builder.file();
+
+    EXPECT_NE(out.find("A_MERGE_MARKER"), std::string::npos) << out;
+    EXPECT_NE(out.find("B_MERGE_MARKER"), std::string::npos) << out;
+    EXPECT_EQ(out.find("DISK_STUB_SHOULD_NOT_APPEAR_IN_OUTPUT"), std::string::npos) << out;
+}

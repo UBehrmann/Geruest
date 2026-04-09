@@ -7,7 +7,8 @@
  * @brief This class is used to build the JavaScript files.
  * 
  * When mergeAssets=false: Serves individual JS files as-is.
- * When mergeAssets=true: Serves pre-generated merged JS files created by HTMLBuilder.
+ * When mergeAssets=true: Serves the per-page merged bundle (same as HTMLBuilder), rebuilt
+ * from the page HTML template when necessary so obfuscation always sees one bundle.
  * 
  * Obfuscation support:
  * - Checks if file should be obfuscated (level > 0, not dev mode, not excluded)
