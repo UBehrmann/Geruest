@@ -355,3 +355,17 @@ TEST(AssetMergerRemoveJsCommentsTest, NestedTemplatePreservesFollowingRegex) {
     EXPECT_NE(out.find(".replace(/^\\//"), std::string::npos) << out;
     EXPECT_EQ(out.find("trailing"), std::string::npos) << "line comment should be removed";
 }
+
+// Regression: "// foo/*.bar" contains "/*" inside the line comment; the block-comment pass must
+// not treat it as opening /* ... */ paired with a later JSDoc "*/" (would erase almost the file).
+TEST(AssetMergerRemoveJsCommentsTest, LineCommentWithSlashStarDoesNotEatThroughJSDoc) {
+    const std::string js =
+        "// Central registry — see translations/*.json\n"
+        "window._x = 1;\n"
+        "/**\n * doc\n */\n"
+        "function localizedPath(p){return p;}\n";
+    std::string out = AssetMerger::removeJsComments(js);
+    EXPECT_NE(out.find("window._x = 1"), std::string::npos) << out;
+    EXPECT_NE(out.find("function localizedPath"), std::string::npos) << out;
+    EXPECT_EQ(out.find("translations"), std::string::npos) << out;
+}

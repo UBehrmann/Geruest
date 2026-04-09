@@ -243,7 +243,22 @@ std::string AssetMerger::removeJsComments(const std::string& content) {
             skipJsStringOrTemplate(result, pos);
             continue;
         }
-        
+
+        // Skip // line comments first. Otherwise a line like
+        //   // ... path/translations/*.json
+        // contains "/*" inside the comment text; treating it as a block opener pairs with a
+        // later real "*/" (e.g. JSDoc) and erases the entire region — catastrophic.
+        if (pos < result.length() - 1 && result[pos] == '/' && result[pos + 1] == '/' &&
+            !isEscapedSlashBefore(result, pos)) {
+            size_t lineEnd = result.find('\n', pos);
+            if (lineEnd == std::string::npos) {
+                result.erase(pos);
+                break;
+            }
+            result.erase(pos, lineEnd - pos);
+            continue;
+        }
+
         // Look for /* comment outside of strings
         if (pos < result.length() - 1 && result[pos] == '/' && result[pos + 1] == '*') {
             size_t end = result.find("*/", pos + 2);
