@@ -46,6 +46,8 @@ static const std::unordered_set<std::string> RESERVED_KEYWORDS = {
     "encodeURI", "decodeURI", "encodeURIComponent", "decodeURIComponent",
     "setTimeout", "setInterval", "clearTimeout", "clearInterval", "alert", "confirm", "prompt",
     "RegExp",
+    // Barcode scanner (Quagga2 on window — must match script global spelling)
+    "Quagga",
     // Modern Web APIs
     "fetch", "Request", "Response", "Headers", "XMLHttpRequest", "FormData",
     "URL", "URLSearchParams", "Blob", "File", "FileReader", "FileList",

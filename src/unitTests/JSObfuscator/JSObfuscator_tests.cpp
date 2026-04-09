@@ -642,6 +642,30 @@ async function submitForm(formData) {
     EXPECT_FALSE(contains(obfuscated, "formDataObj"));
 }
 
+// Quagga2 attaches to window.Quagga; mangling breaks barcode scanners that use the CDN global.
+TEST(JSObfuscatorTest, QuaggaGlobalPreserved) {
+    JSObfuscator obfuscator(3);
+    std::string original = R"(
+function startScanner() {
+    Quagga.init({ inputStream: { type: "LiveStream" } }, function onReady(err) {
+        if (err) return;
+        Quagga.start();
+    });
+    Quagga.offDetected();
+    Quagga.onDetected(function handler(data) {
+        const code = data.codeResult.code;
+        Quagga.stop();
+    });
+}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_TRUE(contains(obfuscated, "Quagga"))
+        << "CDN global Quagga must not be renamed";
+    EXPECT_FALSE(contains(obfuscated, "startScanner"));
+    EXPECT_FALSE(contains(obfuscated, "onReady"));
+    EXPECT_FALSE(contains(obfuscated, "handler"));
+}
+
 TEST(JSObfuscatorTest, ComprehensiveGlobalAPIsPreserved) {
     JSObfuscator obfuscator(1);
     std::string original = R"(
