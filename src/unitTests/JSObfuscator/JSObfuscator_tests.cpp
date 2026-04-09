@@ -111,6 +111,20 @@ function test() {
     EXPECT_EQ(openParens, closeParens);
 }
 
+// for-of uses contextual keyword "of"; it must not be mangled (invalid for-header).
+TEST(JSObfuscatorTest, ForOfContextualKeywordNotMangled) {
+    JSObfuscator obfuscator(3);
+    const std::string original = R"(
+(function(){
+const known = [1, 2];
+for (const k of known) { void k; }
+})();
+)";
+    const std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_TRUE(matchesRegex(obfuscated, R"(for\s*\(\s*const\s+\w+\s+of\s+\w+)"))
+        << obfuscated;
+}
+
 TEST(JSObfuscatorTest, ComplexCode) {
     JSObfuscator obfuscator(1);
     std::string original = R"(

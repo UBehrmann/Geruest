@@ -32,6 +32,8 @@ static const std::unordered_set<std::string> RESERVED_KEYWORDS = {
     "double", "else", "enum", "eval", "export", "extends", "false", "final",
     "finally", "float", "for", "function", "goto", "if", "implements", "import",
     "in", "instanceof", "int", "interface", "let", "long", "native", "new",
+    // for-of / for-await-of (contextual keyword; must not be renamed)
+    "of",
     "null", "package", "private", "protected", "public", "return", "short", "static",
     "super", "switch", "synchronized", "this", "throw", "throws", "transient", "true",
     "try", "typeof", "var", "void", "volatile", "while", "with", "yield",
