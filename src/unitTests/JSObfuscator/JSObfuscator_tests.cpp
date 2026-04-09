@@ -1203,6 +1203,142 @@ function initializeTheme() { return 1; }
     EXPECT_NE(obfuscated.find(mangled + "();"), std::string::npos) << obfuscated;
 }
 
+TEST(JSObfuscatorTest, ForwardReferenceToHoistedFunctionSharesBindingLevel3) {
+    JSObfuscator obfuscator(3);
+    std::string original = R"(
+document.addEventListener('DOMContentLoaded', function () {
+  initializeFooterYear();
+});
+function initializeFooterYear() { return 1; }
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_FALSE(contains(obfuscated, "initializeFooterYear")) << obfuscated;
+    std::regex declPat(R"(function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(\s*\)\s*\{)");
+    std::smatch m;
+    ASSERT_TRUE(std::regex_search(obfuscated, m, declPat)) << obfuscated;
+    std::string mangled = m[1].str();
+    EXPECT_NE(obfuscated.find(mangled + "();"), std::string::npos) << obfuscated;
+}
+
+// Mirrors meine-buecher main.js: IIFE, template const, DOMContentLoaded without `;` after `});`,
+// void (async () => { ... })(); then top-level function called from the listener.
+TEST(JSObfuscatorTest, ForwardReferenceAfterVoidAsyncIifeInsideDomContentLoaded) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+(function applyInitialTheme() {
+  try { localStorage.getItem('darkMode'); } catch (e) {}
+})();
+
+const apiUrl = `${window.location.origin}/v1`;
+
+document.addEventListener("DOMContentLoaded", function () {
+  initializeFooterYear();
+  void (async () => {
+    if (!apiUrl) return;
+  })();
+});
+function initializeFooterYear() {
+  const footerYear = document.getElementById('footer-year');
+  if (footerYear) footerYear.textContent = '1';
+}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_FALSE(contains(obfuscated, "initializeFooterYear")) << obfuscated;
+    // Tight pattern: initializeFooterYear body starts with const + getElementById('footer-year')
+    std::regex declPat(
+        R"(function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(\s*\)\s*\{\s*const\s+[a-zA-Z_$][a-zA-Z0-9_$]*\s*=\s*document\.getElementById\(['\"]footer-year['\"]\))");
+    std::smatch m;
+    ASSERT_TRUE(std::regex_search(obfuscated, m, declPat)) << obfuscated;
+    std::string mangled = m[1].str();
+    EXPECT_EQ(countOccurrences(obfuscated, mangled), 2) << obfuscated;
+    EXPECT_NE(obfuscated.find(mangled + "();"), std::string::npos) << obfuscated;
+}
+
+// Regression: for-loop + if-return + return null; then `}` must not fall through to skipUntilTerminal
+// on `}` (negative brace depth swallowed clearAuthCookies and nested initializeFooterYear).
+TEST(JSObfuscatorTest, GetCookieStyleForLoopThenFunctionsStayTopLevel) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+function getCookie(name) {
+    const nameEQ = name + '=';
+    const ca = document.cookie.split(';');
+    for(let i=0;i < ca.length;i++) {
+        let c = ca[i];
+        while (c.charAt(0)==' ') c = c.substring(1,c.length);
+        if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length,c.length);
+    }
+    return null;
+}
+
+function clearAuthCookies() {
+    document.cookie = "x";
+}
+
+function initializeFooterYear() {
+    const footerYear = document.getElementById('footer-year');
+    if (footerYear) footerYear.textContent = '1';
+}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_FALSE(contains(obfuscated, "initializeFooterYear")) << obfuscated;
+    std::regex declPat(
+        R"(function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(\s*\)\s*\{\s*const\s+[a-zA-Z_$][a-zA-Z0-9_$]*\s*=\s*document\.getElementById\(['\"]footer-year['\"]\))");
+    std::smatch m;
+    ASSERT_TRUE(std::regex_search(obfuscated, m, declPat)) << obfuscated;
+    std::string mangled = m[1].str();
+    EXPECT_GE(countOccurrences(obfuscated, mangled), 1) << obfuscated;
+    int fnCount = 0;
+    for (size_t p = 0; (p = obfuscated.find("function ", p)) != std::string::npos; ++p) {
+        ++fnCount;
+    }
+    EXPECT_EQ(fnCount, 3) << obfuscated;
+}
+
+// Exact slice from meine-buecher main.js (getCookie … initializeFooterYear) plus a DOMContentLoaded
+// call — reproduces footer-year call/decl binding when the full file is not present.
+TEST(JSObfuscatorTest, MainJsGetCookieSliceFooterYearSharesBinding) {
+    JSObfuscator obfuscator(1);
+    static const char* const kSlice = R"WJ1(
+document.addEventListener("DOMContentLoaded",function(){
+initializeFooterYear();
+});
+function getCookie(name) {
+    const nameEQ = name + '=';
+    const ca = document.cookie.split(';');
+    for(let i=0;i < ca.length;i++) {
+        let c = ca[i];
+        while (c.charAt(0)==' ') c = c.substring(1,c.length);
+        if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length,c.length);
+    }
+    return null;
+}
+
+function clearAuthCookies() {
+    document.cookie = "username=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    document.cookie = "key=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    document.cookie = "user_id=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+}
+
+// === Functions moved from index.js for shared functionality ===
+
+function initializeFooterYear() {
+    const footerYear = document.getElementById('footer-year');
+    if (footerYear) {
+        footerYear.textContent = new Date().getFullYear();
+    }
+}
+
+)WJ1";
+    std::string obfuscated = obfuscator.obfuscate(std::string(kSlice));
+    EXPECT_FALSE(contains(obfuscated, "initializeFooterYear")) << obfuscated;
+    std::regex declPat(
+        R"(function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(\s*\)\s*\{\s*const\s+[a-zA-Z_$][a-zA-Z0-9_$]*\s*=\s*document\.getElementById\(['\"]footer-year['\"]\))");
+    std::smatch m;
+    ASSERT_TRUE(std::regex_search(obfuscated, m, declPat)) << obfuscated;
+    std::string mangled = m[1].str();
+    EXPECT_GE(countOccurrences(obfuscated, mangled), 2) << obfuscated;
+}
+
 TEST(JSObfuscatorTest, BracketStringKeyPreservesBareIdentifier) {
     JSObfuscator obfuscator(1);
     std::string original = R"(

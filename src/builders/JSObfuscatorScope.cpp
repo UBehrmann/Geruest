@@ -693,35 +693,75 @@ struct Parser {
         int p = 0;
         int b = 0;
         int c = 0;
+        /// True after `}` that closed the innermost block (c: 1→0) while still inside a call (p>0).
+        /// If the next punctuator is `)` that brings p to 0, end the statement without requiring `;`
+        /// (ASI after `});` for addEventListener(..., function () { ... }) ).
+        bool expectCallCloseAfterBlock = false;
         while (!eof()) {
             const Tok& t = (*tok)[i];
             if (t.kind == Tk::Ident) {
+                expectCallCloseAfterBlock = false;
                 referenceIdent(t.a, t.b);
                 ++i;
                 continue;
             }
             if (t.kind == Tk::Tpl) {
+                expectCallCloseAfterBlock = false;
                 scanTemplateToken(t.a, t.b);
                 ++i;
                 continue;
             }
             if (t.kind != Tk::Pun) {
+                expectCallCloseAfterBlock = false;
                 ++i;
                 continue;
             }
             char ch = (*code)[t.a];
             if (ch == '(') {
+                expectCallCloseAfterBlock = false;
                 ++p;
             } else if (ch == ')') {
-                --p;
+                if (p > 0) {
+                    --p;
+                }
+                if (expectCallCloseAfterBlock && p <= 0 && b <= 0 && c <= 0) {
+                    expectCallCloseAfterBlock = false;
+                    ++i;
+                    // (function () { })(…) — closing `)` is followed by `(`; keep scanning.
+                    if (!eof() && (*tok)[i].kind == Tk::Pun && (*code)[(*tok)[i].a] == '(') {
+                        continue;
+                    }
+                    return;
+                }
+                expectCallCloseAfterBlock = false;
             } else if (ch == '[') {
+                expectCallCloseAfterBlock = false;
                 ++b;
             } else if (ch == ']') {
-                --b;
+                expectCallCloseAfterBlock = false;
+                if (b > 0) {
+                    --b;
+                }
             } else if (ch == '{') {
+                expectCallCloseAfterBlock = false;
                 ++c;
             } else if (ch == '}') {
-                --c;
+                if (c > 0) {
+                    if (c == 1 && p > 0) {
+                        expectCallCloseAfterBlock = true;
+                    } else {
+                        expectCallCloseAfterBlock = false;
+                    }
+                    --c;
+                } else {
+                    // `}` closes a block we did not open in this skip (e.g. function body `}`
+                    // after `return …;`). Stop here without consuming — let parseStatementList
+                    // / tryPunct('}') handle it. Consuming would strand the parser inside the fn.
+                    expectCallCloseAfterBlock = false;
+                    return;
+                }
+            } else {
+                expectCallCloseAfterBlock = false;
             }
             if (p <= 0 && b <= 0 && c <= 0 && ch == term) {
                 ++i;
@@ -891,6 +931,9 @@ struct Parser {
             return;
         }
         if (tryPunct(';')) {
+            return;
+        }
+        if (punChar() == '}') {
             return;
         }
         if (punChar() == '{') {
