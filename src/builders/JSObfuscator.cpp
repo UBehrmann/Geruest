@@ -353,10 +353,9 @@ static size_t templateInterpolationClose(const std::string& s, size_t innerBegin
     return std::string::npos;
 }
 
-/// From opening '`', return index past closing '`' (handles `${...}` and nested templates).
-static size_t skipTemplateLiteral(const std::string& code, size_t openTick) {
+static size_t tryConsumeNestedTemplateLiteral(const std::string& code, size_t openTick) {
     if (openTick >= code.size() || code[openTick] != '`') {
-        return openTick + 1;
+        return std::string::npos;
     }
     size_t pos = openTick + 1;
     const size_t n = code.size();
@@ -372,12 +371,47 @@ static size_t skipTemplateLiteral(const std::string& code, size_t openTick) {
             pos += 2;
             const size_t close = templateInterpolationClose(code, pos);
             if (close == std::string::npos) {
-                return n;
+                return std::string::npos;
             }
             pos = close + 1;
             continue;
         }
         ++pos;
+    }
+    return std::string::npos;
+}
+
+/// From opening '`', return index past closing '`' (handles `${...}` and nested templates).
+static size_t skipTemplateLiteral(const std::string& code, size_t openTick) {
+    if (openTick >= code.size() || code[openTick] != '`') {
+        return openTick + 1;
+    }
+    size_t i = openTick + 1;
+    const size_t n = code.size();
+    while (i < n) {
+        if (code[i] == '\\' && i + 1 < n) {
+            i += 2;
+            continue;
+        }
+        if (code[i] == '`') {
+            const size_t afterNested = tryConsumeNestedTemplateLiteral(code, i);
+            if (afterNested != std::string::npos) {
+                i = afterNested;
+                continue;
+            }
+            ++i;
+            return i;
+        }
+        if (code[i] == '$' && i + 1 < n && code[i + 1] == '{') {
+            i += 2;
+            const size_t close = templateInterpolationClose(code, i);
+            if (close == std::string::npos) {
+                return n;
+            }
+            i = close + 1;
+            continue;
+        }
+        ++i;
     }
     return n;
 }
@@ -615,8 +649,18 @@ std::vector<JSObfuscator::Token> JSObfuscator::tokenize(const std::string& code)
             continue;
         }
 
-        // --- string literal (double-quote, single-quote, backtick) ---
-        if (c == '"' || c == '\'' || c == '`') {
+        // --- template literal (must handle nested `...` and `${}`; do not stop at inner backtick) ---
+        if (c == '`') {
+            flushCode();
+            const size_t tplStart = i;
+            const size_t tplEnd = skipTemplateLiteral(code, i);
+            tokens.push_back({TokenType::STRING_LITERAL, code.substr(tplStart, tplEnd - tplStart)});
+            i = tplEnd;
+            continue;
+        }
+
+        // --- string literal (double-quote, single-quote) ---
+        if (c == '"' || c == '\'') {
             flushCode();
             char quote = c;
             std::string str;

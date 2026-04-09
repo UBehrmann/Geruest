@@ -214,6 +214,71 @@ static size_t templateInterpolationClose(const std::string& s, size_t innerBegin
     return std::string::npos;
 }
 
+/// If code[openTick] is '`' and a well-formed nested template literal starts here, returns the
+/// index past its closing '`'. Otherwise npos (caller treats that '`' as closing the current level).
+static size_t tryConsumeNestedTemplateLiteral(const std::string& code, size_t openTick) {
+    if (openTick >= code.size() || code[openTick] != '`') {
+        return std::string::npos;
+    }
+    size_t pos = openTick + 1;
+    const size_t n = code.size();
+    while (pos < n) {
+        if (code[pos] == '\\' && pos + 1 < n) {
+            pos += 2;
+            continue;
+        }
+        if (code[pos] == '`') {
+            return pos + 1;
+        }
+        if (code[pos] == '$' && pos + 1 < n && code[pos + 1] == '{') {
+            pos += 2;
+            const size_t close = templateInterpolationClose(code, pos);
+            if (close == std::string::npos) {
+                return std::string::npos;
+            }
+            pos = close + 1;
+            continue;
+        }
+        ++pos;
+    }
+    return std::string::npos;
+}
+
+/// From opening '`', return index past closing '`' (handles `${...}` and nested templates).
+static size_t lexTemplateLiteralEnd(const std::string& code, size_t openTick) {
+    if (openTick >= code.size() || code[openTick] != '`') {
+        return openTick + 1;
+    }
+    size_t i = openTick + 1;
+    const size_t n = code.size();
+    while (i < n) {
+        if (code[i] == '\\' && i + 1 < n) {
+            i += 2;
+            continue;
+        }
+        if (code[i] == '`') {
+            const size_t afterNested = tryConsumeNestedTemplateLiteral(code, i);
+            if (afterNested != std::string::npos) {
+                i = afterNested;
+                continue;
+            }
+            ++i;
+            return i;
+        }
+        if (code[i] == '$' && i + 1 < n && code[i + 1] == '{') {
+            i += 2;
+            const size_t close = templateInterpolationClose(code, i);
+            if (close == std::string::npos) {
+                return n;
+            }
+            i = close + 1;
+            continue;
+        }
+        ++i;
+    }
+    return n;
+}
+
 enum class Tk { Ident, Num, Str, Tpl, Rx, Pun, Eof };
 
 struct Tok {
@@ -305,28 +370,7 @@ static void lexAll(const std::string& code, std::vector<Tok>& out) {
 
         if (code[i] == '`') {
             const size_t start = i;
-            ++i;
-            while (i < n) {
-                if (code[i] == '\\' && i + 1 < n) {
-                    i += 2;
-                    continue;
-                }
-                if (code[i] == '`') {
-                    ++i;
-                    break;
-                }
-                if (code[i] == '$' && i + 1 < n && code[i + 1] == '{') {
-                    i += 2;
-                    const size_t close = templateInterpolationClose(code, i);
-                    if (close == std::string::npos) {
-                        i = n;
-                        break;
-                    }
-                    i = close + 1;
-                    continue;
-                }
-                ++i;
-            }
+            i = lexTemplateLiteralEnd(code, i);
             out.push_back({Tk::Tpl, start, i});
             continue;
         }

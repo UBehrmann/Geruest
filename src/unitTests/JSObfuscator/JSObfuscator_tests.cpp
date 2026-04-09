@@ -1464,6 +1464,31 @@ TEST(JSObfuscatorTest, NestedTemplateLiteralMinifyPreservesContent) {
     EXPECT_GE(countOccurrences(obfuscated, "`"), 4);
 }
 
+// Ternary + nested template + inner ${param}: all uses of `author` must share one mangled name
+// (otherwise runtime ReferenceError: mangledName is not defined).
+TEST(JSObfuscatorTest, NestedTemplateTernaryInnerInterpolationSharesBinding) {
+    JSObfuscator obfuscator(3);
+    const std::string original = R"JS(
+function renderPending(cond, author) {
+  const html = `before ${cond ? `inner ${author} tail` : ''} after`;
+  return html + String(author);
+}
+)JS";
+    const std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_EQ(countOccurrences(obfuscated, "author"), 0) << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "inner ") || contains(obfuscated, "inner"))
+        << obfuscated;
+}
+
+// ECMAScript: unescaped ` in template body opens a nested template literal (not the outer close).
+TEST(JSObfuscatorTest, TemplateRawNestedBacktickSegmentsStayOneToken) {
+    JSObfuscator obfuscator(1);
+    const std::string original = "function f(){return `a `b` c`;}\n";
+    const std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_GE(countOccurrences(obfuscated, "`"), 4) << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "b")) << obfuscated;
+}
+
 TEST(JSObfuscatorTest, QuotedPathAfterPlusSurvivesMinify) {
     JSObfuscator obfuscator(1);
     std::string original = "var a = fn() + \"/path/to/x\";\n";
