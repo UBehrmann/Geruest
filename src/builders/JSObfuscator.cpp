@@ -13,6 +13,7 @@
 #include <chrono>
 #include <cctype>
 #include <cstdio>
+#include <cstring>
 #include <iomanip>
 #include <regex>
 #include <sstream>
@@ -353,7 +354,7 @@ static size_t templateInterpolationClose(const std::string& s, size_t innerBegin
     return std::string::npos;
 }
 
-static size_t tryConsumeNestedTemplateLiteral(const std::string& code, size_t openTick) {
+static size_t tryConsumeNestedTemplateLiteralObf(const std::string& code, size_t openTick) {
     if (openTick >= code.size() || code[openTick] != '`') {
         return std::string::npos;
     }
@@ -381,8 +382,43 @@ static size_t tryConsumeNestedTemplateLiteral(const std::string& code, size_t op
     return std::string::npos;
 }
 
-/// From opening '`', return index past closing '`' (handles `${...}` and nested templates).
-static size_t skipTemplateLiteral(const std::string& code, size_t openTick) {
+static bool templateBacktickLooksLikeTerminatorObf(const std::string& code, size_t tickPos) {
+    size_t j = tickPos + 1;
+    const size_t n = code.size();
+    while (j < n && (code[j] == ' ' || code[j] == '\t')) {
+        ++j;
+    }
+    if (j >= n) {
+        return true;
+    }
+    const char t = code[j];
+    if (t == ';' || t == ',' || t == ')' || t == '}' || t == ']' || t == ':') {
+        return true;
+    }
+    if (t == '\n' || t == '\r') {
+        while (j < n && (code[j] == '\n' || code[j] == '\r' || code[j] == ' ' || code[j] == '\t')) {
+            ++j;
+        }
+        if (j < n) {
+            static const char* const tops[] = {"function", "const", "let", "var", "class", "async",
+                                                 "export", "import", "return", "throw", "debugger"};
+            for (const char* kw : tops) {
+                const size_t L = std::strlen(kw);
+                if (j + L <= n && code.compare(j, L, kw) == 0) {
+                    const char nx = code[j + L];
+                    const bool part =
+                        std::isalnum(static_cast<unsigned char>(nx)) || nx == '_' || nx == '$';
+                    if (j + L >= n || !part) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
+static size_t lexTemplateLiteralEndObf(const std::string& code, size_t openTick) {
     if (openTick >= code.size() || code[openTick] != '`') {
         return openTick + 1;
     }
@@ -394,26 +430,41 @@ static size_t skipTemplateLiteral(const std::string& code, size_t openTick) {
             continue;
         }
         if (code[i] == '`') {
-            const size_t afterNested = tryConsumeNestedTemplateLiteral(code, i);
-            if (afterNested != std::string::npos) {
-                i = afterNested;
+            if (i + 1 < n && code[i + 1] == '`') {
+                i += 2;
                 continue;
             }
-            ++i;
-            return i;
+            if (templateBacktickLooksLikeTerminatorObf(code, i)) {
+                return i + 1;
+            }
+            const size_t nestedEnd = tryConsumeNestedTemplateLiteralObf(code, i);
+            if (nestedEnd != std::string::npos) {
+                i = nestedEnd;
+                continue;
+            }
+            return i + 1;
         }
         if (code[i] == '$' && i + 1 < n && code[i + 1] == '{') {
             i += 2;
             const size_t close = templateInterpolationClose(code, i);
             if (close == std::string::npos) {
-                return n;
+                return std::string::npos;
             }
             i = close + 1;
             continue;
         }
         ++i;
     }
-    return n;
+    return std::string::npos;
+}
+
+/// From opening '`', return index past closing '`' (handles `${...}` and nested templates).
+static size_t skipTemplateLiteral(const std::string& code, size_t openTick) {
+    size_t end = lexTemplateLiteralEndObf(code, openTick);
+    if (end == std::string::npos) {
+        return code.size();
+    }
+    return end;
 }
 
 /** Raw string between quotes (excluding delimiters), honoring backslash escapes. */

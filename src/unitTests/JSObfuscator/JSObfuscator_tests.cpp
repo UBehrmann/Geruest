@@ -1480,6 +1480,24 @@ function renderPending(cond, author) {
         << obfuscated;
 }
 
+// Regression: `${origin}/v1` + closing ` + `;` then more code — the closing ` must not be parsed
+// as opening a nested literal whose "close" is the next ` in the file (swallowed main.js into one
+// Tpl token → following functions stayed unmangled).
+TEST(JSObfuscatorTest, TemplateOriginSlashV1ThenFunctionWithTemplateNotSwallowed) {
+    JSObfuscator obfuscator(1);
+    const std::string original = R"JS(
+const apiUrl = `${window.location.origin}/v1`;
+
+function homepagePath() {
+    return `/${getLanguageFromURL()}/homepage`;
+}
+)JS";
+    const std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_FALSE(contains(obfuscated, "homepagePath")) << obfuscated;
+    EXPECT_FALSE(contains(obfuscated, "getLanguageFromURL")) << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "/homepage")) << obfuscated;
+}
+
 // ECMAScript: unescaped ` in template body opens a nested template literal (not the outer close).
 TEST(JSObfuscatorTest, TemplateRawNestedBacktickSegmentsStayOneToken) {
     JSObfuscator obfuscator(1);

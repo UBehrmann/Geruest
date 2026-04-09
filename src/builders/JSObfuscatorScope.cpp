@@ -214,8 +214,8 @@ static size_t templateInterpolationClose(const std::string& s, size_t innerBegin
     return std::string::npos;
 }
 
-/// If code[openTick] is '`' and a well-formed nested template literal starts here, returns the
-/// index past its closing '`'. Otherwise npos (caller treats that '`' as closing the current level).
+/// From opening '`', scan a nested template literal (handles `${...}` inside it). The first
+/// unescaped '`' after the body closes this nested literal. Returns npos if unterminated.
 static size_t tryConsumeNestedTemplateLiteral(const std::string& code, size_t openTick) {
     if (openTick >= code.size() || code[openTick] != '`') {
         return std::string::npos;
@@ -244,7 +244,43 @@ static size_t tryConsumeNestedTemplateLiteral(const std::string& code, size_t op
     return std::string::npos;
 }
 
+static bool templateBacktickLooksLikeTerminator(const std::string& code, size_t tickPos) {
+    size_t j = tickPos + 1;
+    const size_t n = code.size();
+    while (j < n && (code[j] == ' ' || code[j] == '\t')) {
+        ++j;
+    }
+    if (j >= n) {
+        return true;
+    }
+    const char t = code[j];
+    if (t == ';' || t == ',' || t == ')' || t == '}' || t == ']' || t == ':') {
+        return true;
+    }
+    if (t == '\n' || t == '\r') {
+        while (j < n && (code[j] == '\n' || code[j] == '\r' || code[j] == ' ' || code[j] == '\t')) {
+            ++j;
+        }
+        if (j < n) {
+            static const char* const tops[] = {"function", "const", "let", "var", "class", "async",
+                                                 "export", "import", "return", "throw", "debugger"};
+            for (const char* kw : tops) {
+                const size_t L = std::strlen(kw);
+                if (j + L <= n && code.compare(j, L, kw) == 0) {
+                    const char nx = code[j + L];
+                    const bool part = std::isalnum(static_cast<unsigned char>(nx)) || nx == '_' || nx == '$';
+                    if (j + L >= n || !part) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
 /// From opening '`', return index past closing '`' (handles `${...}` and nested templates).
+/// Returns npos if there is no closing '`' for this level (unterminated).
 static size_t lexTemplateLiteralEnd(const std::string& code, size_t openTick) {
     if (openTick >= code.size() || code[openTick] != '`') {
         return openTick + 1;
@@ -257,26 +293,32 @@ static size_t lexTemplateLiteralEnd(const std::string& code, size_t openTick) {
             continue;
         }
         if (code[i] == '`') {
-            const size_t afterNested = tryConsumeNestedTemplateLiteral(code, i);
-            if (afterNested != std::string::npos) {
-                i = afterNested;
+            if (i + 1 < n && code[i + 1] == '`') {
+                i += 2;
                 continue;
             }
-            ++i;
-            return i;
+            if (templateBacktickLooksLikeTerminator(code, i)) {
+                return i + 1;
+            }
+            const size_t nestedEnd = tryConsumeNestedTemplateLiteral(code, i);
+            if (nestedEnd != std::string::npos) {
+                i = nestedEnd;
+                continue;
+            }
+            return i + 1;
         }
         if (code[i] == '$' && i + 1 < n && code[i + 1] == '{') {
             i += 2;
             const size_t close = templateInterpolationClose(code, i);
             if (close == std::string::npos) {
-                return n;
+                return std::string::npos;
             }
             i = close + 1;
             continue;
         }
         ++i;
     }
-    return n;
+    return std::string::npos;
 }
 
 enum class Tk { Ident, Num, Str, Tpl, Rx, Pun, Eof };
@@ -370,7 +412,11 @@ static void lexAll(const std::string& code, std::vector<Tok>& out) {
 
         if (code[i] == '`') {
             const size_t start = i;
-            i = lexTemplateLiteralEnd(code, i);
+            size_t end = lexTemplateLiteralEnd(code, i);
+            if (end == std::string::npos) {
+                end = n;
+            }
+            i = end;
             out.push_back({Tk::Tpl, start, i});
             continue;
         }
