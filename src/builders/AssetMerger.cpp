@@ -437,6 +437,75 @@ std::string AssetMerger::mergeJsFiles(const std::vector<std::string>& jsFiles) {
     return merged;
 }
 
+namespace {
+
+std::string readWholeFileForMerge(const std::string& filePath) {
+    std::ifstream in(filePath, std::ios::binary | std::ios::ate);
+    if (!in) {
+        return {};
+    }
+    const auto fileSize = in.tellg();
+    if (fileSize <= 0) {
+        return {};
+    }
+    std::string content(static_cast<size_t>(fileSize), '\0');
+    in.seekg(0);
+    in.read(&content[0], fileSize);
+    return content;
+}
+
+/**
+ * Merged page bundles are often written to the same path as a source <script src>
+ * (e.g. assets/js/checkUserBooks.js). The next merge must not load that file as a
+ * fresh segment when it already contains the full bundle (would duplicate main.js, etc.).
+ */
+std::string mergeJsFilesResolvingBundleWriteback(AssetMerger& merger,
+                                                 const std::vector<std::string>& localJsFiles,
+                                                 const std::string& serverRoot,
+                                                 const std::string& pageName,
+                                                 const std::string& jsSubdir) {
+    fs::path expectedMerged = fs::path(serverRoot) / "assets" / "js" / (pageName + ".js");
+    if (!jsSubdir.empty()) {
+        expectedMerged = fs::path(serverRoot) / "assets" / "js" / jsSubdir / (pageName + ".js");
+    }
+
+    std::error_code ec;
+    const fs::path canonOut = fs::weakly_canonical(expectedMerged, ec);
+    if (ec) {
+        return merger.mergeJsFiles(localJsFiles);
+    }
+
+    int conflictIndex = -1;
+    for (size_t i = 0; i < localJsFiles.size(); ++i) {
+        ec.clear();
+        if (fs::weakly_canonical(localJsFiles[i], ec) == canonOut && !ec) {
+            conflictIndex = static_cast<int>(i);
+            break;
+        }
+    }
+
+    if (conflictIndex < 0) {
+        return merger.mergeJsFiles(localJsFiles);
+    }
+
+    const std::vector<std::string> prefixPaths(localJsFiles.begin(),
+                                               localJsFiles.begin() + conflictIndex);
+    const std::string prefixMerged =
+        prefixPaths.empty() ? std::string() : merger.mergeJsFiles(prefixPaths);
+    const std::string raw = readWholeFileForMerge(localJsFiles[static_cast<size_t>(conflictIndex)]);
+
+    if (!prefixMerged.empty() && raw.size() >= prefixMerged.size() &&
+        raw.compare(0, prefixMerged.size(), prefixMerged) == 0) {
+        return raw;
+    }
+    if (prefixPaths.empty()) {
+        return merger.mergeJsFiles({localJsFiles[static_cast<size_t>(conflictIndex)]});
+    }
+    return prefixMerged + merger.mergeJsFiles({localJsFiles[static_cast<size_t>(conflictIndex)]});
+}
+
+}  // namespace
+
 MergeResult AssetMerger::processHtml(const std::string& htmlContent, const std::string& pageName) {
     MergeResult result;
     result.modifiedHtml = htmlContent;
@@ -522,7 +591,8 @@ MergeResult AssetMerger::processHtml(const std::string& htmlContent, const std::
     }
     
     if (shouldMergeJs) {
-        result.mergedJs = mergeJsFiles(localJsFiles);
+        result.mergedJs = mergeJsFilesResolvingBundleWriteback(*this, localJsFiles, _serverRoot,
+                                                               pageName, result.jsSubdir);
         result.hasJs = true;
     }
     

@@ -8,10 +8,25 @@
 #include <gtest/gtest.h>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
 #include "../../builders/AssetMerger.hpp"
 #include "../../data/ServerData.hpp"
 
 using namespace geruest;
+
+namespace {
+
+size_t countSubstringOccurrences(const std::string& haystack, const std::string& needle) {
+    size_t count = 0;
+    for (size_t pos = 0; (pos = haystack.find(needle, pos)) != std::string::npos;
+         pos += needle.size(), ++count) {
+    }
+    return count;
+}
+
+}  // namespace
 
 // Test fixture for AssetMerger
 class AssetMergerTest : public ::testing::Test {
@@ -120,6 +135,90 @@ TEST_F(AssetMergerTest, MergeMultipleJsFiles) {
     EXPECT_NE(result.mergedJs.find("console.log('script1');"), std::string::npos);
     EXPECT_NE(result.mergedJs.find("function test()"), std::string::npos);
     EXPECT_NE(result.mergedJs.find("const x = 42;"), std::string::npos);
+}
+
+// Merged bundle is saved as pagebundle.js while HTML still lists that path as a source script.
+// Re-merging must not treat the on-disk bundle as a fresh segment (would duplicate shared.js).
+TEST_F(AssetMergerTest, NoDuplicateWhenMergedOutputOverwritesLastScriptFile) {
+    createFile(testRoot + "/assets/js/shared.js", "SHARED_MARKER;");
+    createFile(testRoot + "/assets/js/pagebundle.js", "PAGE_ONLY;");
+    const std::string html = R"(<html><body>
+<script src="shared.js"></script>
+<script src="pagebundle.js"></script>
+</body></html>)";
+
+    MergeResult first = merger->processHtml(html, "pagebundle");
+    ASSERT_TRUE(first.hasJs);
+    EXPECT_NE(first.mergedJs.find("SHARED_MARKER;"), std::string::npos);
+    EXPECT_NE(first.mergedJs.find("PAGE_ONLY;"), std::string::npos);
+
+    {
+        std::ofstream out(testRoot + "/assets/js/pagebundle.js", std::ios::binary | std::ios::trunc);
+        out << first.mergedJs;
+    }
+
+    MergeResult second = merger->processHtml(html, "pagebundle");
+    ASSERT_TRUE(second.hasJs);
+    EXPECT_EQ(second.mergedJs, first.mergedJs);
+
+    size_t count = 0;
+    const std::string needle = "SHARED_MARKER;";
+    for (size_t pos = 0; (pos = second.mergedJs.find(needle, pos)) != std::string::npos;
+         pos += needle.size(), ++count) {
+    }
+    EXPECT_EQ(count, 1u);
+}
+
+// Plain merge (no obfuscation): each segment appears once for 2/3/4 scripts, including after
+// the merged bundle is written to the last script path and the page is merged again.
+TEST_F(AssetMergerTest, NoDuplicationAfterMergingTwoThreeFourJsFiles) {
+    for (int n = 2; n <= 4; ++n) {
+        const std::string prefix = "dupchk" + std::to_string(n);
+        const std::string pageStem = prefix + "_page";
+        std::vector<std::string> markers;
+
+        std::ostringstream html;
+        html << "<html><body>\n";
+
+        for (int i = 0; i < n - 1; ++i) {
+            const std::string fn = prefix + "_" + std::to_string(i) + ".js";
+            const std::string marker = "__DUPSTAMP_" + prefix + "_SEG" + std::to_string(i) + "__";
+            markers.push_back(marker);
+            createFile(testRoot + "/assets/js/" + fn,
+                       "var _s = '" + marker + "';\n");
+            html << "<script src=\"" << fn << "\"></script>\n";
+        }
+
+        const std::string lastFn = pageStem + ".js";
+        const std::string pageMarker = "__DUPSTAMP_" + prefix + "_PAGE__";
+        markers.push_back(pageMarker);
+        createFile(testRoot + "/assets/js/" + lastFn, "var _p = '" + pageMarker + "';\n");
+        html << "<script src=\"" << lastFn << "\"></script>\n</body></html>";
+
+        MergeResult first = merger->processHtml(html.str(), pageStem);
+        ASSERT_TRUE(first.hasJs) << "n=" << n;
+        EXPECT_EQ(first.jsFiles.size(), static_cast<size_t>(n)) << "n=" << n;
+
+        for (const auto& marker : markers) {
+            EXPECT_EQ(countSubstringOccurrences(first.mergedJs, marker), 1u)
+                << "n=" << n << " after first merge, marker=" << marker;
+        }
+
+        {
+            std::ofstream out(testRoot + "/assets/js/" + lastFn,
+                              std::ios::binary | std::ios::trunc);
+            out << first.mergedJs;
+        }
+
+        MergeResult second = merger->processHtml(html.str(), pageStem);
+        ASSERT_TRUE(second.hasJs) << "n=" << n;
+        EXPECT_EQ(second.mergedJs, first.mergedJs) << "n=" << n;
+
+        for (const auto& marker : markers) {
+            EXPECT_EQ(countSubstringOccurrences(second.mergedJs, marker), 1u)
+                << "n=" << n << " after writeback re-merge, marker=" << marker;
+        }
+    }
 }
 
 TEST_F(AssetMergerTest, RemoveJsCommentsDoesNotEatRegexEscapedSlash) {
