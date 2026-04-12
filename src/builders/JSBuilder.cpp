@@ -187,11 +187,13 @@ bool mergedBundleObfuscationCacheValid(const ServerData& serverData,
                            serverData.getObfuscationExclusions());
         for (const auto& href : jsHrefs) {
             const std::string scriptPath = merger.resolveAssetPath(href, "js");
-            if (fs::exists(scriptPath)) {
-                const auto t = fs::last_write_time(scriptPath);
-                if (t > newestInput) {
-                    newestInput = t;
-                }
+            if (!fs::exists(scriptPath)) {
+                // Source removed since cache was built — merged bundle would differ; do not reuse cache.
+                return false;
+            }
+            const auto t = fs::last_write_time(scriptPath);
+            if (t > newestInput) {
+                newestInput = t;
             }
         }
 
