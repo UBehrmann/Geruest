@@ -498,7 +498,8 @@ class Geruest {
      * - health: "ok" | "degraded" | "overloaded"
      * - version: Geruest framework version (useful for multi-version comparisons)
      * - timestamp: ISO 8601 UTC time of the snapshot
-     * - uptime_seconds: seconds since server start
+     * - uptime_seconds: seconds since this process entered start() (session)
+     * - uptime_hours_total: cumulative uptime in hours across restarts (persisted)
      * - requests.total / last_hour / avg_per_hour / active
      * - errors.total / client_4xx / server_5xx / internal (+ last_hour/avg_per_hour breakdown)
      * - queue.current_size / max_size / rejections_total / avg_fill_percent_hour / avg_fill_percent_per_hour
@@ -522,6 +523,14 @@ class Geruest {
      */
     void enableStatus(const std::string& token);
 
+    /**
+     * @brief Override path for persisted /status metrics (JSON). Default: geruest-status-state.json in cwd.
+     * @note Call before start().
+     */
+    void setStatusPersistencePath(std::string path);
+
+    const std::string& getStatusPersistencePath() const { return _statusPersistencePath; }
+
    private:
 #ifdef _WIN32
     SOCKET server_fd = INVALID_SOCKET;  // Socket descriptor for the server
@@ -539,6 +548,9 @@ class Geruest {
 
     bool _statusActive = false;
     std::string _statusToken;
+
+    std::string _statusPersistencePath{"geruest-status-state.json"};
+    std::thread _statusPersistenceThread;
 
     ServerData serverData;
 
@@ -602,6 +614,8 @@ class Geruest {
      * @brief Stops the worker thread pool and waits for all threads to finish.
      */
     void stopWorkers();
+
+    void statusPersistenceLoop();
 
 #ifdef _WIN32
     void giveToHandler(SOCKET new_socket, std::string& IP);

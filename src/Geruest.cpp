@@ -99,6 +99,8 @@ void Geruest::setPort(int _port) { port = _port; _configFlags.portSet = true; }
 
 void Geruest::setHostname(const std::string& hostname) { hostname_ = hostname; _configFlags.hostnameSet = true; }
 
+void Geruest::setStatusPersistencePath(std::string path) { _statusPersistencePath = std::move(path); }
+
 void Geruest::addRoute(const std::string& path, RouteHandler routeHandler) {
     serverData.addRoute(path, std::move(routeHandler));
 }

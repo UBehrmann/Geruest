@@ -29,6 +29,7 @@
 #include "HTTPRequest.hpp"
 #include "HTTPResponse.hpp"
 #include "../auth/BasicAuth.hpp"
+#include "parser/JSONParser.hpp"
 
 namespace geruest {
 
@@ -111,6 +112,9 @@ class ServerData {
     mutable std::array<LatencySample, _LAT_CAP> _latSamples{};
     mutable size_t _latHead{0};
     mutable size_t _latCount{0};
+
+    /// Cumulative process uptime (seconds) through the last successful metrics save; loaded from disk at startup.
+    uint64_t _lifetimeUptimeBaselineSeconds{0};
 
     /**
      * Check if a path matches a wildcard pattern
@@ -932,6 +936,28 @@ class ServerData {
         return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - _startTime).count());
     }
+
+    /**
+     * Load persisted metrics from JSON (schema v1). Missing file is OK. Resets session start time after load.
+     * @return false if the file existed but was invalid; metrics may be partially applied or cleared.
+     */
+    bool loadPersistentMetricsFromFile(const std::string& path);
+
+    /**
+     * Atomically snapshot metrics to JSON (schema v1), including lifetime uptime through this moment.
+     */
+    bool savePersistentMetricsToFile(const std::string& path) const;
+
+    /** Cumulative uptime in hours: baseline from disk plus current session (since last load in start()). */
+    double getUptimeHoursTotal() const {
+        return static_cast<double>(_lifetimeUptimeBaselineSeconds + getUptimeSeconds()) / 3600.0;
+    }
+
+   private:
+    void clearAllMetrics_();
+
+    /// @param root copied so JSONParser getters (non-const) can be used during import
+    bool importPersistentMetricsJson_(JSONParser root);
 };
 
 }  // namespace geruest

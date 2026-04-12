@@ -388,6 +388,7 @@ void Geruest::enableStatus(const std::string& token) {
         root.setString("version",          getVersion());
         root.setString("timestamp",        timeBuf);
         root.setLongLong("uptime_seconds", static_cast<long long>(uptime));
+        root.setDouble("uptime_hours_total", serverData.getUptimeHoursTotal());
         root.setJSON("requests",           requests);
         root.setJSON("errors",             errors);
         root.setJSON("queue",              queue);

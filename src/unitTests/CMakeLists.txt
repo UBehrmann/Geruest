@@ -67,6 +67,7 @@ set(GERUEST_SOURCES
     ../data/HTTPRequest.cpp
     ../data/HTTPResponse.cpp
     ../data/MethodNotAllowed.cpp
+    ../data/ServerData.cpp
     ../parser/JSONParser.cpp
     ../FileManagement/FileManagement.cpp
     ../builders/AssetMerger.cpp
@@ -96,14 +97,21 @@ add_executable(JSONParser_Tests
 )
 target_link_libraries(JSONParser_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
-add_executable(HTTPRequest_Tests HTTPRequest/HTTPRequest_tests.cpp ../data/HTTPRequest.cpp)
+add_executable(HTTPRequest_Tests
+    HTTPRequest/HTTPRequest_tests.cpp
+    ../data/HTTPRequest.cpp
+    ../parser/JSONParser.cpp
+    ../security/Security.cpp
+)
 target_link_libraries(HTTPRequest_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
-add_executable(HTTPResponse_Tests 
-    HTTPResponse/HTTPResponse_tests.cpp 
-    ../data/HTTPResponse.cpp 
+add_executable(HTTPResponse_Tests
+    HTTPResponse/HTTPResponse_tests.cpp
+    ../data/HTTPResponse.cpp
     ../data/HTTPRequest.cpp
     ../data/MethodNotAllowed.cpp
+    ../parser/JSONParser.cpp
+    ../security/Security.cpp
 )
 target_link_libraries(HTTPResponse_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
@@ -161,6 +169,15 @@ add_executable(Security_Tests
 )
 target_link_libraries(Security_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
+add_executable(ServerDataMetricsPersistence_Tests
+    ServerData/ServerDataMetricsPersistence_tests.cpp
+    ../data/ServerData.cpp
+    ../parser/JSONParser.cpp
+    ../auth/BasicAuth.cpp
+    ../security/Security.cpp
+)
+target_link_libraries(ServerDataMetricsPersistence_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+
 # Add tests to CTest using Google Test discovery
 include(GoogleTest)
 gtest_discover_tests(JSONParser_Tests)
@@ -173,11 +190,12 @@ gtest_discover_tests(BasicAuth_Tests)
 gtest_discover_tests(ConfigLoader_Tests)
 gtest_discover_tests(AssetMerger_Tests)
 gtest_discover_tests(Security_Tests)
+gtest_discover_tests(ServerDataMetricsPersistence_Tests)
 
 # Custom target to run all tests
 add_custom_target(run_tests
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-    DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests
+    DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests ServerDataMetricsPersistence_Tests
     COMMENT "Running all unit tests via CTest"
 )
 

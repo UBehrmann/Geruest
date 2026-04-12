@@ -93,6 +93,7 @@ add_library(Geruest STATIC
     src/data/HTTPRequest.cpp
     src/data/HTTPResponse.cpp
     src/data/MethodNotAllowed.cpp
+    src/data/ServerData.cpp
     src/email/EmailSender.cpp
     src/FileManagement/FileManagement.cpp
     src/handler/Handler.cpp

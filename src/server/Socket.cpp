@@ -9,6 +9,9 @@
 
 #include "../Geruest.hpp"
 
+#include <chrono>
+#include <thread>
+
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -18,6 +21,20 @@
 #endif
 
 namespace geruest {
+
+void Geruest::statusPersistenceLoop() {
+    while (running) {
+        for (int i = 0; i < 3600 && running; ++i) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        if (!running) {
+            break;
+        }
+        if (!serverData.savePersistentMetricsToFile(_statusPersistencePath)) {
+            sendToLoggerError("Status metrics persistence: periodic save failed for " + _statusPersistencePath);
+        }
+    }
+}
 
 void Geruest::init() {
     this->server_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -92,9 +109,14 @@ void Geruest::init() {
 }
 
 void Geruest::start() {
+    if (!serverData.loadPersistentMetricsFromFile(_statusPersistencePath)) {
+        sendToLoggerError("Status metrics persistence: invalid or unsupported file " + _statusPersistencePath);
+    }
+
     int addrlen = sizeof(this->address);
 
     running = true;
+    _statusPersistenceThread = std::thread(&Geruest::statusPersistenceLoop, this);
     startWorkers();
 
     sendToLogger("Waiting for connections...");
@@ -163,6 +185,12 @@ void Geruest::start() {
     }
 
     stopWorkers();
+    if (_statusPersistenceThread.joinable()) {
+        _statusPersistenceThread.join();
+    }
+    if (!serverData.savePersistentMetricsToFile(_statusPersistencePath)) {
+        sendToLoggerError("Status metrics persistence: shutdown save failed for " + _statusPersistencePath);
+    }
     sendToLogger("Server stopped.");
 }
 
