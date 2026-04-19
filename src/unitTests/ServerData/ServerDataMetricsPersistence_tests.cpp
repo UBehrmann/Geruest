@@ -60,7 +60,12 @@ TEST(ServerDataMetricsPersistence, RoundTripCountersAndLifetime) {
     EXPECT_EQ(b.getTotal5xx(), 1u);
     EXPECT_EQ(b.getQueueRejections(), 1u);
 
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    // loadPersistentMetricsFromFile resets session start; Windows CI can wake
+    // slightly under one wall-clock second for duration_cast<seconds>.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (b.getUptimeSeconds() < 1u && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
     EXPECT_GE(b.getUptimeSeconds(), 1u);
 
     ASSERT_TRUE(b.savePersistentMetricsToFile(p.string()));

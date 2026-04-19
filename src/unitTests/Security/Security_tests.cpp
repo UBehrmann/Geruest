@@ -233,41 +233,70 @@ TEST_F(BuildQueryTest, TooManyParamsThrows) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// isSafePath
+// isSafePath / safeCombinePath — real on-disk roots (weakly_canonical fails on
+// Windows for non-existent paths like /var/www).
 // ─────────────────────────────────────────────────────────────────────────────
 
-class IsSafePathTest : public ::testing::Test {};
+class PathSecurityTest : public ::testing::Test {
+protected:
+    std::filesystem::path sandboxDir_;
+    std::string rootNative_;
 
-TEST_F(IsSafePathTest, EmptyRootIsRejected) {
+    void SetUp() override {
+        namespace fs = std::filesystem;
+        const std::string tag =
+            std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+        sandboxDir_ = fs::temp_directory_path() / ("geruest_path_sandbox_" + tag);
+        fs::remove_all(sandboxDir_);
+        ASSERT_TRUE(fs::create_directories(sandboxDir_ / "html"));
+        ASSERT_TRUE(fs::create_directories(sandboxDir_ / "assets" / "css"));
+        {
+            std::ofstream f(sandboxDir_ / "html" / "index.html");
+            f << 'h';
+        }
+        {
+            std::ofstream f(sandboxDir_ / "assets" / "css" / "style.css");
+            f << 'c';
+        }
+        rootNative_ = sandboxDir_.lexically_normal().string();
+    }
+
+    void TearDown() override {
+        std::error_code ec;
+        std::filesystem::remove_all(sandboxDir_, ec);
+    }
+};
+
+TEST_F(PathSecurityTest, EmptyRootIsRejected) {
     EXPECT_FALSE(Security::isSafePath("", "/html/index.html"));
 }
 
-TEST_F(IsSafePathTest, NormalPathIsAlwaysSafe) {
-    EXPECT_TRUE(Security::isSafePath("/var/www", "/html/index.html"));
+TEST_F(PathSecurityTest, NormalPathIsAlwaysSafe) {
+    EXPECT_TRUE(Security::isSafePath(rootNative_, "/html/index.html"));
 }
 
-TEST_F(IsSafePathTest, PathWithoutDotDotIsAlwaysSafe) {
-    EXPECT_TRUE(Security::isSafePath("/var/www", "/assets/css/style.css"));
+TEST_F(PathSecurityTest, PathWithoutDotDotIsAlwaysSafe) {
+    EXPECT_TRUE(Security::isSafePath(rootNative_, "/assets/css/style.css"));
 }
 
-TEST_F(IsSafePathTest, DotDotTraversalIsBlocked) {
-    EXPECT_FALSE(Security::isSafePath("/var/www", "/../etc/passwd"));
+TEST_F(PathSecurityTest, DotDotTraversalIsBlocked) {
+    EXPECT_FALSE(Security::isSafePath(rootNative_, "/../etc/passwd"));
 }
 
-TEST_F(IsSafePathTest, EmbeddedDotDotIsBlocked) {
-    EXPECT_FALSE(Security::isSafePath("/var/www", "/html/../../etc/passwd"));
+TEST_F(PathSecurityTest, EmbeddedDotDotIsBlocked) {
+    EXPECT_FALSE(Security::isSafePath(rootNative_, "/html/../../etc/passwd"));
 }
 
-TEST_F(IsSafePathTest, EncodedTraversalIsBlocked) {
+TEST_F(PathSecurityTest, EncodedTraversalIsBlocked) {
     // Raw ".." without URL encoding — the URL layer has already decoded %2e%2e
-    EXPECT_FALSE(Security::isSafePath("/var/www", "/html/../../../etc/shadow"));
+    EXPECT_FALSE(Security::isSafePath(rootNative_, "/html/../../../etc/shadow"));
 }
 
 #ifndef _WIN32
 // Symlink resolution is exercised via weakly_canonical in isSafePath; Windows
 // symlinks are environment-dependent, so these stay POSIX-only.
 
-TEST_F(IsSafePathTest, SymlinkEscapeOutsideRootIsBlocked) {
+TEST_F(PathSecurityTest, SymlinkEscapeOutsideRootIsBlocked) {
     namespace fs = std::filesystem;
     const std::string tag =
         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
@@ -288,7 +317,7 @@ TEST_F(IsSafePathTest, SymlinkEscapeOutsideRootIsBlocked) {
     fs::remove_all(base, ec);
 }
 
-TEST_F(IsSafePathTest, SymlinkStayingInsideRootIsAllowed) {
+TEST_F(PathSecurityTest, SymlinkStayingInsideRootIsAllowed) {
     namespace fs = std::filesystem;
     const std::string tag =
         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
@@ -312,22 +341,16 @@ TEST_F(IsSafePathTest, SymlinkStayingInsideRootIsAllowed) {
 }
 #endif  // !_WIN32
 
-// ─────────────────────────────────────────────────────────────────────────────
-// safeCombinePath
-// ─────────────────────────────────────────────────────────────────────────────
-
-class SafeCombinePathTest : public ::testing::Test {};
-
-TEST_F(SafeCombinePathTest, NormalPathCombines) {
-    std::string result = Security::safeCombinePath("/var/www", "/html/index.html");
-    EXPECT_EQ(result, "/var/www/html/index.html");
+TEST_F(PathSecurityTest, NormalPathCombines) {
+    const std::string result = Security::safeCombinePath(rootNative_, "/html/index.html");
+    EXPECT_EQ(result, rootNative_ + "/html/index.html");
 }
 
-TEST_F(SafeCombinePathTest, TraversalReturnsEmpty) {
-    EXPECT_EQ(Security::safeCombinePath("/var/www", "/../etc/passwd"), "");
+TEST_F(PathSecurityTest, TraversalReturnsEmpty) {
+    EXPECT_EQ(Security::safeCombinePath(rootNative_, "/../etc/passwd"), "");
 }
 
-TEST_F(SafeCombinePathTest, EmptyRequestPathCombines) {
-    std::string result = Security::safeCombinePath("/var/www", "");
-    EXPECT_EQ(result, "/var/www");
+TEST_F(PathSecurityTest, EmptyRequestPathCombines) {
+    const std::string result = Security::safeCombinePath(rootNative_, "");
+    EXPECT_EQ(result, rootNative_);
 }
