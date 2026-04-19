@@ -55,3 +55,9 @@ build*
 package-lock.json
 package.json
 node_modules
+
+# Local editor / IDE / tooling (keep locally, not in repo)
+.cursor/
+.github/copilot-instructions.md
+.idea/
+.vscode/
