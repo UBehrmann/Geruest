@@ -23,11 +23,21 @@ namespace {
  */
 std::filesystem::path combinedPathForCanonicalCheck(const std::string& root, const std::string& requestPath) {
     namespace fs = std::filesystem;
-    fs::path r(root);
+    const fs::path r(root);
     if (requestPath.empty()) {
         return r;
     }
-    fs::path p(requestPath);
+#ifdef _WIN32
+    // On Windows, paths like "/html/page" are treated as absolute (root of the
+    // current drive). path(root) / path("/html/...") would ignore `root` and
+    // break the docroot jail check. URL segments from the handler always use a
+    // leading slash — strip it and join as a relative segment under `root`.
+    if (requestPath[0] == '/') {
+        std::string rel(requestPath, 1);
+        return r / fs::path(rel);
+    }
+#endif
+    const fs::path p(requestPath);
     if (p.is_absolute()) {
         return r / p.relative_path();
     }
