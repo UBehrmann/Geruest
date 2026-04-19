@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 project(GeruestExample VERSION 0.0.1 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Windows-specific: Prevent min/max macros that conflict with std::min/std::max
@@ -17,6 +17,7 @@ endif()
 
 # Find required packages
 find_package(Threads REQUIRED)
+find_package(Boost 1.75 REQUIRED COMPONENTS system)
 
 # Find CURL (optional for email functionality)
 find_package(CURL QUIET)
@@ -58,6 +59,7 @@ set(GERUEST_SOURCES
     ../src/server/Config.cpp
     ../src/server/Socket.cpp
     ../src/server/Workers.cpp
+    ../src/server/HttpSession.cpp
     ../src/server/Status.cpp
     ../src/auth/BasicAuth.cpp
     ../src/builders/AssetMerger.cpp
@@ -66,11 +68,13 @@ set(GERUEST_SOURCES
     ../src/builders/HTMLBuilder.cpp
     ../src/builders/JSBuilder.cpp
     ../src/builders/JSObfuscator.cpp
+    ../src/builders/JSObfuscatorScope.cpp
     ../src/builders/WebPConverter.cpp
     ../src/config/ConfigLoader.cpp
     ../src/data/HTTPRequest.cpp
     ../src/data/HTTPResponse.cpp
     ../src/data/MethodNotAllowed.cpp
+    ../src/data/ServerData.cpp
     ../src/FileManagement/FileManagement.cpp
     ../src/handler/Handler.cpp
     ../src/parser/JSONParser.cpp
@@ -98,7 +102,7 @@ endif()
 # Add CURL compile definition and link library
 target_compile_definitions(Geruest PUBLIC GERUEST_HAS_CURL=${GERUEST_HAS_CURL})
 
-target_link_libraries(Geruest Threads::Threads)
+target_link_libraries(Geruest Threads::Threads Boost::system)
 
 if(GERUEST_HAS_CURL)
     target_link_libraries(Geruest CURL::libcurl)

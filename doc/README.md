@@ -71,7 +71,7 @@ int main() {
 | **Redirects** | Exact/wildcard redirects and redirect maps | [Redirects and 404](REDIRECTS_AND_404.md) |
 | **Static Files** | Automatic file serving | [Features](FEATURES.md#static-file-serving) |
 | **404 Page** | Custom file-backed not-found handling | [Redirects and 404](REDIRECTS_AND_404.md#custom-404-page) |
-| **Thread Pool** | Configurable concurrent workers | [Features](FEATURES.md#thread-pool) |
+| **Thread pool + async I/O** | Boost.Asio `io_context`, async accept, per-connection strand | [Features](FEATURES.md#server-io-and-thread-pool) |
 | **Languages** | Multi-language URL routing | [Translations](TRANSLATIONS.md) |
 | **Asset Merging** | CSS/JS bundling per page | [Asset Merging](ASSET_MERGING.md) |
 | **Components** | Reusable HTML includes | [HTML Injections](HTML_INJECTIONS.md) |
@@ -83,9 +83,10 @@ int main() {
 
 ## Requirements
 
-- **C++17** compatible compiler
+- **C++20** compatible compiler (GCC 10+, Clang 11+, recent MSVC)
 - **CMake** 3.10+
-- No external dependencies
+- **Boost** (1.75+): Asio + Boost.System for the HTTP server (see [Getting Started](GETTING_STARTED.md#requirements))
+- Optional: **libcurl**, **libwebp** (for email and WebP features)
 
 See [Getting Started](GETTING_STARTED.md) for detailed requirements.
 

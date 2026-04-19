@@ -60,10 +60,7 @@ Geruest::~Geruest() {
     stopWorkers();
 
 #ifdef _WIN32
-    if (server_fd != INVALID_SOCKET) closesocket(server_fd);
     WSACleanup();
-#else
-    if (server_fd >= 0) close(server_fd);
 #endif
     sendToLogger("Server closed.");
 }
@@ -283,7 +280,7 @@ void Geruest::setMaxQueueSize(size_t size) {
     if (size == 0) { sendToLoggerError("Queue size must be at least 1, setting to 1"); _maxQueueSize = 1; _configFlags.maxQueueSizeSet = true; return; }
     _maxQueueSize = size;
     _configFlags.maxQueueSizeSet = true;
-    sendToLogger("Maximum queue size set to: " + std::to_string(_maxQueueSize));
+    sendToLogger("Maximum concurrent sessions set to: " + std::to_string(_maxQueueSize));
 }
 
 // ========== Basic Authentication ==========

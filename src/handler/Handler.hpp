@@ -4,31 +4,17 @@
  *
  * @author Urs Behrmann
  *
- * @brief
+ * @brief HTTP connection handler using Boost.Asio async I/O (C++20 coroutines).
  */
 
 #ifndef GERUEST_HANDLER_HPP
 #define GERUEST_HANDLER_HPP
 
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#ifdef _MSC_VER
-#pragma comment(lib, "ws2_32.lib")
-// Define ssize_t for MSVC
-typedef SSIZE_T ssize_t;
-#endif
-#else
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>  // For close
-#endif
+#include <boost/asio/awaitable.hpp>
+#include <boost/asio/ip/tcp.hpp>
 
-#include <cstring>  // For memset
-#include <functional>
+#include <cstdint>
+#include <cstring>
 #include <iostream>
 #include <memory>
 #include <sstream>
@@ -44,81 +30,66 @@ typedef SSIZE_T ssize_t;
 namespace geruest {
 
 class Handler {
-private:
-	static unsigned clientCount;
+   private:
+    static unsigned clientCount;
 
-#ifdef _WIN32
-	SOCKET clientSocket;
-#else
-	int clientSocket;
-#endif
+    boost::asio::ip::tcp::socket& clientSocket;
 
-	unsigned idling = 0;
+    unsigned idling = 0;
 
-	std::istringstream requestStream;
+    std::istringstream requestStream;
 
-	unsigned int messageCount = 0;
+    unsigned int messageCount = 0;
 
-	const ServerData& serverData;
+    const ServerData& serverData;
 
-	const std::string IP;
+    const std::string IP;
 
-	std::unique_ptr<char[]> buffer;
-	ssize_t bufferLength = 0;
+    std::unique_ptr<char[]> buffer;
+    std::int64_t           bufferLength = 0;
 
-	/** Unread bytes after the last fully parsed request (HTTP/1.1 pipelining / partial reads). */
-	std::string pendingRequestData;
+    /** Unread bytes after the last fully parsed request (HTTP/1.1 pipelining / partial reads). */
+    std::string pendingRequestData;
 
-	bool readSocket() { return readSocket(buffer.get(), BUFFER_SIZE); }
+    boost::asio::awaitable<bool> readSocketAsync();
+    boost::asio::awaitable<bool> readSocketAsync(char* bufferToUse, size_t size);
 
-	bool readSocket(char *bufferToUse, size_t size);
+    boost::asio::awaitable<bool> discardFromSocketAsync(size_t byteCount);
 
-	/** Discard exactly byteCount bytes from the socket (e.g. oversized or unread body). */
-	bool discardFromSocket(size_t byteCount);
+    boost::asio::awaitable<bool> sendSocketAsync(const char* bufferToSend, size_t size);
 
-	bool sendSocket(const char *bufferToSend, size_t size) const;
+    void sendToLogger(const std::string& message, LogLevel level = LogLevel::Info) const;
 
-	void sendToLogger(const std::string &message, LogLevel level = LogLevel::Info) const;
+    void sendToLoggerPages(const std::string& message) const;
 
-	void sendToLoggerPages(const std::string &message) const;
+    void sendToLoggerAPI(const std::string& message) const;
 
-	void sendToLoggerAPI(const std::string &message) const;
+    void sendToLoggerUser(const std::string& message) const;
 
-	void sendToLoggerUser(const std::string &message) const;
+    void sendToLoggerError(const std::string& message) const;
 
-	void sendToLoggerError(const std::string &message) const;
+    boost::asio::awaitable<void> handleRequestAsync(HTTPRequest* request);
 
-	void handleRequest(HTTPRequest *request);
+    boost::asio::awaitable<void> sendFileAsync(const std::string& contentType, const std::string& contentPath,
+                                               HTTPRequest* httpRequest);
 
-	void sendFile(const std::string &contentType, const std::string &contentPath,
-					  HTTPRequest* httpRequest) const;
+    boost::asio::awaitable<void> sendResponseAsync(const std::string& status, const std::string& contentType,
+                                                   const std::string& content);
 
-	void sendResponse(const std::string &status, const std::string &contentType,
-							const std::string &content) const;
+    boost::asio::awaitable<void> sendNotFoundResponseAsync(HTTPRequest* httpRequest);
 
-	void sendNotFoundResponse(HTTPRequest* httpRequest) const;
+    std::string getExtension(const std::string& path) const;
 
+    std::string buildPath(std::string& pathReceived, const std::string& Extension, HTTPRequest* httpRequest) const;
 
-	std::string getExtension(const std::string &path) const;
+    static std::string getContentType(const std::string& extension);
 
-	void removeSearchParameters();
+   public:
+    Handler(boost::asio::ip::tcp::socket& socket, std::string clientIP, const ServerData& serverDataRef);
 
-	std::string buildPath(std::string &pathReceived, const std::string &Extension,
-	HTTPRequest* httpRequest) const;
+    ~Handler();
 
-	static std::string getContentType(const std::string &extension);
-
-public:
-
-#ifdef _WIN32
-	Handler(SOCKET socket, std::string clientIP, const ServerData& serverDataRef);
-#else
-	Handler(int socket, std::string clientIP, const ServerData& serverDataRef);
-#endif
-
-	~Handler();
-
-	void run();
+    boost::asio::awaitable<void> runAsync();
 };
 
 }  // namespace geruest

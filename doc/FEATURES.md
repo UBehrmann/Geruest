@@ -16,6 +16,16 @@
 | **JSON Parsing** | String-based JSON handling | `JSONParser` |
 | **WebP Conversion** | Auto-convert images to WebP | `WebPConverter` |
 | **Configuration** | `.env` and environment config | `ConfigLoader` |
+| **Async HTTP I/O** | Boost.Asio, C++20 coroutines in the handler | `Geruest::start()` / internal `HttpSession` |
+
+## Server I/O and thread pool
+
+The HTTP server is built on **Boost.Asio**:
+
+- A shared **`boost::asio::io_context`** drives the event loop.
+- **`WORKER_THREADS`** (or `setWorkerThreadCount`) is the number of threads calling `io_context::run()` (default: hardware concurrency × 2). The thread that calls `start()` also runs the `io_context` until `stop()`.
+- New connections are accepted with **`async_accept`**. Each client gets an **`HttpSession`** (`shared_ptr`, `co_spawn` on a **per-connection strand**) that runs **`Handler::runAsync()`** — non-blocking reads/writes with **`co_await`** on the TCP socket.
+- **`MAX_QUEUE_SIZE`** / `setMaxQueueSize` sets the **maximum number of concurrent client sessions** (in-flight HTTP connections), not a backlog queue of pending file descriptors. When the limit is reached, new TCP accepts are **closed immediately** and counted as **queue rejections** in `/status`.
 
 ## Routing
 
@@ -224,4 +234,4 @@ server.addRoute("/api/*", [](const HTTPRequest& req) {
 - **Static Files**: Bypass routing entirely for better performance
 - **Asset Merging**: Reduces HTTP requests dramatically
 - **WebP**: Smaller image sizes, faster loading
-- **Threading**: One thread per connection, handles concurrency automatically
+- **Threading**: Tune `setWorkerThreadCount` / `WORKER_THREADS` for your CPU; tune `setMaxQueueSize` / `MAX_QUEUE_SIZE` for maximum simultaneous clients

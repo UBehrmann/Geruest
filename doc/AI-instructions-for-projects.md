@@ -1,7 +1,7 @@
 # Geruest Project — AI Instructions
 
-C++17 web framework. Namespace: `geruest`. Header: `<Geruest.hpp>`.
-Version: 0.7.8. Build system: CMake 3.10+. No external dependencies for core features.
+C++20 web framework. Namespace: `geruest`. Header: `<Geruest.hpp>`.
+Version: 0.7.8. Build system: CMake 3.10+. **Core HTTP server** depends on **Boost** (Asio + Boost.System, 1.75+). Optional: libcurl (email), libwebp (WebP).
 
 ## Quick Summary
 
@@ -36,7 +36,7 @@ server.setWebPConversion(true);                       // auto PNG/JPG → WebP
 server.setWebPQuality(75.0f);                         // 0-100 (default 75)
 server.enableDevMode();                               // debug logs, no cache, keep comments
 server.setWorkerThreadCount(16);                      // default: CPU cores × 2
-server.setMaxQueueSize(500);                          // connection queue limit
+server.setMaxQueueSize(500);                          // max concurrent TCP sessions (see /status `queue`)
 server.setLogLevel(LogLevel::Warning);                // None|Error|Warning|Info|Debug
 server.loadConfig(".env");                            // .env + env vars (only unset values)
 server.enableStatus("my-secret-token");               // activate /status endpoint
@@ -153,13 +153,15 @@ Response: `200 OK`, `Content-Type: application/json`, `Cache-Control: no-store`.
 }
 ```
 
+`queue.current_size` / `queue.max_size` are **active client sessions** vs **`setMaxQueueSize` / `MAX_QUEUE_SIZE`** (not a kernel listen backlog). `avg_fill_percent_*` is average **session utilization** (0–100%) sampled over time. Rejections occur when a new connection arrives at the session cap.
+
 `cgroup_memory` and `cgroup_cpu` are only present when cgroup limits are detected (Linux containers).
 
 | `health` | Condition |
 |---|---|
-| `"ok"` | queue fill < 50% and requests < 500/hour |
-| `"degraded"` | queue fill ≥ 50% **or** requests ≥ 500/hour |
-| `"overloaded"` | queue fill ≥ 80% **or** requests ≥ 1000/hour |
+| `"ok"` | session utilization below 50% (rolling) and requests below 500/hour |
+| `"degraded"` | session utilization ≥ 50% **or** requests ≥ 500/hour |
+| `"overloaded"` | session utilization ≥ 80% **or** requests ≥ 1000/hour |
 
 ---
 
@@ -347,12 +349,14 @@ website/
 **Consumer CMake:**
 ```cmake
 cmake_minimum_required(VERSION 3.17)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
+find_package(Boost 1.75 REQUIRED COMPONENTS system)
+find_package(Threads REQUIRED)
 find_package(Geruest REQUIRED)
-target_link_libraries(myapp PRIVATE Geruest::Geruest)
+target_link_libraries(myapp PRIVATE Geruest::Geruest Boost::system Threads::Threads)
 ```
 
-**Build library (Linux):** `mkdir build && cd build && cmake .. && make -j$(nproc) && make install`
+**Build library (Linux):** `sudo apt-get install -y libboost-system-dev` then `mkdir build && cd build && cmake .. && make -j$(nproc) && make install`
 
 **Optional deps:** Email → `apt install libcurl4-openssl-dev` / `vcpkg install curl` | WebP → `apt install libwebp-dev` / `vcpkg install libwebp`
 

@@ -2,7 +2,7 @@
 
 ## Setup
 
-**Prerequisites:** C++17 compiler (GCC 7+, Clang 5+, MSVC 2017+), CMake 3.10+, Git
+**Prerequisites:** C++20 compiler (GCC 10+, Clang 11+, MSVC with `/std:c++20`), CMake 3.10+, Git, **Boost** (`libboost-system-dev` on Debian/Ubuntu, or MSYS2 `mingw-w64-*-boost`, or vcpkg `boost-system`)
 
 ```bash
 git clone https://github.com/YOUR_USERNAME/Geruest.git && cd Geruest

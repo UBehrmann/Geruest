@@ -293,7 +293,7 @@ void Geruest::enableStatus(const std::string& token) {
         const uint64_t rejTotal = serverData.getQueueRejections();
         const int64_t  active   = serverData.getActiveHandlers();
         const ServerData::LatencyStats lat = serverData.getLatencyStats(60);
-        const uint64_t curQueue = static_cast<uint64_t>(_queueSize.load(std::memory_order_relaxed));
+        const uint64_t curQueue = static_cast<uint64_t>(_activeSessions.load(std::memory_order_relaxed));
 
         std::string health = "ok";
         if (wmHour.avg_queue_fill >= 80.0 || wmHour.requests >= 1000) {

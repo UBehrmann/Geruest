@@ -97,7 +97,7 @@ void Geruest::loadConfig(const std::string& envFilePath) {
         size_t configQueueSize = ConfigLoader::getSizeT("MAX_QUEUE_SIZE", _maxQueueSize);
         if (configQueueSize > 0 && configQueueSize != _maxQueueSize) {
             _maxQueueSize = configQueueSize;
-            sendToLogger("MAX_QUEUE_SIZE loaded from config: " + std::to_string(_maxQueueSize));
+            sendToLogger("MAX_QUEUE_SIZE (max concurrent sessions) loaded from config: " + std::to_string(_maxQueueSize));
         }
     }
     

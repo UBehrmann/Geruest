@@ -28,7 +28,8 @@ unitTests/
 
 ### Prerequisites
 - CMake 3.28 or higher
-- C++17 compatible compiler (MSVC, MinGW, GCC, Clang)
+- C++20 compatible compiler (MSVC, MinGW, GCC, Clang)
+- **Boost** (system component) for the server lifecycle tests
 - Platform-specific dependencies:
   - Windows: `ws2_32` library
   - Linux: `pthread` library

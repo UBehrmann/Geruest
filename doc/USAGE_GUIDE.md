@@ -124,8 +124,8 @@ nssm start AppName
 ```cpp
 server.setPort(8080);                         // Default: 8080
 server.setHostname("0.0.0.0");                // Listen all interfaces
-server.setWorkerThreadCount(16);              // Default: cores × 2
-server.setMaxQueueSize(1000);                 // Default: 500
+server.setWorkerThreadCount(16);              // Default: cores × 2 (io_context worker threads)
+server.setMaxQueueSize(1000);                 // Default: 500 (max concurrent client sessions)
 server.setAvailableLanguages({"en", "de"});   // First is default
 server.setMergeAssets(true);
 server.addRoot("/path/to/website");
@@ -135,7 +135,7 @@ const char* port = std::getenv("PORT");
 server.setPort(port ? std::atoi(port) : 8080);
 ```
 
-**Threading Profiles:** General (cores×2, queue 500) | High-traffic (32, 2000) | Low-resource (4, 100)
+**Threading profiles:** General (cores×2, max 500 sessions) | High-traffic (32 threads, 2000 sessions) | Low-resource (4 threads, 100 sessions)
 
 ## Platform Notes
 

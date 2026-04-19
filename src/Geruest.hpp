@@ -22,12 +22,14 @@
 #include <unistd.h>  // For close
 #endif
 
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/ip/tcp.hpp>
+
 #include <atomic>
-#include <condition_variable>
 #include <cstring>  // For memset
 #include <functional>
-#include <mutex>
-#include <queue>
+#include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -36,7 +38,6 @@
 #include "data/HTTPRequest.hpp"
 #include "data/HTTPResponse.hpp"
 #include "data/ServerData.hpp"
-#include "handler/Handler.hpp"
 #include "parser/JSONParser.hpp"
 #include "config/ConfigLoader.hpp"
 #if GERUEST_HAS_CURL
@@ -52,7 +53,11 @@
 
 namespace geruest {
 
+class HttpSession;
+
 class Geruest {
+    friend class HttpSession;
+
    public:
     Geruest();
     ~Geruest();
@@ -242,7 +247,7 @@ class Geruest {
      * - DEV_MODE (bool): Enable development mode (default: false)
      * - MERGE_ASSETS (bool): Enable asset merging (default: false)
      * - WORKER_THREADS (size_t): Number of worker threads (default: CPU cores * 2)
-     * - MAX_QUEUE_SIZE (size_t): Maximum connection queue size (default: 500)
+     * - MAX_QUEUE_SIZE (size_t): Maximum concurrent client sessions (default: 500)
      * - LOG_LEVEL (string): Log level: "none", "error", "warning", "info", "debug" (default: "error")
      * - OBFUSCATE_PRESERVE (string): Comma-separated identifiers to never rename
      * - OBFUSCATE_EXTERNS (string): Comma-separated global names (host-provided)
@@ -330,8 +335,9 @@ class Geruest {
     void setWorkerThreadCount(size_t count);
 
     /**
-     * @brief Sets the maximum size of the connection queue.
-     * @param size Maximum number of pending connections (default: 500)
+     * @brief Sets the maximum number of concurrent client connections (connection slots).
+     * @param size Cap on simultaneous sessions being served (default: 500). Additional
+     *        TCP accepts are closed immediately and counted as queue rejections in /status.
      * @note Must be called before init() or start()
      */
     void setMaxQueueSize(size_t size);
@@ -509,7 +515,7 @@ class Geruest {
      * - uptime_hours_total: cumulative uptime in hours across restarts (persisted)
      * - requests.total / last_hour / avg_per_hour / active
      * - errors.total / client_4xx / server_5xx / internal (+ last_hour/avg_per_hour breakdown)
-     * - queue.current_size / max_size / rejections_total / avg_fill_percent_hour / avg_fill_percent_per_hour
+     * - queue.current_size (active sessions) / max_size / rejections_total / avg_fill_percent_hour / avg_fill_percent_per_hour
      * - latency_ms.p50 / p95 / p99 (milliseconds, last 60 seconds)
      * - system.memory.total_mb / used_mb / free_mb / percent_used (host memory)
      * - system.cpu.count (logical CPU cores)
@@ -539,13 +545,11 @@ class Geruest {
     const std::string& getStatusPersistencePath() const { return _statusPersistencePath; }
 
    private:
-#ifdef _WIN32
-    SOCKET server_fd = INVALID_SOCKET;  // Socket descriptor for the server
-#else
-    int server_fd = -1;  // Socket descriptor for the server
-#endif
+    boost::asio::io_context                         io_ctx_;
+    std::optional<boost::asio::ip::tcp::acceptor> acceptor_;
+    std::optional<boost::asio::executor_work_guard<boost::asio::io_context::executor_type>> work_guard_;
 
-    struct sockaddr_in address{};
+    std::atomic<size_t> _activeSessions{0};
 
     std::atomic<bool> running{false};
 
@@ -588,47 +592,32 @@ class Geruest {
 #endif
     } _configFlags;
 
-    // Thread pool components
+    // Thread pool: each thread runs io_ctx_.run()
     std::vector<std::thread> _workerThreads;
-    std::queue<std::pair<
-#ifdef _WIN32
-        SOCKET,
-#else
-        int,
-#endif
-        std::string>>
-        _connectionQueue;
-    std::mutex _queueMutex;
-    std::condition_variable _queueCV;
     std::atomic<bool> _workersRunning{false};
-    std::atomic<size_t> _queueSize{0};  // mirror of _connectionQueue.size() for lock-free status reporting
 
     void sendToLogger(const std::string& message) const;
 
     void sendToLoggerError(const std::string& message) const;
 
-    /**
-     * @brief Worker thread function that processes connections from the queue.
-     */
-    void workerThread();
+    void doAccept();
+
+    /** Decrement active session count and refresh queue fill metrics (Option A). */
+    void releaseSessionSlot();
 
     /**
-     * @brief Starts the worker thread pool.
+     * @brief Starts io_context worker threads and posts the accept loop.
      */
     void startWorkers();
 
     /**
-     * @brief Stops the worker thread pool and waits for all threads to finish.
+     * @brief Stops acceptor and io_context and joins worker threads.
      */
     void stopWorkers();
 
     void statusPersistenceLoop();
 
-#ifdef _WIN32
-    void giveToHandler(SOCKET new_socket, std::string& IP);
-#else
-    void giveToHandler(int new_socket, std::string& IP);
-#endif
+    void workerRunLoop();
 };
 
 }  // namespace geruest

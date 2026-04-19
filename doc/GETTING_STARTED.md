@@ -2,6 +2,17 @@
 
 Quick installation and first server setup for Geruest C++ web framework.
 
+## Requirements
+
+- **C++20** compiler (GCC 10+, Clang 11+, MSVC with C++20)
+- **CMake** 3.10 or newer (3.17+ recommended for `find_package` CONFIG patterns)
+- **Boost** 1.75+ with **Boost.System** (Asio uses it unless you build against header-only Boost as in the library’s FetchContent path). Examples:
+  - Debian/Ubuntu: `sudo apt-get install libboost-system-dev`
+  - Fedora: `sudo dnf install boost-devel`
+  - MSYS2: `pacman -S mingw-w64-x86_64-boost`
+  - vcpkg: `vcpkg install boost-system`
+- Optional: **libcurl** (email), **libwebp** (image conversion) — see main README
+
 ## Installation
 
 ### Linux
@@ -23,6 +34,9 @@ setup_scripts\windows_setup.bat
 
 **Linux/Unix:**
 ```bash
+# Install Boost (Debian/Ubuntu example) if not already present
+sudo apt-get install -y libboost-system-dev
+
 mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc)
@@ -66,11 +80,13 @@ int main() {
 ```cmake
 cmake_minimum_required(VERSION 3.17)
 project(MyServer)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 
+find_package(Boost 1.75 REQUIRED COMPONENTS system)
+find_package(Threads REQUIRED)
 find_package(Geruest REQUIRED)
 add_executable(myserver main.cpp)
-target_link_libraries(myserver PRIVATE Geruest::Geruest)
+target_link_libraries(myserver PRIVATE Geruest::Geruest Boost::system Threads::Threads)
 ```
 
 **Build & Run:**

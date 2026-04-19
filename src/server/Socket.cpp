@@ -4,21 +4,15 @@
  *
  * @author Urs Behrmann
  *
- * @brief Socket setup and main accept loop (init, start, stop, isRunning).
+ * @brief Boost.Asio acceptor, init/start/stop, and /status persistence loop.
  */
 
 #include "../Geruest.hpp"
+#include "HttpSession.hpp"
 
+#include <boost/asio.hpp>
 #include <chrono>
 #include <thread>
-
-#ifdef _WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#else
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#endif
 
 namespace geruest {
 
@@ -37,99 +31,91 @@ void Geruest::statusPersistenceLoop() {
 }
 
 int Geruest::getListenPort() const {
-#ifdef _WIN32
-    if (server_fd == INVALID_SOCKET) {
+    if (!acceptor_.has_value() || !acceptor_->is_open()) {
         return -1;
     }
-    sockaddr_in sa{};
-    int len = static_cast<int>(sizeof(sa));
-    if (getsockname(server_fd, reinterpret_cast<struct sockaddr*>(&sa), &len) != 0) {
+    boost::system::error_code ec;
+    const auto                ep = acceptor_->local_endpoint(ec);
+    if (ec) {
         return -1;
     }
-    return static_cast<int>(ntohs(sa.sin_port));
-#else
-    if (server_fd < 0) {
-        return -1;
-    }
-    sockaddr_in sa{};
-    socklen_t len = sizeof(sa);
-    if (getsockname(server_fd, reinterpret_cast<struct sockaddr*>(&sa), &len) != 0) {
-        return -1;
-    }
-    return static_cast<int>(ntohs(sa.sin_port));
-#endif
+    return static_cast<int>(ep.port());
 }
 
 void Geruest::init() {
-    this->server_fd = socket(AF_INET, SOCK_STREAM, 0);
-#ifdef _WIN32
-    if (this->server_fd == INVALID_SOCKET) {
-        sendToLoggerError("Socket creation failed: " + std::to_string(WSAGetLastError()));
-#else
-    if (this->server_fd < 0) {
-        sendToLoggerError("Socket creation failed");
-#endif
+    using boost::asio::ip::tcp;
+
+    boost::system::error_code ec;
+
+    acceptor_.emplace(io_ctx_, tcp::endpoint(tcp::v4(), static_cast<unsigned short>(port)));
+    acceptor_->set_option(boost::asio::socket_base::reuse_address(true), ec);
+
+    acceptor_->listen(boost::asio::socket_base::max_listen_connections, ec);
+    if (ec) {
+        sendToLoggerError("Listen failed: " + ec.message());
         exit(EXIT_FAILURE);
     }
 
-    this->address.sin_family      = AF_INET;
-    this->address.sin_addr.s_addr = INADDR_ANY;
-    this->address.sin_port        = htons(static_cast<unsigned short>(port));
+    const int boundPort = getListenPort();
+    sendToLogger("Server started on port " + std::to_string(boundPort >= 0 ? boundPort : port));
+}
 
-    if (bind(this->server_fd, reinterpret_cast<struct sockaddr*>(&this->address), sizeof(this->address)) < 0) {
-#ifdef _WIN32
-        sendToLoggerError("Bind failed: " + std::to_string(WSAGetLastError()));
-#else
-        sendToLoggerError("Bind failed");
-#endif
-        exit(EXIT_FAILURE);
+void Geruest::doAccept() {
+    if (!running.load(std::memory_order_relaxed) || !acceptor_.has_value() || !acceptor_->is_open()) {
+        return;
     }
 
-    if (listen(this->server_fd, 3) < 0) {
-#ifdef _WIN32
-        sendToLoggerError("Listen failed: " + std::to_string(WSAGetLastError()));
-#else
-        sendToLoggerError("Listen failed");
-#endif
-        exit(EXIT_FAILURE);
+    acceptor_->async_accept([this](const boost::system::error_code& ec, boost::asio::ip::tcp::socket socket) {
+        if (!running.load(std::memory_order_relaxed)) {
+            return;
+        }
+        if (ec) {
+            if (ec != boost::asio::error::operation_aborted) {
+                sendToLoggerError("Accept failed: " + ec.message());
+            }
+            return;
+        }
+
+        std::string ip = "unknown";
+        try {
+            ip = socket.remote_endpoint().address().to_string();
+        } catch (...) {}
+
+        const size_t cap  = _maxQueueSize;
+        const size_t prev = _activeSessions.fetch_add(1U, std::memory_order_acq_rel);
+        if (prev >= cap) {
+            _activeSessions.fetch_sub(1U, std::memory_order_acq_rel);
+            serverData.recordQueueRejection();
+            serverData.recordQueueFill(100.0f);
+            boost::system::error_code close_ec;
+            socket.close(close_ec);
+            if (running.load(std::memory_order_relaxed)) {
+                doAccept();
+            }
+            return;
+        }
+
+        if (_maxQueueSize > 0) {
+            const float fill =
+                100.0f * static_cast<float>(prev + 1U) / static_cast<float>(_maxQueueSize);
+            serverData.recordQueueFill(fill > 100.0f ? 100.0f : (fill < 0.0f ? 0.0f : fill));
+        }
+
+        std::make_shared<HttpSession>(*this, std::move(socket), std::move(ip))->start();
+
+        if (running.load(std::memory_order_relaxed)) {
+            doAccept();
+        }
+    });
+}
+
+void Geruest::releaseSessionSlot() {
+    const size_t prev = _activeSessions.fetch_sub(1U, std::memory_order_acq_rel);
+    const size_t now  = prev > 0U ? prev - 1U : 0U;
+    if (_maxQueueSize > 0) {
+        const float fill = 100.0f * static_cast<float>(now) / static_cast<float>(_maxQueueSize);
+        serverData.recordQueueFill(fill > 100.0f ? 100.0f : (fill < 0.0f ? 0.0f : fill));
     }
-
-#ifdef _WIN32
-    DWORD timeout = TIMEOUT_SEC * 1000;
-    if (setsockopt(server_fd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout)) == SOCKET_ERROR) {
-        sendToLoggerError("Failed to set receive timeout: " + std::to_string(WSAGetLastError()));
-#else
-    struct timeval timeout;
-    timeout.tv_sec  = TIMEOUT_SEC;
-    timeout.tv_usec = TIMEOUT_USEC;
-    if (setsockopt(server_fd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout)) < 0) {
-        sendToLoggerError("Failed to set receive timeout");
-#endif
-        exit(EXIT_FAILURE);
-    }
-
-    int send_buffer_size    = BUFFER_SIZE;
-    int receive_buffer_size = BUFFER_SIZE;
-
-    if (setsockopt(server_fd, SOL_SOCKET, SO_SNDBUF, reinterpret_cast<const char*>(&send_buffer_size), sizeof(send_buffer_size)) < 0) {
-#ifdef _WIN32
-        sendToLoggerError("Failed to set send buffer size: " + std::to_string(WSAGetLastError()));
-#else
-        sendToLoggerError("Failed to set send buffer size");
-#endif
-        exit(EXIT_FAILURE);
-    }
-
-    if (setsockopt(server_fd, SOL_SOCKET, SO_RCVBUF, reinterpret_cast<const char*>(&receive_buffer_size), sizeof(receive_buffer_size)) < 0) {
-#ifdef _WIN32
-        sendToLoggerError("Failed to set receive buffer size: " + std::to_string(WSAGetLastError()));
-#else
-        sendToLoggerError("Failed to set receive buffer size");
-#endif
-        exit(EXIT_FAILURE);
-    }
-
-    sendToLogger("Server started on port " + std::to_string(port));
 }
 
 void Geruest::start() {
@@ -137,10 +123,8 @@ void Geruest::start() {
         sendToLoggerError("Status metrics persistence: invalid or unsupported file " + _statusPersistencePath);
     }
 
-    int addrlen = sizeof(this->address);
-
-    startWorkers();
     running.store(true, std::memory_order_relaxed);
+    startWorkers();
     try {
         _statusPersistenceThread = std::thread(&Geruest::statusPersistenceLoop, this);
     } catch (...) {
@@ -151,68 +135,9 @@ void Geruest::start() {
 
     sendToLogger("Waiting for connections...");
     sendToLogger("Worker threads: " + std::to_string(_workerThreadCount) +
-                 ", Max queue size: " + std::to_string(_maxQueueSize));
+                 ", Max concurrent sessions: " + std::to_string(_maxQueueSize));
 
-    while (running.load(std::memory_order_relaxed)) {
-        try {
-#ifdef _WIN32
-            SOCKET new_socket = accept(this->server_fd, reinterpret_cast<struct sockaddr*>(&this->address), &addrlen);
-            if (new_socket == INVALID_SOCKET) {
-                int error = WSAGetLastError();
-                if (error == WSAEWOULDBLOCK || error == WSAETIMEDOUT) {
-#else
-            int new_socket = accept(this->server_fd, reinterpret_cast<struct sockaddr*>(&this->address), reinterpret_cast<socklen_t*>(&addrlen));
-            if (new_socket < 0) {
-                if (errno == EWOULDBLOCK || errno == EAGAIN) {
-#endif
-                    continue;
-                } else {
-#ifdef _WIN32
-                    sendToLoggerError("Accept failed: " + std::to_string(error));
-#else
-                    sendToLoggerError("Accept failed");
-#endif
-                    continue;
-                }
-            }
-
-            char client_ip[INET_ADDRSTRLEN];
-#ifdef _WIN32
-            strcpy(client_ip, inet_ntoa(address.sin_addr));
-#else
-            inet_ntop(AF_INET, &address.sin_addr, client_ip, INET_ADDRSTRLEN);
-#endif
-            std::string client_ip_str(client_ip);
-
-            {
-                std::lock_guard<std::mutex> lock(_queueMutex);
-                if (_connectionQueue.size() >= _maxQueueSize) {
-                    serverData.recordQueueRejection();
-                    serverData.recordQueueFill(100.0f);
-                    sendToLoggerError("Connection queue full (" + std::to_string(_maxQueueSize) +
-                                      "), rejecting connection from " + client_ip_str);
-#ifdef _WIN32
-                    closesocket(new_socket);
-#else
-                    close(new_socket);
-#endif
-                    continue;
-                }
-                _connectionQueue.push({new_socket, client_ip_str});
-                _queueSize.fetch_add(1, std::memory_order_relaxed);
-                if (_maxQueueSize > 0) {
-                    const float fill = 100.0f * static_cast<float>(_queueSize.load(std::memory_order_relaxed)) /
-                                       static_cast<float>(_maxQueueSize);
-                    serverData.recordQueueFill(fill > 100.0f ? 100.0f : (fill < 0.0f ? 0.0f : fill));
-                }
-            }
-            _queueCV.notify_one();
-
-        } catch (const std::exception& e) {
-            sendToLoggerError(std::string("Exception in server loop: ") + e.what());
-            continue;
-        }
-    }
+    io_ctx_.run();
 
     stopWorkers();
     if (_statusPersistenceThread.joinable()) {
@@ -227,6 +152,13 @@ void Geruest::start() {
 void Geruest::stop() {
     sendToLogger("Stopping server at next opportunity.");
     running.store(false, std::memory_order_relaxed);
+
+    boost::system::error_code ec;
+    if (acceptor_.has_value() && acceptor_->is_open()) {
+        acceptor_->close(ec);
+    }
+    work_guard_.reset();
+    io_ctx_.stop();
 }
 
 bool Geruest::isRunning() { return running.load(std::memory_order_relaxed); }

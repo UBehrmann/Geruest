@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.28)
 project(Geruest_Unit_Tests VERSION 0.6.2)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Windows-specific: Prevent min/max macros that conflict with std::min/std::max
@@ -46,13 +46,15 @@ else()
     add_compile_definitions(GERUEST_HAS_CURL=0)
 endif()
 
+find_package(Boost 1.75 REQUIRED COMPONENTS system)
+
 # Platform-specific settings
 if(WIN32)
     # Windows-specific libraries
-    set(PLATFORM_LIBS ws2_32)
+    set(PLATFORM_LIBS ws2_32 Boost::system)
 else()
     # Linux-specific libraries
-    set(PLATFORM_LIBS pthread)
+    set(PLATFORM_LIBS pthread Boost::system)
 endif()
 
 # Collect all source files from the main Geruest library
@@ -61,6 +63,7 @@ set(GERUEST_SOURCES
     ../server/Config.cpp
     ../server/Socket.cpp
     ../server/Workers.cpp
+    ../server/HttpSession.cpp
     ../server/Status.cpp
     ../auth/BasicAuth.cpp
     ../config/ConfigLoader.cpp

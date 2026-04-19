@@ -10,6 +10,10 @@
 #include "Handler.hpp"
 
 #include <algorithm>
+#include <boost/asio/buffer.hpp>
+#include <boost/asio/read.hpp>
+#include <boost/asio/use_awaitable.hpp>
+#include <boost/asio/write.hpp>
 #include <chrono>
 #include <climits>
 #include <cstddef>
@@ -17,7 +21,9 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <string>
+#include <vector>
 
 #include "builders/AssetMerger.hpp"
 #include "builders/CSSBuilder.hpp"
@@ -69,104 +75,68 @@ bool parseContentLengthBytes(const geruest::HTTPRequest& req, size_t* out) {
 
 namespace geruest {
 
-#ifdef _WIN32
-Handler::Handler(SOCKET socket, std::string clientIP, const ServerData& serverDataRef)
-#else
-Handler::Handler(int socket, std::string clientIP, const ServerData& serverDataRef)
-#endif
+unsigned Handler::clientCount = 0;
+
+Handler::Handler(boost::asio::ip::tcp::socket& socket, std::string clientIP, const ServerData& serverDataRef)
     : clientSocket(socket), serverData(serverDataRef), IP(std::move(clientIP)), buffer(std::make_unique<char[]>(BUFFER_SIZE)) {
     serverData.incrementActiveHandlers();
 }
 
 Handler::~Handler() {
     serverData.decrementActiveHandlers();
-#ifdef _WIN32
-    closesocket(clientSocket);
-#else
-    close(clientSocket);
-#endif
-
-    //    logger.log("Client socket closed.");
 }
 
-bool Handler::readSocket(char* bufferToUse, size_t size) {
-    // test if size is bigger than int
+boost::asio::awaitable<bool> Handler::readSocketAsync(char* bufferToUse, size_t size) {
     if (size > INT_MAX) {
         sendToLoggerError("Size of buffer is too big.");
-        return false;
+        co_return false;
     }
 
-#ifdef _WIN32
-    bufferLength = recv(clientSocket, bufferToUse, static_cast<int>(size), 0);
-#else
-    bufferLength = read(clientSocket, bufferToUse, size);
-#endif
+    try {
+        const std::size_t n = co_await clientSocket.async_read_some(
+            boost::asio::buffer(bufferToUse, size), boost::asio::use_awaitable);
+        bufferLength = static_cast<std::int64_t>(n);
+    } catch (const boost::system::system_error&) {
+        sendToLogger("Error reading from socket.", LogLevel::Warning);
+        co_return false;
+    }
 
     if (bufferLength == 0) {
-        // sendToLogger("Client disconnected.");
-    } else if (bufferLength < 0) {
-        // Check if the error is due to timeout
-#ifdef _WIN32
-        int error = WSAGetLastError();
-        if (error == WSAEWOULDBLOCK || error == WSAETIMEDOUT) {
-#else
-        if (errno == EWOULDBLOCK || errno == EAGAIN) {
-#endif
-            sendToLogger("Timeout for receiving data.", LogLevel::Warning);
-            idling++;
-            if (idling > 2) {
-                std::cout << "Client is idling too long. Closing connection." << std::endl;
-            }
-        }
-        sendToLogger("Error reading from socket.", LogLevel::Warning);
-    } else {
-        return true;
+        co_return false;
     }
-
-    return false;
+    co_return true;
 }
 
-bool Handler::discardFromSocket(size_t byteCount) {
+boost::asio::awaitable<bool> Handler::readSocketAsync() { co_return co_await readSocketAsync(buffer.get(), BUFFER_SIZE); }
+
+boost::asio::awaitable<bool> Handler::discardFromSocketAsync(size_t byteCount) {
     while (byteCount > 0) {
         const size_t chunk = std::min(byteCount, static_cast<size_t>(BUFFER_SIZE));
-        if (!readSocket(buffer.get(), chunk)) {
-            return false;
+        if (!co_await readSocketAsync(buffer.get(), chunk)) {
+            co_return false;
         }
         if (bufferLength <= 0) {
-            return false;
+            co_return false;
         }
         const size_t got = static_cast<size_t>(bufferLength);
         byteCount -= got;
     }
-    return true;
+    co_return true;
 }
 
-bool Handler::sendSocket(const char* bufferToSend, size_t size) const {
-    char bufferToSocket[BUFFER_SIZE];
-
+boost::asio::awaitable<bool> Handler::sendSocketAsync(const char* bufferToSend, size_t size) {
     size_t startPos = 0;
-    size_t dataSize = size;
-
-    while (startPos < dataSize) {
-        size_t chunkSize = std::min(static_cast<size_t>(BUFFER_SIZE), dataSize - startPos);
-        std::memcpy(bufferToSocket, bufferToSend + startPos, chunkSize);
-        
-        ssize_t bytesSent;
-#ifdef _WIN32
-        bytesSent = send(clientSocket, bufferToSocket, static_cast<int>(chunkSize), 0);
-#else
-        bytesSent = write(clientSocket, bufferToSocket, chunkSize);
-#endif
-        
-        if (bytesSent < 0) {
-            // Error sending data
-            return false;
+    while (startPos < size) {
+        const size_t chunkSize = std::min(static_cast<size_t>(BUFFER_SIZE), size - startPos);
+        try {
+            co_await boost::asio::async_write(clientSocket, boost::asio::buffer(bufferToSend + startPos, chunkSize),
+                                              boost::asio::use_awaitable);
+        } catch (const boost::system::system_error&) {
+            co_return false;
         }
-        
         startPos += chunkSize;
     }
-
-    return true;
+    co_return true;
 }
 
 void Handler::sendToLogger(const std::string& message, LogLevel level) const {
@@ -195,7 +165,7 @@ void Handler::sendToLoggerError(const std::string& message) const {
     }
 }
 
-void Handler::run() {
+boost::asio::awaitable<void> Handler::runAsync() {
     if (!buffer) {
         buffer = std::make_unique<char[]>(BUFFER_SIZE);
     }
@@ -205,7 +175,7 @@ void Handler::run() {
         pendingRequestData.clear();
 
         if (raw.empty()) {
-            if (!readSocket()) {
+            if (!co_await readSocketAsync()) {
                 break;
             }
             if (bufferLength <= 0) {
@@ -218,14 +188,14 @@ void Handler::run() {
         while (findHeaderEndPos(raw) == std::string::npos) {
             if (raw.size() >= kMaxHttpHeaderBytes) {
                 sendToLoggerError("HTTP headers exceed maximum size.");
-                return;
+                co_return;
             }
-            if (!readSocket()) {
-                return;
+            if (!co_await readSocketAsync()) {
+                co_return;
             }
             if (bufferLength <= 0) {
                 sendToLoggerError("Invalid buffer length while reading headers.");
-                return;
+                co_return;
             }
             raw.append(buffer.get(), static_cast<size_t>(bufferLength));
         }
@@ -238,8 +208,8 @@ void Handler::run() {
             HTTPRequest headOnly(raw.substr(0, headerEnd), IP, serverData.getRoot());
             if (headOnly.hasHeader("expect") && httpExpectIs100Continue(headOnly.getHeader("expect"))) {
                 static const char k100[] = "HTTP/1.1 100 Continue\r\n\r\n";
-                if (!sendSocket(k100, sizeof(k100) - 1)) {
-                    return;
+                if (!co_await sendSocketAsync(k100, sizeof(k100) - 1)) {
+                    co_return;
                 }
             }
         }
@@ -252,8 +222,8 @@ void Handler::run() {
                 if (!parseContentLengthBytes(probe, &bodyExpected)) {
                     HTTPResponse br = responseBadRequest(&probe);
                     const std::string s = br.toString();
-                    sendSocket(s.c_str(), s.size());
-                    return;
+                    co_await sendSocketAsync(s.c_str(), s.size());
+                    co_return;
                 }
                 hasCL = true;
             }
@@ -263,21 +233,21 @@ void Handler::run() {
             HTTPRequest probe(raw, IP, serverData.getRoot());
             HTTPResponse br = responseBadRequest(&probe);
             const std::string s = br.toString();
-            sendSocket(s.c_str(), s.size());
+            co_await sendSocketAsync(s.c_str(), s.size());
             const size_t already = raw.size() > headerEnd ? raw.size() - headerEnd : 0;
             const size_t remain = bodyExpected > already ? bodyExpected - already : 0;
-            static_cast<void>(discardFromSocket(remain));
-            return;
+            static_cast<void>(co_await discardFromSocketAsync(remain));
+            co_return;
         }
 
         const size_t needTotal = headerEnd + (hasCL ? bodyExpected : 0);
         while (raw.size() < needTotal) {
-            if (!readSocket()) {
-                return;
+            if (!co_await readSocketAsync()) {
+                co_return;
             }
             if (bufferLength <= 0) {
                 sendToLoggerError("Invalid buffer length when reading body.");
-                return;
+                co_return;
             }
             raw.append(buffer.get(), static_cast<size_t>(bufferLength));
         }
@@ -293,28 +263,29 @@ void Handler::run() {
         serverData.recordRequest();
         {
             const auto _reqStart = std::chrono::steady_clock::now();
-            handleRequest(&hTTPRequest);
+            co_await handleRequestAsync(&hTTPRequest);
             const auto _elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::steady_clock::now() - _reqStart).count();
-            serverData.recordLatency(
-                _elapsedUs <= 0 ? 0u
-                : _elapsedUs > 0xFFFFFFFFLL ? 0xFFFFFFFFu
-                : static_cast<uint32_t>(_elapsedUs));
+                                            std::chrono::steady_clock::now() - _reqStart)
+                                        .count();
+            serverData.recordLatency(_elapsedUs <= 0 ? 0u
+                                     : _elapsedUs > 0xFFFFFFFFLL ? 0xFFFFFFFFu
+                                                                 : static_cast<uint32_t>(_elapsedUs));
         }
 
         memset(buffer.get(), 0, BUFFER_SIZE);
     }
+    co_return;
 }
 
-void Handler::handleRequest(HTTPRequest* request) {
+boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
     if (request == nullptr) {
         serverData.recordError();
         sendToLoggerError("HTTPRequest is null.");
         std::string header = buildInternalServerErrorHeader();
-        if (!sendSocket(header.c_str(), header.size())) {
+        if (!co_await sendSocketAsync(header.c_str(), header.size())) {
             sendToLoggerError("Failed to send internal server error response");
         }
-        return;
+        co_return;
     }
 
     // Priority rule 1+2: redirects first (exact redirect, then wildcard redirect)
@@ -329,15 +300,18 @@ void Handler::handleRequest(HTTPRequest* request) {
         redirectResponse.setBody("");
 
         std::string responseStr = redirectResponse.toString();
-        if (!sendSocket(responseStr.c_str(), responseStr.size())) {
+        if (!co_await sendSocketAsync(responseStr.c_str(), responseStr.size())) {
             sendToLoggerError("Failed to send redirect response for: " + request->getPathString());
         }
-        return;
+        co_return;
     }
 
     // Priority rule 3+4: normal routes (exact route, then wildcard route)
     auto routeHandler = serverData.findMatchingRoute(request->getPathString());
     if (routeHandler) {
+        // co_await is not allowed inside catch clauses; build the body first, send once.
+        std::string responseStr;
+        const char* failLog = nullptr;
         try {
             HTTPResponse response = (*routeHandler)(*request);
 
@@ -350,36 +324,32 @@ void Handler::handleRequest(HTTPRequest* request) {
                 }
             }
 
-            const std::string responseStr = response.toString();
-            if (!sendSocket(responseStr.c_str(), responseStr.size())) {
-                sendToLoggerError("Failed to send route response for: " + request->getPathString());
-            }
+            responseStr = response.toString();
+            failLog     = "Failed to send route response for: ";
         } catch (const method_not_allowed& e) {
             HTTPResponse response = responseMethodNotAllowed(request, e.allowMethods());
             serverData.record4xx();
-            const std::string responseStr = response.toString();
-            if (!sendSocket(responseStr.c_str(), responseStr.size())) {
-                sendToLoggerError("Failed to send 405 for: " + request->getPathString());
-            }
+            responseStr = response.toString();
+            failLog     = "Failed to send 405 for: ";
         } catch (const std::exception& e) {
             sendToLoggerError(std::string("Exception in route handler: ") + e.what());
             HTTPResponse response = responseInternalServerError(request);
             serverData.record5xx();
-            const std::string responseStr = response.toString();
-            if (!sendSocket(responseStr.c_str(), responseStr.size())) {
-                sendToLoggerError("Failed to send 500 for: " + request->getPathString());
-            }
+            responseStr = response.toString();
+            failLog     = "Failed to send 500 for: ";
         } catch (...) {
             sendToLoggerError("Unknown exception in route handler");
             HTTPResponse response = responseInternalServerError(request);
             serverData.record5xx();
-            const std::string responseStr = response.toString();
-            if (!sendSocket(responseStr.c_str(), responseStr.size())) {
-                sendToLoggerError("Failed to send 500 for: " + request->getPathString());
-            }
+            responseStr = response.toString();
+            failLog     = "Failed to send 500 for: ";
         }
 
-        return;
+        if (!co_await sendSocketAsync(responseStr.c_str(), responseStr.size())) {
+            sendToLoggerError(std::string(failLog) + request->getPathString());
+        }
+
+        co_return;
 
     } else {
         std::string path = request->getPathString();
@@ -389,8 +359,9 @@ void Handler::handleRequest(HTTPRequest* request) {
         std::string content_type = getContentType(extension);
         std::string contentPath = buildPath(path, extension, request);
 
-        sendFile(content_type, contentPath, request);
+        co_await sendFileAsync(content_type, contentPath, request);
     }
+    co_return;
 }
 
 // TODO : Redo with HTTPResponse
@@ -400,18 +371,19 @@ void Handler::handleRequest(HTTPRequest* request) {
  * @param contentType
  * @param content
  */
-void Handler::sendResponse(const std::string& status, const std::string& contentType,
-                           const std::string& content) const {
+boost::asio::awaitable<void> Handler::sendResponseAsync(const std::string& status, const std::string& contentType,
+                                                        const std::string& content) {
     std::string response = buildHeader(status, contentType, std::to_string(content.size()));
 
     response += content;
 
-    if (!sendSocket((char*)response.c_str(), response.size())) {
+    if (!co_await sendSocketAsync(response.c_str(), response.size())) {
         sendToLoggerError("Failed to send response: " + status);
     }
+    co_return;
 }
 
-void Handler::sendNotFoundResponse(HTTPRequest* httpRequest) const {
+boost::asio::awaitable<void> Handler::sendNotFoundResponseAsync(HTTPRequest* httpRequest) {
     serverData.record4xx();
     if (serverData.hasNotFoundPage() && httpRequest != nullptr) {
         std::string notFoundPath = serverData.getNotFoundPage();
@@ -459,15 +431,15 @@ void Handler::sendNotFoundResponse(HTTPRequest* httpRequest) const {
                 }
 
                 if (contentBuilder && contentBuilder->size() > 0) {
-                    sendResponse("404 Not Found", contentType, contentBuilder->file());
-                    return;
+                    co_await sendResponseAsync("404 Not Found", contentType, contentBuilder->file());
+                    co_return;
                 }
             } else {
                 std::ifstream file(resolvedNotFoundPath, std::ios::binary);
                 if (file.is_open()) {
                     std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-                    sendResponse("404 Not Found", contentType, content);
-                    return;
+                    co_await sendResponseAsync("404 Not Found", contentType, content);
+                    co_return;
                 }
             }
         }
@@ -475,7 +447,8 @@ void Handler::sendNotFoundResponse(HTTPRequest* httpRequest) const {
         sendToLoggerError("Configured 404 page could not be loaded: " + serverData.getNotFoundPage());
     }
 
-    sendResponse("404 Not Found", "text/html", "<html><body><h1>404 Not Found</h1></body></html>");
+    co_await sendResponseAsync("404 Not Found", "text/html", "<html><body><h1>404 Not Found</h1></body></html>");
+    co_return;
 }
 
 /**
@@ -483,28 +456,23 @@ void Handler::sendNotFoundResponse(HTTPRequest* httpRequest) const {
  * @param contentType
  * @param contentPath
  */
-void Handler::sendFile(const std::string& contentType, const std::string& contentPath, HTTPRequest* httpRequest) const {
+boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentType, const std::string& contentPath,
+                                                    HTTPRequest* httpRequest) {
     char bufferToSend[BUFFER_SIZE];
-
-    // sendToLoggerPages("Sending file: " + contentPath);
 
     if (contentType == "text/html" || contentType == "text/javascript" || contentType == "text/css") {
         std::unique_ptr<ContentBuilder> contentBuilder;
 
         if (contentType == "text/html") {
-            //			sendToLoggerPages("GET: " + path);
-
-            // Check Basic Authentication if required for this page
             if (httpRequest && serverData.getBasicAuth().requiresAuth(httpRequest->getPathString())) {
                 std::string authHeader = httpRequest->getHeader("authorization");
-                
+
                 if (!serverData.getBasicAuth().authenticate(httpRequest->getPathString(), authHeader)) {
-                    // Authentication required but failed
                     std::string header = buildAuthHeader();
-                    if (!sendSocket(header.c_str(), header.size())) {
+                    if (!co_await sendSocketAsync(header.c_str(), header.size())) {
                         sendToLoggerError("Failed to send auth header");
                     }
-                    return;
+                    co_return;
                 }
             }
 
@@ -516,16 +484,14 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
             contentBuilder = std::make_unique<CSSBuilder>(contentPath, serverData);
         }
 
-        // Check if builder was created
         if (!contentBuilder) {
-            sendNotFoundResponse(httpRequest);
-            return;
+            co_await sendNotFoundResponseAsync(httpRequest);
+            co_return;
         }
 
-        // Check if content is empty
         if (contentBuilder->size() == 0) {
-            sendNotFoundResponse(httpRequest);
-            return;
+            co_await sendNotFoundResponseAsync(httpRequest);
+            co_return;
         }
 
         HTTPResponse htmlResponse("200 OK");
@@ -536,96 +502,79 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
 
         std::string bufferToSocket = htmlResponse.toString();
 
-        if (!sendSocket(bufferToSocket.c_str(), bufferToSocket.size())) {
+        if (!co_await sendSocketAsync(bufferToSocket.c_str(), bufferToSocket.size())) {
             sendToLoggerError("Failed to send file: " + contentPath);
         }
 
-
     } else {
-        // Check if this is a WebP request and we have it cached (devMode)
         if (contentType == "image/webp" && serverData.isDevMode() && serverData.getWebPConversion()) {
-            // Try to get from WebP cache (zero-copy: shared_ptr avoids duplicating the buffer)
             auto cachedWebP = HtmlBuilder::getWebPFromCache(contentPath);
             if (cachedWebP && !cachedWebP->empty()) {
-                // Serve from cache
                 HTTPResponse htmlResponse("200 OK");
                 htmlResponse.setHeader("Content-Type", contentType);
                 htmlResponse.setHeader("Content-Length", std::to_string(cachedWebP->size()));
-                
+
                 std::string response = htmlResponse.toString();
-                
-                // Send headers
-                if (!sendSocket(response.c_str(), response.size())) {
+
+                if (!co_await sendSocketAsync(response.c_str(), response.size())) {
                     sendToLoggerError("Failed to send cached WebP header: " + contentPath);
-                    return;
+                    co_return;
                 }
-                
-                // Send cached WebP data
-                if (!sendSocket(reinterpret_cast<const char*>(cachedWebP->data()), cachedWebP->size())) {
+
+                if (!co_await sendSocketAsync(reinterpret_cast<const char*>(cachedWebP->data()), cachedWebP->size())) {
                     sendToLoggerError("Failed to send cached WebP data: " + contentPath);
                 }
-                return;
+                co_return;
             }
         }
-        
-        // Open file
+
         std::ifstream file(contentPath, std::ios::binary);
 
         if (!file.is_open()) {
-            // If this is a WebP request and the file doesn't exist, try on-demand conversion
             if (contentType == "image/webp" && serverData.getWebPConversion()) {
-                // Look for original PNG/JPG/JPEG file
                 std::string basePath = contentPath;
-                size_t dotPos = basePath.find_last_of('.');
+                size_t      dotPos = basePath.find_last_of('.');
                 if (dotPos != std::string::npos) {
                     basePath = basePath.substr(0, dotPos);
                 }
-                
-                std::string sourcePath;
+
+                std::string              sourcePath;
                 std::vector<std::string> extensions = {".jpg", ".jpeg", ".png"};
-                
+
                 for (const auto& ext : extensions) {
                     if (std::filesystem::exists(basePath + ext)) {
                         sourcePath = basePath + ext;
                         break;
                     }
                 }
-                
+
                 if (!sourcePath.empty()) {
-                    // Convert on-demand
                     bool cacheOnly = serverData.isDevMode();
                     if (WebPConverter::convertImage(sourcePath, contentPath, cacheOnly, serverData.getWebPQuality())) {
                         if (cacheOnly) {
-                            // Serve from cache (zero-copy: shared_ptr avoids duplicating the buffer)
                             auto webpData = WebPConverter::getFromCache(contentPath);
                             if (webpData && !webpData->empty()) {
                                 HTTPResponse webpResponse("200 OK");
                                 webpResponse.setHeader("Content-Type", contentType);
                                 webpResponse.setHeader("Content-Length", std::to_string(webpData->size()));
-                                
+
                                 std::string response = webpResponse.toString();
-                                
-                                if (!sendSocket(response.c_str(), response.size())) {
+
+                                if (!co_await sendSocketAsync(response.c_str(), response.size())) {
                                     sendToLoggerError("Failed to send on-demand WebP header: " + contentPath);
-                                    return;
+                                    co_return;
                                 }
-                                
-                                if (!sendSocket(reinterpret_cast<const char*>(webpData->data()), webpData->size())) {
+
+                                if (!co_await sendSocketAsync(reinterpret_cast<const char*>(webpData->data()),
+                                                              webpData->size())) {
                                     sendToLoggerError("Failed to send on-demand WebP data: " + contentPath);
                                 }
-                                return;
+                                co_return;
                             }
                         } else {
-                            // File was saved to disk, try opening again
                             file.open(contentPath, std::ios::binary);
-                            if (file.is_open()) {
-                                // Continue with normal file serving below
-                            }
                         }
                     } else {
-                        // Conversion skipped (e.g. insufficient memory) —
-                        // serve the original JPG/PNG so the browser still gets
-                        // an image instead of a 404.
                         sendToLoggerError("WebP conversion failed for " + sourcePath
                                           + ", serving original format instead");
                         std::ifstream origFile(sourcePath, std::ios::binary);
@@ -634,48 +583,40 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
                             size_t origSize = static_cast<size_t>(origFile.tellg());
                             origFile.seekg(0, std::ios::beg);
 
-                            const std::string origType =
-                                getContentType(getExtension(sourcePath));
-                            HTTPResponse origResp("200 OK");
+                            const std::string origType = getContentType(getExtension(sourcePath));
+                            HTTPResponse      origResp("200 OK");
                             origResp.setHeader("Content-Type", origType);
                             origResp.setHeader("Content-Length", std::to_string(origSize));
                             std::string origHeader = origResp.toString();
 
-                            if (!sendSocket(origHeader.c_str(), origHeader.size())) {
-                                sendToLoggerError("Failed to send fallback image header: "
-                                                  + sourcePath);
-                                return;
+                            if (!co_await sendSocketAsync(origHeader.c_str(), origHeader.size())) {
+                                sendToLoggerError("Failed to send fallback image header: " + sourcePath);
+                                co_return;
                             }
                             char fallbackBuf[BUFFER_SIZE];
                             while (!origFile.eof()) {
                                 origFile.read(fallbackBuf, BUFFER_SIZE);
-                                if (!sendSocket(fallbackBuf,
-                                                static_cast<size_t>(origFile.gcount()))) {
-                                    sendToLoggerError("Failed to send fallback image data: "
-                                                      + sourcePath);
+                                if (!co_await sendSocketAsync(fallbackBuf, static_cast<size_t>(origFile.gcount()))) {
+                                    sendToLoggerError("Failed to send fallback image data: " + sourcePath);
                                     break;
                                 }
                             }
                         }
-                        return;
+                        co_return;
                     }
                 }
             }
-            
-            // If still not open, send 404
+
             if (!file.is_open()) {
                 sendToLogger("File not found: " + contentPath);
-                sendNotFoundResponse(httpRequest);
-                return;
+                co_await sendNotFoundResponseAsync(httpRequest);
+                co_return;
             }
         }
 
-        // Get file size
         file.seekg(0, std::ios::end);
         size_t fileSize = static_cast<size_t>(file.tellg());
         file.seekg(0, std::ios::beg);
-
-        // sendToLogger("File size: " + std::to_string(fileSize));
 
         HTTPResponse htmlResponse("200 OK");
 
@@ -684,16 +625,15 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
 
         std::string response = htmlResponse.toString();
 
-        // Send response
-        if (!sendSocket((char*)response.c_str(), response.size())) {
+        if (!co_await sendSocketAsync(response.c_str(), response.size())) {
             sendToLoggerError("Failed to send binary file header: " + contentPath);
             file.close();
-            return;
+            co_return;
         }
 
         while (!file.eof()) {
             file.read(bufferToSend, BUFFER_SIZE);
-            if (!sendSocket(bufferToSend, static_cast<size_t>(file.gcount()))) {
+            if (!co_await sendSocketAsync(bufferToSend, static_cast<size_t>(file.gcount()))) {
                 sendToLoggerError("Failed to send binary file chunk: " + contentPath);
                 break;
             }
@@ -701,6 +641,7 @@ void Handler::sendFile(const std::string& contentType, const std::string& conten
 
         file.close();
     }
+    co_return;
 }
 
 std::string Handler::getExtension(const std::string& path) const {
