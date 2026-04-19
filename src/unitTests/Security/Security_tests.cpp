@@ -6,7 +6,12 @@
  *        isSafePath, and safeCombinePath.
  */
 
+#include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
+#include <string>
+
 #include "../../security/Security.hpp"
 
 using namespace geruest;
@@ -257,6 +262,55 @@ TEST_F(IsSafePathTest, EncodedTraversalIsBlocked) {
     // Raw ".." without URL encoding — the URL layer has already decoded %2e%2e
     EXPECT_FALSE(Security::isSafePath("/var/www", "/html/../../../etc/shadow"));
 }
+
+#ifndef _WIN32
+// Symlink resolution is exercised via weakly_canonical in isSafePath; Windows
+// symlinks are environment-dependent, so these stay POSIX-only.
+
+TEST_F(IsSafePathTest, SymlinkEscapeOutsideRootIsBlocked) {
+    namespace fs = std::filesystem;
+    const std::string tag =
+        std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    const fs::path base = fs::temp_directory_path() / ("geruest_isSafePath_symlink_" + tag);
+    fs::remove_all(base);
+    const fs::path root = base / "site";
+    const fs::path outside = base / "secret";
+    ASSERT_TRUE(fs::create_directories(root / "html"));
+    ASSERT_TRUE(fs::create_directories(outside));
+    const fs::path link = root / "html" / "leak";
+    std::error_code ec;
+    fs::create_symlink(fs::path("../../secret"), link, ec);
+    ASSERT_FALSE(ec) << ec.message();
+
+    EXPECT_FALSE(Security::isSafePath(root.string(), "/html/leak"))
+        << "path under docroot must not resolve outside root via symlink";
+
+    fs::remove_all(base, ec);
+}
+
+TEST_F(IsSafePathTest, SymlinkStayingInsideRootIsAllowed) {
+    namespace fs = std::filesystem;
+    const std::string tag =
+        std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    const fs::path base = fs::temp_directory_path() / ("geruest_isSafePath_symlink_ok_" + tag);
+    fs::remove_all(base);
+    const fs::path root = base / "site";
+    ASSERT_TRUE(fs::create_directories(root / "html" / "subdir"));
+    const fs::path realFile = root / "html" / "subdir" / "x.txt";
+    {
+        std::ofstream o(realFile);
+        o << 'x';
+    }
+    const fs::path link = root / "html" / "alias";
+    std::error_code ec;
+    fs::create_symlink(fs::path("subdir/x.txt"), link, ec);
+    ASSERT_FALSE(ec) << ec.message();
+
+    EXPECT_TRUE(Security::isSafePath(root.string(), "/html/alias"));
+
+    fs::remove_all(base, ec);
+}
+#endif  // !_WIN32
 
 // ─────────────────────────────────────────────────────────────────────────────
 // safeCombinePath

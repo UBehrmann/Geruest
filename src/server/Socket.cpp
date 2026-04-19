@@ -36,6 +36,30 @@ void Geruest::statusPersistenceLoop() {
     }
 }
 
+int Geruest::getListenPort() const {
+#ifdef _WIN32
+    if (server_fd == INVALID_SOCKET) {
+        return -1;
+    }
+    sockaddr_in sa{};
+    int len = static_cast<int>(sizeof(sa));
+    if (getsockname(server_fd, reinterpret_cast<struct sockaddr*>(&sa), &len) != 0) {
+        return -1;
+    }
+    return static_cast<int>(ntohs(sa.sin_port));
+#else
+    if (server_fd < 0) {
+        return -1;
+    }
+    sockaddr_in sa{};
+    socklen_t len = sizeof(sa);
+    if (getsockname(server_fd, reinterpret_cast<struct sockaddr*>(&sa), &len) != 0) {
+        return -1;
+    }
+    return static_cast<int>(ntohs(sa.sin_port));
+#endif
+}
+
 void Geruest::init() {
     this->server_fd = socket(AF_INET, SOCK_STREAM, 0);
 #ifdef _WIN32

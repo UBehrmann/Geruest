@@ -178,6 +178,15 @@ add_executable(ServerDataMetricsPersistence_Tests
 )
 target_link_libraries(ServerDataMetricsPersistence_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
+add_executable(GeruestLifecycle_Tests
+    Geruest/GeruestLifecycle_tests.cpp
+    ${GERUEST_SOURCES}
+)
+target_link_libraries(GeruestLifecycle_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+if(GERUEST_HAS_CURL)
+    target_link_libraries(GeruestLifecycle_Tests CURL::libcurl)
+endif()
+
 # Add tests to CTest using Google Test discovery
 include(GoogleTest)
 gtest_discover_tests(JSONParser_Tests)
@@ -191,11 +200,12 @@ gtest_discover_tests(ConfigLoader_Tests)
 gtest_discover_tests(AssetMerger_Tests)
 gtest_discover_tests(Security_Tests)
 gtest_discover_tests(ServerDataMetricsPersistence_Tests)
+gtest_discover_tests(GeruestLifecycle_Tests)
 
 # Custom target to run all tests
 add_custom_target(run_tests
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-    DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests ServerDataMetricsPersistence_Tests
+    DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests ServerDataMetricsPersistence_Tests GeruestLifecycle_Tests
     COMMENT "Running all unit tests via CTest"
 )
 

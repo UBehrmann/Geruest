@@ -488,6 +488,13 @@ class Geruest {
     bool isRunning();
 
     /**
+     * @brief TCP port the listen socket is bound to (valid after init()).
+     * @return Port in host byte order, or -1 if init() has not succeeded / socket is invalid.
+     * @note When setPort(0) was used, this returns the OS-assigned ephemeral port.
+     */
+    int getListenPort() const;
+
+    /**
      * @brief Activate the /status metrics endpoint (token-protected).
      *
      * The endpoint returns a JSON snapshot of server health and metrics.
