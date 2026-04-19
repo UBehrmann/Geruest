@@ -8,12 +8,21 @@
  */
 
 #include "JSObfuscator.hpp"
+#include "JSObfuscatorScope.hpp"
 #include <algorithm>
-#include <sstream>
-#include <regex>
 #include <chrono>
-#include <iomanip>
 #include <cctype>
+#include <cstdio>
+#include <cstring>
+#include <iomanip>
+#include <regex>
+#include <sstream>
+#include <stdexcept>
+
+#if !defined(_WIN32)
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 
 namespace geruest {
 
@@ -24,6 +33,8 @@ static const std::unordered_set<std::string> RESERVED_KEYWORDS = {
     "double", "else", "enum", "eval", "export", "extends", "false", "final",
     "finally", "float", "for", "function", "goto", "if", "implements", "import",
     "in", "instanceof", "int", "interface", "let", "long", "native", "new",
+    // for-of / for-await-of (contextual keyword; must not be renamed)
+    "of",
     "null", "package", "private", "protected", "public", "return", "short", "static",
     "super", "switch", "synchronized", "this", "throw", "throws", "transient", "true",
     "try", "typeof", "var", "void", "volatile", "while", "with", "yield",
@@ -35,6 +46,8 @@ static const std::unordered_set<std::string> RESERVED_KEYWORDS = {
     "encodeURI", "decodeURI", "encodeURIComponent", "decodeURIComponent",
     "setTimeout", "setInterval", "clearTimeout", "clearInterval", "alert", "confirm", "prompt",
     "RegExp",
+    // Barcode scanner (Quagga2 on window — must match script global spelling)
+    "Quagga",
     // Modern Web APIs
     "fetch", "Request", "Response", "Headers", "XMLHttpRequest", "FormData",
     "URL", "URLSearchParams", "Blob", "File", "FileReader", "FileList",
@@ -110,34 +123,6 @@ static const std::unordered_set<std::string> RESERVED_KEYWORDS = {
 static const std::regex IDENTIFIER_REGEX(R"(\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b)");
 static const std::regex IDENTIFIER_WITH_DOT_REGEX(R"(([.]?)\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b)");
 
-// Detect whether an identifier at [identStart, identEnd) in `segment` is an
-// object-literal key.  An object-literal key is preceded by '{' or ',' (the
-// start of an object literal or the separator between properties) and followed
-// by ':'.  Whitespace between those characters and the identifier is skipped.
-// Ternary expressions (cond ? val : …) are excluded because '?' – not '{' or ',' –
-// precedes the value before ':'.
-static bool isObjectLiteralKey(const std::string& segment, size_t identStart, size_t identEnd) {
-    // 1) The identifier must be followed by ':' (skipping whitespace)
-    bool followedByColon = false;
-    for (size_t i = identEnd; i < segment.size(); ++i) {
-        char c = segment[i];
-        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') continue;
-        followedByColon = (c == ':');
-        break;
-    }
-    if (!followedByColon) return false;
-
-    // 2) The identifier must be preceded by '{' or ',' (skipping whitespace)
-    //    This distinguishes object keys from ternary values (preceded by '?'),
-    //    case labels (preceded by 'case'), and other constructs.
-    for (int i = static_cast<int>(identStart) - 1; i >= 0; --i) {
-        char c = segment[i];
-        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') continue;
-        return (c == '{' || c == ',');
-    }
-    return false;
-}
-
 static bool isRegexAllowedAfterChar(char c) {
     switch (c) {
         case '(': case '{': case '[':
@@ -157,6 +142,64 @@ static bool isRegexPrefixKeyword(const std::string& word) {
         "return", "throw", "case", "delete", "void", "typeof", "instanceof", "in", "of"
     };
     return regexKeywords.find(word) != regexKeywords.end();
+}
+
+/**
+ * If code[openSlash] is '/', scan a RegularExpressionLiteral through flags.
+ * On success returns true and sets endOut to the index one past the last consumed character (flags).
+ */
+static bool parseRegexLiteralEnd(const std::string& code, size_t openSlash, size_t& endOut) {
+    if (openSlash >= code.size() || code[openSlash] != '/') {
+        return false;
+    }
+    // "//" starts a line comment, not a zero-width RegularExpressionLiteral.
+    if (openSlash + 1 < code.size() && code[openSlash + 1] == '/') {
+        return false;
+    }
+    size_t i = openSlash + 1;
+    bool inCharClass = false;
+    while (i < code.size()) {
+        const char rc = code[i];
+        if (rc == '\\') {
+            i += 2;
+            if (i > code.size()) {
+                return false;
+            }
+            continue;
+        }
+        if (rc == '[') {
+            inCharClass = true;
+            ++i;
+            continue;
+        }
+        if (rc == ']' && inCharClass) {
+            inCharClass = false;
+            ++i;
+            continue;
+        }
+        if (rc == '/' && !inCharClass) {
+            ++i;
+            while (i < code.size() && std::isalpha(static_cast<unsigned char>(code[i]))) {
+                ++i;
+            }
+            endOut = i;
+            return true;
+        }
+        ++i;
+    }
+    return false;
+}
+
+/// True iff code[pos] is '/' and the immediately preceding run of '\\' has odd length (escaped slash).
+static bool isEscapedSlashBeforeForTokenize(const std::string& code, size_t pos) {
+    if (pos == 0 || code[pos] != '/') {
+        return false;
+    }
+    size_t backslashes = 0;
+    for (size_t k = pos; k > 0 && code[k - 1] == '\\'; --k) {
+        ++backslashes;
+    }
+    return (backslashes % 2U) == 1U;
 }
 
 static bool canStartRegexLiteral(const std::string& code, size_t slashPos) {
@@ -206,9 +249,256 @@ static bool canStartRegexLiteral(const std::string& code, size_t slashPos) {
     return false;
 }
 
+/**
+ * Find the index of '}' that closes '${' whose expression starts at innerBegin (first char inside { }).
+ */
+static size_t templateInterpolationClose(const std::string& s, size_t innerBegin) {
+    size_t pos = innerBegin;
+    int depth = 1;
+    bool inDq = false;
+    bool inSq = false;
+    bool inBt = false;
+
+    while (pos < s.size()) {
+        const char c = s[pos];
+        if (!inDq && !inSq && !inBt) {
+            if (c == '/' && pos + 1 < s.size() && s[pos + 1] == '/') {
+                pos += 2;
+                while (pos < s.size() && s[pos] != '\n') {
+                    ++pos;
+                }
+                continue;
+            }
+            if (c == '/' && pos + 1 < s.size() && s[pos + 1] == '*') {
+                pos += 2;
+                while (pos + 1 < s.size() && !(s[pos] == '*' && s[pos + 1] == '/')) {
+                    ++pos;
+                }
+                pos = (pos + 1 < s.size()) ? pos + 2 : s.size();
+                continue;
+            }
+            if (c == '"') {
+                inDq = true;
+                ++pos;
+                continue;
+            }
+            if (c == '\'') {
+                inSq = true;
+                ++pos;
+                continue;
+            }
+            if (c == '`') {
+                inBt = true;
+                ++pos;
+                continue;
+            }
+            if (c == '{') {
+                ++depth;
+                ++pos;
+                continue;
+            }
+            if (c == '}') {
+                --depth;
+                if (depth == 0) {
+                    return pos;
+                }
+                ++pos;
+                continue;
+            }
+            ++pos;
+            continue;
+        }
+        if (inDq) {
+            if (c == '\\' && pos + 1 < s.size()) {
+                pos += 2;
+                continue;
+            }
+            if (c == '"') {
+                inDq = false;
+            }
+            ++pos;
+            continue;
+        }
+        if (inSq) {
+            if (c == '\\' && pos + 1 < s.size()) {
+                pos += 2;
+                continue;
+            }
+            if (c == '\'') {
+                inSq = false;
+            }
+            ++pos;
+            continue;
+        }
+        if (inBt) {
+            if (c == '\\' && pos + 1 < s.size()) {
+                pos += 2;
+                continue;
+            }
+            if (c == '`') {
+                inBt = false;
+                ++pos;
+                continue;
+            }
+            if (c == '$' && pos + 1 < s.size() && s[pos + 1] == '{') {
+                pos += 2;
+                const size_t closeInner = templateInterpolationClose(s, pos);
+                if (closeInner == std::string::npos) {
+                    return std::string::npos;
+                }
+                pos = closeInner + 1;
+                continue;
+            }
+            ++pos;
+            continue;
+        }
+    }
+    return std::string::npos;
+}
+
+static size_t tryConsumeNestedTemplateLiteralObf(const std::string& code, size_t openTick) {
+    if (openTick >= code.size() || code[openTick] != '`') {
+        return std::string::npos;
+    }
+    size_t pos = openTick + 1;
+    const size_t n = code.size();
+    while (pos < n) {
+        if (code[pos] == '\\' && pos + 1 < n) {
+            pos += 2;
+            continue;
+        }
+        if (code[pos] == '`') {
+            return pos + 1;
+        }
+        if (code[pos] == '$' && pos + 1 < n && code[pos + 1] == '{') {
+            pos += 2;
+            const size_t close = templateInterpolationClose(code, pos);
+            if (close == std::string::npos) {
+                return std::string::npos;
+            }
+            pos = close + 1;
+            continue;
+        }
+        ++pos;
+    }
+    return std::string::npos;
+}
+
+static bool templateBacktickLooksLikeTerminatorObf(const std::string& code, size_t tickPos) {
+    size_t j = tickPos + 1;
+    const size_t n = code.size();
+    while (j < n && (code[j] == ' ' || code[j] == '\t')) {
+        ++j;
+    }
+    if (j >= n) {
+        return true;
+    }
+    const char t = code[j];
+    if (t == ';' || t == ',' || t == ')' || t == '}' || t == ']' || t == ':') {
+        return true;
+    }
+    if (t == '\n' || t == '\r') {
+        while (j < n && (code[j] == '\n' || code[j] == '\r' || code[j] == ' ' || code[j] == '\t')) {
+            ++j;
+        }
+        if (j < n) {
+            static const char* const tops[] = {"function", "const", "let", "var", "class", "async",
+                                                 "export", "import", "return", "throw", "debugger"};
+            for (const char* kw : tops) {
+                const size_t L = std::strlen(kw);
+                if (j + L <= n && code.compare(j, L, kw) == 0) {
+                    const char nx = code[j + L];
+                    const bool part =
+                        std::isalnum(static_cast<unsigned char>(nx)) || nx == '_' || nx == '$';
+                    if (j + L >= n || !part) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
+static size_t lexTemplateLiteralEndObf(const std::string& code, size_t openTick) {
+    if (openTick >= code.size() || code[openTick] != '`') {
+        return openTick + 1;
+    }
+    size_t i = openTick + 1;
+    const size_t n = code.size();
+    while (i < n) {
+        if (code[i] == '\\' && i + 1 < n) {
+            i += 2;
+            continue;
+        }
+        if (code[i] == '`') {
+            if (i + 1 < n && code[i + 1] == '`') {
+                i += 2;
+                continue;
+            }
+            if (templateBacktickLooksLikeTerminatorObf(code, i)) {
+                return i + 1;
+            }
+            const size_t nestedEnd = tryConsumeNestedTemplateLiteralObf(code, i);
+            if (nestedEnd != std::string::npos) {
+                i = nestedEnd;
+                continue;
+            }
+            return i + 1;
+        }
+        if (code[i] == '$' && i + 1 < n && code[i + 1] == '{') {
+            i += 2;
+            const size_t close = templateInterpolationClose(code, i);
+            if (close == std::string::npos) {
+                return std::string::npos;
+            }
+            i = close + 1;
+            continue;
+        }
+        ++i;
+    }
+    return std::string::npos;
+}
+
+/// From opening '`', return index past closing '`' (handles `${...}` and nested templates).
+static size_t skipTemplateLiteral(const std::string& code, size_t openTick) {
+    size_t end = lexTemplateLiteralEndObf(code, openTick);
+    if (end == std::string::npos) {
+        return code.size();
+    }
+    return end;
+}
+
+/** Raw string between quotes (excluding delimiters), honoring backslash escapes. */
+static std::string extractQuotedInner(const std::string& tok) {
+    if (tok.size() < 2) {
+        return "";
+    }
+    const char q = tok[0];
+    std::string inner;
+    size_t i = 1;
+    while (i < tok.size()) {
+        if (tok[i] == '\\' && i + 1 < tok.size()) {
+            inner += tok[i];
+            inner += tok[i + 1];
+            i += 2;
+            continue;
+        }
+        if (tok[i] == q) {
+            break;
+        }
+        inner += tok[i];
+        ++i;
+    }
+    return inner;
+}
+
 JSObfuscator::JSObfuscator(unsigned int level)
-    : _level(level) {
-    // Seed random number generator with current time
+    : JSObfuscator(level, JSObfuscateSettings{}) {
+}
+
+JSObfuscator::JSObfuscator(unsigned int level, JSObfuscateSettings settings)
+    : _level(level), _settings(std::move(settings)) {
     auto seed = std::chrono::high_resolution_clock::now().time_since_epoch().count();
     _rng.seed(static_cast<unsigned int>(seed));
 }
@@ -218,24 +508,53 @@ std::string JSObfuscator::obfuscate(const std::string& code) {
         return code;
     }
 
+    _lastDiagnostics.clear();
+    _lastTopLevelPreserved.clear();
+
     std::string result = code;
 
-    // Level 1: Basic obfuscation
     if (_level >= 1) {
         result = mangleNames(result);
         result = removeWhitespace(result);
     }
 
-    // Level 2: Intermediate obfuscation
     if (_level >= 2) {
         result = encodeStrings(result);
         result = obfuscateNumbers(result);
     }
 
-    // Level 3: Advanced obfuscation
     if (_level >= 3) {
         result = injectDeadCode(result);
         result = obfuscateControlFlow(result);
+    }
+
+    if (_level >= 1 && _settings.emitGlobalThisAssignments && !_lastTopLevelPreserved.empty()) {
+        std::sort(_lastTopLevelPreserved.begin(), _lastTopLevelPreserved.end());
+        _lastTopLevelPreserved.erase(
+            std::unique(_lastTopLevelPreserved.begin(), _lastTopLevelPreserved.end()),
+            _lastTopLevelPreserved.end());
+        for (const std::string& n : _lastTopLevelPreserved) {
+            std::string esc;
+            esc.reserve(n.size());
+            for (char c : n) {
+                if (c == '\\' || c == '\'' || c == '\"') {
+                    esc += '\\';
+                }
+                esc += c;
+            }
+            result += "\nglobalThis['";
+            result += esc;
+            result += "']=";
+            result += n;
+            result += ';';
+        }
+    }
+
+    if (_settings.validateOutputWithAcorn) {
+        if (!tryValidateWithAcorn(result)) {
+            _lastDiagnostics.push_back(
+                "Acorn validation failed or node/acorn not available (output still returned)");
+        }
     }
 
     return result;
@@ -251,56 +570,89 @@ std::string JSObfuscator::removeWhitespace(const std::string& code) {
     
     bool inString = false;
     bool inSingleQuote = false;
-    bool inBacktick = false;
-    bool inRegex = false;
-    bool inCharClass = false;
     char prevChar = '\0';
     
     for (size_t i = 0; i < code.size(); ++i) {
         char c = code[i];
         
         // Track string literals
-        if (!inRegex && c == '"' && prevChar != '\\' && !inSingleQuote && !inBacktick) {
+        if (c == '"' && prevChar != '\\' && !inSingleQuote) {
             inString = !inString;
             result += c;
-        } else if (!inRegex && c == '\'' && prevChar != '\\' && !inString && !inBacktick) {
+        } else if (c == '\'' && prevChar != '\\' && !inString) {
             inSingleQuote = !inSingleQuote;
             result += c;
-        } else if (!inRegex && c == '`' && prevChar != '\\' && !inString && !inSingleQuote) {
-            inBacktick = !inBacktick;
-            result += c;
-        } else if (inString || inSingleQuote || inBacktick) {
+        } else if (c == '`' && prevChar != '\\' && !inString && !inSingleQuote) {
+            size_t end = skipTemplateLiteral(code, i);
+            result.append(code, i, end - i);
+            if (end > i) {
+                prevChar = code[end - 1];
+            } else {
+                prevChar = c;
+            }
+            i = end - 1;
+            continue;
+        } else if (inString || inSingleQuote) {
             // Inside string literals, preserve everything
             result += c;
-        } else if (!inRegex && c == '/' && i + 1 < code.size()) {
-            // Check if '/' starts a regex literal
-            if (canStartRegexLiteral(code, i)) {
-                inRegex = true;
-                inCharClass = false;
-                result += c;
-            } else {
-                // Regular division operator
-                result += c;
+        } else if (c == '/' && i + 1 < code.size()) {
+            // Block comments — copy verbatim so internals are not rescanned as code.
+            if (code[i + 1] == '*') {
+                size_t start = i;
+                i += 2;
+                bool closed = false;
+                while (i + 1 < code.size()) {
+                    if (code[i] == '*' && code[i + 1] == '/') {
+                        i += 2;
+                        closed = true;
+                        break;
+                    }
+                    ++i;
+                }
+                if (!closed) {
+                    i = code.size();
+                }
+                result.append(code, start, i - start);
+                if (i > start) {
+                    prevChar = code[i - 1];
+                }
+                --i;
+                continue;
             }
-        } else if (inRegex) {
-            // Inside regex literal, preserve everything including whitespace
-            result += c;
-            
-            // Handle regex escape sequences
-            if (c == '\\' && i + 1 < code.size()) {
-                result += code[++i];  // Add escaped character
-            } else if (c == '[' && prevChar != '\\') {
-                inCharClass = true;
-            } else if (c == ']' && prevChar != '\\' && inCharClass) {
-                inCharClass = false;
-            } else if (c == '/' && prevChar != '\\' && !inCharClass) {
-                // End of regex literal
-                inRegex = false;
-                // Consume flags (g, i, m, s, u, y)
-                while (i + 1 < code.size() && std::isalpha(static_cast<unsigned char>(code[i + 1]))) {
-                    result += code[++i];
+            // Regex before // so /^\// and /\/\// are not mistaken for line comments.
+            if (canStartRegexLiteral(code, i)) {
+                size_t end = 0;
+                if (parseRegexLiteralEnd(code, i, end)) {
+                    result.append(code, i, end - i);
+                    prevChar = code[end - 1];
+                    i = end - 1;
+                    continue;
                 }
             }
+            // Line comments must include the terminating LineTerminator. Otherwise
+            // removeWhitespace can drop the newline and merge the next statement onto
+            // the same line as the //, swallowing it as comment text (syntax error).
+            if (code[i + 1] == '/' && !isEscapedSlashBeforeForTokenize(code, i)) {
+                size_t start = i;
+                i += 2;
+                while (i < code.size() && code[i] != '\n' && code[i] != '\r') {
+                    ++i;
+                }
+                if (i < code.size()) {
+                    if (code[i] == '\r' && i + 1 < code.size() && code[i + 1] == '\n') {
+                        i += 2;
+                    } else {
+                        ++i;
+                    }
+                }
+                result.append(code, start, i - start);
+                if (i > start) {
+                    prevChar = code[i - 1];
+                }
+                --i;
+                continue;
+            }
+            result += c;
         } else if (std::isspace(static_cast<unsigned char>(c))) {
             // Outside strings and regex, collapse whitespace
             // Keep space between alphanumeric characters
@@ -332,18 +684,6 @@ std::vector<JSObfuscator::Token> JSObfuscator::tokenize(const std::string& code)
     while (i < code.size()) {
         char c = code[i];
 
-        // --- line comment ---
-        if (c == '/' && i + 1 < code.size() && code[i + 1] == '/') {
-            flushCode();
-            std::string comment;
-            while (i < code.size() && code[i] != '\n') {
-                comment += code[i++];
-            }
-            if (i < code.size()) comment += code[i++]; // include the newline
-            tokens.push_back({TokenType::LINE_COMMENT, comment});
-            continue;
-        }
-
         // --- block comment ---
         if (c == '/' && i + 1 < code.size() && code[i + 1] == '*') {
             flushCode();
@@ -362,8 +702,18 @@ std::vector<JSObfuscator::Token> JSObfuscator::tokenize(const std::string& code)
             continue;
         }
 
-        // --- string literal (double-quote, single-quote, backtick) ---
-        if (c == '"' || c == '\'' || c == '`') {
+        // --- template literal (must handle nested `...` and `${}`; do not stop at inner backtick) ---
+        if (c == '`') {
+            flushCode();
+            const size_t tplStart = i;
+            const size_t tplEnd = skipTemplateLiteral(code, i);
+            tokens.push_back({TokenType::STRING_LITERAL, code.substr(tplStart, tplEnd - tplStart)});
+            i = tplEnd;
+            continue;
+        }
+
+        // --- string literal (double-quote, single-quote) ---
+        if (c == '"' || c == '\'') {
             flushCode();
             char quote = c;
             std::string str;
@@ -386,57 +736,30 @@ std::vector<JSObfuscator::Token> JSObfuscator::tokenize(const std::string& code)
 
         // --- regex literal (/.../flags) ---
         // We only treat '/' as regex start in expression contexts.
+        // If parseRegexLiteralEnd fails (e.g. "//" line comment after ';'), fall through to
+        // the '//' line-comment rule — do not consume only the first '/' (that strands the
+        // second '/' as code and breaks comments containing apostrophes: 'doesn't').
         if (c == '/' && canStartRegexLiteral(code, i)) {
             flushCode();
-            std::string regexLiteral;
-            size_t regexStart = i;  // Save position of opening '/'
-            regexLiteral += code[i++]; // opening '/'
-
-            bool inCharClass = false;
-            bool foundClosing = false;
-            while (i < code.size()) {
-                char rc = code[i];
-
-                if (rc == '\\') {
-                    regexLiteral += code[i++];
-                    if (i < code.size()) regexLiteral += code[i++];
-                    continue;
-                }
-
-                if (rc == '[') {
-                    inCharClass = true;
-                    regexLiteral += code[i++];
-                    continue;
-                }
-
-                if (rc == ']' && inCharClass) {
-                    inCharClass = false;
-                    regexLiteral += code[i++];
-                    continue;
-                }
-
-                if (rc == '/' && !inCharClass) {
-                    regexLiteral += code[i++]; // closing '/'
-                    while (i < code.size() && std::isalpha(static_cast<unsigned char>(code[i]))) {
-                        regexLiteral += code[i++];
-                    }
-                    foundClosing = true;
-                    break;
-                }
-
-                regexLiteral += code[i++];
+            size_t regexStart = i;
+            size_t end = 0;
+            if (parseRegexLiteralEnd(code, i, end)) {
+                tokens.push_back({TokenType::REGEX_LITERAL, code.substr(regexStart, end - regexStart)});
+                i = end;
+                continue;
             }
+        }
 
-            // Only emit REGEX_LITERAL if we found a valid closing '/'.
-            // Otherwise, treat '/' as normal code (division operator).
-            if (foundClosing) {
-                tokens.push_back({TokenType::REGEX_LITERAL, regexLiteral});
-            } else {
-                // Restore position to just after the opening '/',
-                // treat '/' as division operator, and continue normal processing
-                i = regexStart + 1;
-                current += '/';
+        // --- line comment (after regex attempt; parseRegexLiteralEnd rejects "//") ---
+        if (c == '/' && i + 1 < code.size() && code[i + 1] == '/' &&
+            !isEscapedSlashBeforeForTokenize(code, i)) {
+            flushCode();
+            std::string comment;
+            while (i < code.size() && code[i] != '\n') {
+                comment += code[i++];
             }
+            if (i < code.size()) comment += code[i++]; // include the newline
+            tokens.push_back({TokenType::LINE_COMMENT, comment});
             continue;
         }
 
@@ -459,274 +782,124 @@ std::string JSObfuscator::escapeForRegex(const std::string& str) {
     return escaped;
 }
 
-std::string JSObfuscator::processTemplateLiteral(const std::string& templateLiteral,
-                                                 const std::unordered_map<std::string, std::string>& nameMap) {
-    // Template literals are in the form: `text ${expr} more text ${expr2}`
-    // We need to find ${...} expressions and replace variable names inside them
-    
-    // Pre-allocate with extra space for potentially longer mangled names
-    // Estimate: original size + 30% for mangled names which may be longer/shorter
-    std::string result;
-    const size_t estimatedCapacity = templateLiteral.size() + (templateLiteral.size() / 3) + 1;
-    result.reserve(estimatedCapacity);
-    
-    size_t pos = 0;
-    while (pos < templateLiteral.size()) {
-        // Look for ${
-        size_t exprStart = templateLiteral.find("${", pos);
-        
-        if (exprStart == std::string::npos) {
-            // No more expressions, copy rest of the string
-            result.append(templateLiteral, pos, std::string::npos);
-            break;
-        }
-        
-        // Copy everything before the expression (including "${")
-        result.append(templateLiteral, pos, exprStart - pos + 2);
-        
-        // Find the matching }
-        size_t exprEnd = templateLiteral.find("}", exprStart + 2);
-        if (exprEnd == std::string::npos) {
-            // Malformed template literal, copy rest as-is
-            result.append(templateLiteral, exprStart + 2, std::string::npos);
-            break;
-        }
-        
-        // Extract the expression content
-        size_t exprContentStart = exprStart + 2;
-        size_t exprContentLen = exprEnd - exprContentStart;
-        
-        // Use string_view-like approach to avoid copying when possible
-        const char* exprStart_ptr = templateLiteral.data() + exprContentStart;
-        std::string expression(exprStart_ptr, exprContentLen);
-        
-        // Replace identifiers in the expression using the name map
-        // Use the pre-compiled static regex for performance
-        std::sregex_iterator it(expression.begin(), expression.end(), IDENTIFIER_REGEX);
-        std::sregex_iterator endIt;
-        size_t lastExprPos = 0;
-        
-        while (it != endIt) {
-            const std::smatch& m = *it;
-            size_t matchStart = static_cast<size_t>(m.position());
-            size_t matchLen = static_cast<size_t>(m.length());
-            std::string identifier = m[1].str();
-            
-            // Append text before the match
-            result.append(expression, lastExprPos, matchStart - lastExprPos);
-            
-            // Check if preceded by '.' (member access)
-            bool isMemberAccess = (matchStart > 0 && expression[matchStart - 1] == '.');
-            
-            if (!isMemberAccess) {
-                auto mapIt = nameMap.find(identifier);
-                if (mapIt != nameMap.end()) {
-                    result.append(mapIt->second);
-                } else {
-                    result.append(identifier);
-                }
-            } else {
-                result.append(identifier);
-            }
-            
-            lastExprPos = matchStart + matchLen;
-            ++it;
-        }
-        
-        // Append remaining text after last match in expression and closing }
-        result.append(expression, lastExprPos, std::string::npos);
-        result.push_back('}');
-        
-        pos = exprEnd + 1;
-    }
-    
-    return result;
-}
-
 std::string JSObfuscator::mangleNames(const std::string& code) {
-    // Tokenize the source so we can skip strings and comments
-    std::vector<Token> tokens = tokenize(code);
+    _lastTopLevelPreserved.clear();
 
-    // 1) Collect identifiers that appear in CODE tokens,
-    //    skipping those preceded by '.' (member access).
-    std::unordered_map<std::string, std::string> nameMap;
+    js_scope::ScopeRenameOptions opt;
+    opt.reserved = &RESERVED_KEYWORDS;
+    opt.preserve = _settings.preserveIdentNames;
+    opt.externNames = _settings.externGlobalNames;
+    opt.generateMangledName = [this]() { return generateRandomName(6); };
+    opt.strictFreeIdentifiers = _settings.strictUndefinedSymbols;
+    opt.autoPreserveBracketStringKeys = _settings.autoPreserveBracketStringKeys;
+    std::vector<std::string>* topPreservePtr =
+        _settings.emitGlobalThisAssignments ? &_lastTopLevelPreserved : nullptr;
 
-    for (const auto& tok : tokens) {
-        if (tok.type != TokenType::CODE) continue;
+    js_scope::ScopeRenamePlan plan = js_scope::computeScopedRenames(code, opt, topPreservePtr);
 
-        auto searchStart = tok.text.cbegin();
-        std::smatch match;
-        while (std::regex_search(searchStart, tok.text.cend(), match, IDENTIFIER_WITH_DOT_REGEX)) {
-            std::string dotPrefix = match[1].str();
-            std::string identifier = match[2].str();
-
-            // Compute absolute position of group 2 within tok.text
-            size_t offset = static_cast<size_t>(searchStart - tok.text.cbegin());
-            size_t identStart = offset + static_cast<size_t>(match.position(2));
-            size_t identEnd = identStart + identifier.length();
-
-            // Skip member-access identifiers (preceded by '.'),
-            // reserved words, identifiers starting with '_' (internal/private),
-            // and object-literal keys (e.g. { email: … })
-            if (dotPrefix.empty() && !isReservedKeyword(identifier) 
-                && !identifier.empty() && identifier[0] != '_'
-                && !isObjectLiteralKey(tok.text, identStart, identEnd)) {
-                if (nameMap.find(identifier) == nameMap.end()) {
-                    nameMap[identifier] = generateRandomName(6);
-                }
+    if (plan.usedLegacyFallback) {
+        _lastDiagnostics.push_back("obfuscator: spelling-keyed rename fallback was used");
+    }
+    for (const auto& u : plan.undefinedSymbols) {
+        _lastDiagnostics.push_back(std::string("obfuscator: undefined symbol reference: ") + u);
+    }
+    if (_settings.strictUndefinedSymbols && !plan.undefinedSymbols.empty()) {
+        std::string msg = "JS obfuscation: strict undefined symbols (declare, add extern, or fix): ";
+        for (size_t k = 0; k < plan.undefinedSymbols.size(); ++k) {
+            if (k > 0) {
+                msg += ", ";
             }
-            searchStart = match.suffix().first;
+            msg += plan.undefinedSymbols[k];
         }
+        throw std::runtime_error(msg);
     }
 
-    // 2) Replace identifiers only inside CODE tokens, using position-based
-    //    replacement to avoid lookbehind (unsupported by std::regex).
-    std::string result;
-    result.reserve(code.size());
-
-    for (const auto& tok : tokens) {
-        if (tok.type != TokenType::CODE) {
-            // Check if it's a template literal (starts and ends with backtick)
-            if (tok.type == TokenType::STRING_LITERAL && 
-                tok.text.size() >= 2 && 
-                tok.text[0] == '`' && 
-                tok.text[tok.text.size() - 1] == '`') {
-                // Process template literal to replace variables inside ${...}
-                result += processTemplateLiteral(tok.text, nameMap);
-            } else {
-                // Preserve strings, comments verbatim
-                result += tok.text;
-            }
+    std::string out = code;
+    std::vector<js_scope::RenameSpan> spans = plan.spans;
+    std::sort(spans.begin(), spans.end(), [](const js_scope::RenameSpan& a, const js_scope::RenameSpan& b) {
+        return a.start > b.start;
+    });
+    for (const auto& s : spans) {
+        if (s.start > out.size() || s.end > out.size() || s.start >= s.end) {
             continue;
         }
-
-        // Walk through the code segment and replace identifiers
-        // that are NOT preceded by '.'
-        const std::string& segment = tok.text;
-        std::string replaced;
-        replaced.reserve(segment.size());
-
-        std::sregex_iterator it(segment.begin(), segment.end(), IDENTIFIER_REGEX);
-        std::sregex_iterator endIt;
-        size_t lastPos = 0;
-
-        while (it != endIt) {
-            const std::smatch& m = *it;
-            size_t matchStart = static_cast<size_t>(m.position());
-            size_t matchLen = static_cast<size_t>(m.length());
-            std::string identifier = m[1].str();
-
-            // Append text before the match
-            replaced += segment.substr(lastPos, matchStart - lastPos);
-
-            // Check if preceded by '.' (member access) or is an object-literal key
-            bool isMemberAccess = (matchStart > 0 && segment[matchStart - 1] == '.');
-            bool isObjKey = isObjectLiteralKey(segment, matchStart, matchStart + matchLen);
-
-            if (!isMemberAccess && !isObjKey && nameMap.find(identifier) != nameMap.end()) {
-                replaced += nameMap[identifier];
-            } else {
-                replaced += identifier;
-            }
-
-            lastPos = matchStart + matchLen;
-            ++it;
-        }
-        // Append remaining text after last match
-        replaced += segment.substr(lastPos);
-        result += replaced;
+        out.replace(s.start, s.end - s.start, s.mangled);
     }
+    return out;
+}
 
-    return result;
+bool JSObfuscator::tryValidateWithAcorn(const std::string& js) const {
+#if defined(_WIN32)
+    (void)js;
+    return true;
+#else
+    static const char kSnippet[] =
+        "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{"
+        "try{require('acorn').parse(d,{ecmaVersion:2022,allowReturnOutsideFunction:true});"
+        "process.exit(0);}catch(e){process.stderr.write(String(e)+'\\n');process.exit(1);}"
+        "});";
+    char tmpPath[] = "/tmp/geruest_acorn_chkXXXXXX";
+    int tfd = mkstemp(tmpPath);
+    if (tfd < 0) {
+        return false;
+    }
+    {
+        const ssize_t n = static_cast<ssize_t>(sizeof(kSnippet) - 1);
+        if (write(tfd, kSnippet, static_cast<size_t>(n)) != n) {
+            close(tfd);
+            unlink(tmpPath);
+            return false;
+        }
+        close(tfd);
+    }
+    std::string cmd = std::string("node \"") + tmpPath + "\"";
+    FILE* pipe = popen(cmd.c_str(), "w");
+    if (!pipe) {
+        unlink(tmpPath);
+        return false;
+    }
+    if (!js.empty()) {
+        size_t w = fwrite(js.data(), 1, js.size(), pipe);
+        (void)w;
+    }
+    int st = pclose(pipe);
+    unlink(tmpPath);
+    if (st == -1) {
+        return false;
+    }
+    return WIFEXITED(st) && WEXITSTATUS(st) == 0;
+#endif
 }
 
 std::string JSObfuscator::encodeStrings(const std::string& code) {
+    const std::vector<Token> tokens = tokenize(code);
     std::string result;
-    result.reserve(static_cast<size_t>(static_cast<double>(code.size()) * 1.5));  // Encoded strings are longer
-    
-    bool inString = false;
-    bool inSingleQuote = false;
-    bool inUnderscoreContext = false;  // Track if we're in a _-prefixed function/variable
-    int braceDepth = 0;  // Track nesting depth
-    char prevChar = '\0';
-    std::string currentString;
-    
-    for (size_t i = 0; i < code.size(); ++i) {
-        char c = code[i];
-        
-        // Update context by tracking identifiers and braces
-        if (!inString && !inSingleQuote && c == '_' && (i == 0 || (!std::isalnum(static_cast<unsigned char>(code[i-1])) && code[i-1] != '$'))) {
-            // Check if this is the start of a _-prefixed identifier
-            size_t j = i + 1;
-            while (j < code.size() && (std::isalnum(static_cast<unsigned char>(code[j])) || code[j] == '_' || code[j] == '$')) {
-                j++;
-            }
-            if (j > i + 1) {  // Valid identifier starting with _
-                // Look ahead to see if followed by ( or = (function or variable)
-                while (j < code.size() && std::isspace(static_cast<unsigned char>(code[j]))) j++;
-                if (j < code.size() && (code[j] == '(' || code[j] == '=')) {
-                    inUnderscoreContext = true;
-                    braceDepth = 0;
-                }
-            }
+    result.reserve(static_cast<size_t>(static_cast<double>(code.size()) * 1.5));
+
+    for (const auto& tok : tokens) {
+        if (tok.type == TokenType::CODE) {
+            result += tok.text;
+            continue;
         }
-        
-        // Track braces to know when _-context ends
-        if (!inString && !inSingleQuote) {
-            if (c == '{') {
-                braceDepth++;
-            } else if (c == '}') {
-                braceDepth--;
-                if (braceDepth <= 0) {
-                    inUnderscoreContext = false;
-                    braceDepth = 0;
+        if (tok.type == TokenType::STRING_LITERAL) {
+            if (!tok.text.empty() && tok.text[0] == '`') {
+                result += tok.text;
+                continue;
+            }
+            if (tok.text.size() >= 2) {
+                const char q = tok.text[0];
+                if (q == '"' || q == '\'') {
+                    const std::string inner = extractQuotedInner(tok.text);
+                    result += encodeStringLiteral(inner);
+                    continue;
                 }
             }
+            result += tok.text;
+            continue;
         }
-        
-        // Process strings
-        if (c == '"' && prevChar != '\\' && !inSingleQuote) {
-            if (inString) {
-                // End of string - encode it only if NOT in _-context
-                if (inUnderscoreContext) {
-                    result += '"';
-                    result += currentString;
-                    result += '"';
-                } else {
-                    result += encodeStringLiteral(currentString);
-                }
-                currentString.clear();
-                inString = false;
-            } else {
-                // Start of string
-                inString = true;
-            }
-        } else if (c == '\'' && prevChar != '\\' && !inString) {
-            if (inSingleQuote) {
-                // End of string - encode it only if NOT in _-context
-                if (inUnderscoreContext) {
-                    result += '\'';
-                    result += currentString;
-                    result += '\'';
-                } else {
-                    // Single quotes also get encoded at level 2
-                    result += encodeStringLiteral(currentString);
-                }
-                currentString.clear();
-                inSingleQuote = false;
-            } else {
-                // Start of string
-                inSingleQuote = true;
-            }
-        } else if (inString || inSingleQuote) {
-            currentString += c;
-        } else {
-            result += c;
-        }
-        
-        prevChar = c;
+        result += tok.text;
     }
-    
+
     return result;
 }
 

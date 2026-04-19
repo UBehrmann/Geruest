@@ -55,6 +55,10 @@ endif()
 # Build the Geruest library first
 set(GERUEST_SOURCES
     ../src/Geruest.cpp
+    ../src/server/Config.cpp
+    ../src/server/Socket.cpp
+    ../src/server/Workers.cpp
+    ../src/server/Status.cpp
     ../src/auth/BasicAuth.cpp
     ../src/builders/AssetMerger.cpp
     ../src/builders/ContentBuilder.cpp
@@ -66,9 +70,11 @@ set(GERUEST_SOURCES
     ../src/config/ConfigLoader.cpp
     ../src/data/HTTPRequest.cpp
     ../src/data/HTTPResponse.cpp
+    ../src/data/MethodNotAllowed.cpp
     ../src/FileManagement/FileManagement.cpp
     ../src/handler/Handler.cpp
     ../src/parser/JSONParser.cpp
+    ../src/security/Security.cpp
 )
 
 # Conditionally add EmailSender if CURL is available

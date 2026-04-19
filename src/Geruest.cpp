@@ -13,12 +13,15 @@
  */
 
 #include "Geruest.hpp"
+#include "builders/WebPConverter.hpp"
 
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #endif
 
+#include <fstream>
+#include <filesystem>
 #include <iostream>
 #include <sstream>
 
@@ -29,6 +32,14 @@ namespace geruest {
 // ========== Constructor / Destructor ==========
 
 Geruest::Geruest() {
+    // Disable buffering so log lines are visible even if the process is killed
+    // by the OOM killer (SIGKILL leaves no time for buffer flushing).
+    std::cout.setf(std::ios::unitbuf);
+    std::cerr.setf(std::ios::unitbuf);
+
+    // Share the single log-level source with WebPConverter.
+    WebPConverter::setServerData(&serverData);
+
     std::cout << "Geruest Framework v" << getVersion() << std::endl;
 
 #ifdef _WIN32
@@ -42,6 +53,10 @@ Geruest::Geruest() {
 }
 
 Geruest::~Geruest() {
+    running.store(false, std::memory_order_relaxed);
+    if (_statusPersistenceThread.joinable()) {
+        _statusPersistenceThread.join();
+    }
     stopWorkers();
 
 #ifdef _WIN32
@@ -87,6 +102,8 @@ LogLevel Geruest::getLogLevel() const { return serverData.getLogLevel(); }
 void Geruest::setPort(int _port) { port = _port; _configFlags.portSet = true; }
 
 void Geruest::setHostname(const std::string& hostname) { hostname_ = hostname; _configFlags.hostnameSet = true; }
+
+void Geruest::setStatusPersistencePath(std::string path) { _statusPersistencePath = std::move(path); }
 
 void Geruest::addRoute(const std::string& path, RouteHandler routeHandler) {
     serverData.addRoute(path, std::move(routeHandler));
@@ -170,6 +187,20 @@ void Geruest::setWebPQuality(float quality) {
 #endif
 }
 
+void Geruest::setWebPMaxDimension(int maxDimension) {
+#if GERUEST_HAS_WEBP
+    WebPConverter::setMaxConversionDimension(maxDimension);
+    if (maxDimension > 0) {
+        sendToLogger("WebP max dimension set to " + std::to_string(maxDimension) + "px");
+    } else {
+        sendToLogger("WebP automatic resizing disabled");
+    }
+#else
+    (void)maxDimension;
+    sendToLoggerError("WebP max dimension cannot be set - WebP conversion not available (GERUEST_HAS_WEBP=0)");
+#endif
+}
+
 void Geruest::setObfuscationLevel(unsigned int level) {
     serverData.setObfuscationLevel(level);
     sendToLogger(level > 0 ? "JS obfuscation enabled (level " + std::to_string(level) + ")"
@@ -186,6 +217,45 @@ void Geruest::addObfuscationExclusion(const std::string& filename) {
     sendToLogger("Added obfuscation exclusion: " + filename);
 }
 
+void Geruest::addObfuscationPreserveIdent(const std::string& name) {
+    serverData.addObfuscationPreserveIdent(name);
+}
+
+void Geruest::addObfuscationExternGlobal(const std::string& name) {
+    serverData.addObfuscationExternGlobal(name);
+}
+
+bool Geruest::loadObfuscationExternsFile(const std::string& pathRelativeToRoot) {
+    namespace fs = std::filesystem;
+    fs::path p = fs::path(serverData.getRoot()) / pathRelativeToRoot;
+    std::ifstream f(p);
+    if (!f) {
+        sendToLoggerError("Obfuscation externs file not readable: " + p.string());
+        return false;
+    }
+    std::ostringstream ss;
+    ss << f.rdbuf();
+    serverData.loadObfuscationExternsFromText(ss.str());
+    sendToLogger("Loaded obfuscation externs from: " + p.string());
+    return true;
+}
+
+void Geruest::setObfuscationStrictUndefined(bool enabled) {
+    serverData.setObfuscationStrictUndefined(enabled);
+}
+
+void Geruest::setObfuscationEmitGlobalThisAssignments(bool enabled) {
+    serverData.setObfuscationEmitGlobalThisAssignments(enabled);
+}
+
+void Geruest::setObfuscationValidateWithAcorn(bool enabled) {
+    serverData.setObfuscationValidateWithAcorn(enabled);
+}
+
+void Geruest::setObfuscationAutoBracketKeys(bool enabled) {
+    serverData.setObfuscationAutoBracketKeys(enabled);
+}
+
 void Geruest::enableDevMode() {
     serverData.enableDevMode();
     _configFlags.devModeSet = true;
@@ -195,7 +265,10 @@ void Geruest::enableDevMode() {
 // ========== Thread Pool Configuration ==========
 
 void Geruest::setWorkerThreadCount(size_t count) {
-    if (running || _workersRunning) { sendToLoggerError("Cannot change worker thread count while server is running"); return; }
+    if (running.load(std::memory_order_relaxed) || _workersRunning.load(std::memory_order_relaxed)) {
+        sendToLoggerError("Cannot change worker thread count while server is running");
+        return;
+    }
     if (count == 0) { sendToLoggerError("Worker thread count must be at least 1, setting to 1"); _workerThreadCount = 1; _configFlags.workerThreadsSet = true; return; }
     _workerThreadCount = count;
     _configFlags.workerThreadsSet = true;
@@ -203,7 +276,10 @@ void Geruest::setWorkerThreadCount(size_t count) {
 }
 
 void Geruest::setMaxQueueSize(size_t size) {
-    if (running || _workersRunning) { sendToLoggerError("Cannot change queue size while server is running"); return; }
+    if (running.load(std::memory_order_relaxed) || _workersRunning.load(std::memory_order_relaxed)) {
+        sendToLoggerError("Cannot change queue size while server is running");
+        return;
+    }
     if (size == 0) { sendToLoggerError("Queue size must be at least 1, setting to 1"); _maxQueueSize = 1; _configFlags.maxQueueSizeSet = true; return; }
     _maxQueueSize = size;
     _configFlags.maxQueueSizeSet = true;

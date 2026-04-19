@@ -6,8 +6,11 @@
  */
 
 #include <gtest/gtest.h>
-#include <string>
+#include <cstdlib>
 #include <regex>
+#include <stdexcept>
+#include <string>
+#include <vector>
 #include "../../builders/JSObfuscator.hpp"
 
 using namespace geruest;
@@ -106,6 +109,20 @@ function test() {
     int openParens = countOccurrences(obfuscated, "(");
     int closeParens = countOccurrences(obfuscated, ")");
     EXPECT_EQ(openParens, closeParens);
+}
+
+// for-of uses contextual keyword "of"; it must not be mangled (invalid for-header).
+TEST(JSObfuscatorTest, ForOfContextualKeywordNotMangled) {
+    JSObfuscator obfuscator(3);
+    const std::string original = R"(
+(function(){
+const known = [1, 2];
+for (const k of known) { void k; }
+})();
+)";
+    const std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_TRUE(matchesRegex(obfuscated, R"(for\s*\(\s*const\s+\w+\s+of\s+\w+)"))
+        << obfuscated;
 }
 
 TEST(JSObfuscatorTest, ComplexCode) {
@@ -396,6 +413,21 @@ console.log(myVar);
         << "Identifiers inside block comments must not be mangled";
 }
 
+TEST(JSObfuscatorTest, LineCommentMinifyDoesNotSwallowNextStatement) {
+    JSObfuscator obfuscator(1);
+    // Strip newlines like removeWhitespace would without the // fix: the next
+    // line must still parse (must not merge into // ... as comment text).
+    std::string original = R"(const x=1;
+// section marker
+function f(){return x;}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_TRUE(contains(obfuscated, "function"))
+        << "Statement after line comment must remain code, not comment tail";
+    EXPECT_FALSE(contains(obfuscated, "// section markerfunction"))
+        << "Newline after // comment must be preserved before the next token";
+}
+
 TEST(JSObfuscatorTest, PreservesMemberAccessIdentifiers) {
     JSObfuscator obfuscator(1);
     std::string original = R"(
@@ -608,6 +640,30 @@ async function submitForm(formData) {
     EXPECT_FALSE(contains(obfuscated, "params"));
     EXPECT_FALSE(contains(obfuscated, "blob"));
     EXPECT_FALSE(contains(obfuscated, "formDataObj"));
+}
+
+// Quagga2 attaches to window.Quagga; mangling breaks barcode scanners that use the CDN global.
+TEST(JSObfuscatorTest, QuaggaGlobalPreserved) {
+    JSObfuscator obfuscator(3);
+    std::string original = R"(
+function startScanner() {
+    Quagga.init({ inputStream: { type: "LiveStream" } }, function onReady(err) {
+        if (err) return;
+        Quagga.start();
+    });
+    Quagga.offDetected();
+    Quagga.onDetected(function handler(data) {
+        const code = data.codeResult.code;
+        Quagga.stop();
+    });
+}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_TRUE(contains(obfuscated, "Quagga"))
+        << "CDN global Quagga must not be renamed";
+    EXPECT_FALSE(contains(obfuscated, "startScanner"));
+    EXPECT_FALSE(contains(obfuscated, "onReady"));
+    EXPECT_FALSE(contains(obfuscated, "handler"));
 }
 
 TEST(JSObfuscatorTest, ComprehensiveGlobalAPIsPreserved) {
@@ -1076,4 +1132,487 @@ var width = 768;
         << "5000 should be obfuscated: " << obfuscated;
     EXPECT_FALSE(contains(obfuscated, "768"))
         << "768 should be obfuscated: " << obfuscated;
+}
+
+// Lexer regression: escaped slash inside regex literal + whitespace pass.
+TEST(JSObfuscatorTest, RegexLiteralWithEscapedSlashAfterReplace) {
+    JSObfuscator obfuscator(2);
+    std::string original =
+        "const trimmed = String(path).replace(/^\\//, '');\n";
+    std::string obfuscated = obfuscator.obfuscate(original);
+
+    EXPECT_TRUE(contains(obfuscated, "^") && contains(obfuscated, "/"))
+        << "Regex literal with leading slash strip must survive: " << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, ".replace("))
+        << "replace() call must survive: " << obfuscated;
+}
+
+// Lexer regression: double quotes inside HTML embedded in template static spans.
+TEST(JSObfuscatorTest, TemplateLiteralHtmlQuotesPreserved) {
+    JSObfuscator obfuscator(2);
+    std::string original = R"(
+disclaimer.innerHTML = `
+    <span>We only use necessary cookies</span>
+    <button id="accept-cookies-btn">OK</button>
+`;
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+
+    EXPECT_TRUE(contains(obfuscated, "<span>"))
+        << "HTML in template must not be garbled: " << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "accept-cookies-btn"))
+        << "HTML id attribute must stay intact: " << obfuscated;
+}
+
+TEST(JSObfuscatorTest, QuerySelectorStringWithBracketsPreserved) {
+    JSObfuscator obfuscator(2);
+    std::string original =
+        "document.querySelector('input[placeholder*=\"search\" i]');\n";
+    std::string obfuscated = obfuscator.obfuscate(original);
+
+    EXPECT_TRUE(contains(obfuscated, "placeholder") && contains(obfuscated, "search"))
+        << "Selector string content must be preserved: " << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "querySelector"))
+        << "API name should remain (reserved): " << obfuscated;
+}
+
+// Brace matching inside ${ ... } (nested object in expression).
+TEST(JSObfuscatorTest, TemplateLiteralNestedBracesInSubstitution) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+const msg = `data: ${JSON.stringify({ key: 1 })}`;
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_TRUE(contains(obfuscated, "JSON.stringify"))
+        << "Nested braces in template expr should not truncate substitution: " << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "key"))
+        << "Object key inside ${} should remain: " << obfuscated;
+}
+
+TEST(JSObfuscatorTest, LetShadowingUsesDistinctMangledNames) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+let outer = 1;
+function f() {
+  let outer = 2;
+  return outer;
+}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    std::regex letDecl(R"(let\s+([a-zA-Z_$][a-zA-Z0-9_$]*))");
+    std::vector<std::string> names;
+    for (std::sregex_iterator it(obfuscated.begin(), obfuscated.end(), letDecl), end; it != end; ++it) {
+        names.push_back((*it)[1].str());
+    }
+    ASSERT_GE(names.size(), 2u);
+    EXPECT_NE(names[0], names[1]) << obfuscated;
+}
+
+// Regression: fnPool used to be std::vector<Env>; growth reallocated storage and left
+// parentFn/curEnv dangling (SIGSEGV) when obfuscating bundles with many functions.
+TEST(JSObfuscatorTest, ManyTopLevelFunctionsStableScope) {
+    JSObfuscator obfuscator(1);
+    std::string original;
+    for (int i = 0; i < 32; ++i) {
+        original += "function fn" + std::to_string(i) + "(){ var local" + std::to_string(i) + " = 1; return local"
+            + std::to_string(i) + ";}\n";
+    }
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_FALSE(obfuscated.empty());
+    EXPECT_FALSE(contains(obfuscated, "local0")) << obfuscated;
+}
+
+// Regression: DOMContentLoaded (skipUntilTerminal) sees call before later function decl — must reuse
+// implicit binding so mangled call matches mangled hoisted name (avoid ReferenceError).
+TEST(JSObfuscatorTest, ForwardReferenceToHoistedFunctionSharesBinding) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+document.addEventListener('DOMContentLoaded', function () {
+  initializeTheme();
+});
+function initializeTheme() { return 1; }
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_FALSE(contains(obfuscated, "initializeTheme")) << obfuscated;
+    std::regex declPat(R"(function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(\s*\)\s*\{)");
+    std::smatch m;
+    ASSERT_TRUE(std::regex_search(obfuscated, m, declPat)) << obfuscated;
+    std::string mangled = m[1].str();
+    EXPECT_NE(obfuscated.find(mangled + "();"), std::string::npos) << obfuscated;
+}
+
+TEST(JSObfuscatorTest, ForwardReferenceToHoistedFunctionSharesBindingLevel3) {
+    JSObfuscator obfuscator(3);
+    std::string original = R"(
+document.addEventListener('DOMContentLoaded', function () {
+  initializeFooterYear();
+});
+function initializeFooterYear() { return 1; }
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_FALSE(contains(obfuscated, "initializeFooterYear")) << obfuscated;
+    std::regex declPat(R"(function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(\s*\)\s*\{)");
+    std::smatch m;
+    ASSERT_TRUE(std::regex_search(obfuscated, m, declPat)) << obfuscated;
+    std::string mangled = m[1].str();
+    EXPECT_NE(obfuscated.find(mangled + "();"), std::string::npos) << obfuscated;
+}
+
+// Mirrors meine-buecher main.js: IIFE, template const, DOMContentLoaded without `;` after `});`,
+// void (async () => { ... })(); then top-level function called from the listener.
+TEST(JSObfuscatorTest, ForwardReferenceAfterVoidAsyncIifeInsideDomContentLoaded) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+(function applyInitialTheme() {
+  try { localStorage.getItem('darkMode'); } catch (e) {}
+})();
+
+const apiUrl = `${window.location.origin}/v1`;
+
+document.addEventListener("DOMContentLoaded", function () {
+  initializeFooterYear();
+  void (async () => {
+    if (!apiUrl) return;
+  })();
+});
+function initializeFooterYear() {
+  const footerYear = document.getElementById('footer-year');
+  if (footerYear) footerYear.textContent = '1';
+}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_FALSE(contains(obfuscated, "initializeFooterYear")) << obfuscated;
+    // Tight pattern: initializeFooterYear body starts with const + getElementById('footer-year')
+    std::regex declPat(
+        R"(function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(\s*\)\s*\{\s*const\s+[a-zA-Z_$][a-zA-Z0-9_$]*\s*=\s*document\.getElementById\(['\"]footer-year['\"]\))");
+    std::smatch m;
+    ASSERT_TRUE(std::regex_search(obfuscated, m, declPat)) << obfuscated;
+    std::string mangled = m[1].str();
+    EXPECT_EQ(countOccurrences(obfuscated, mangled), 2) << obfuscated;
+    EXPECT_NE(obfuscated.find(mangled + "();"), std::string::npos) << obfuscated;
+}
+
+// Regression: for-loop + if-return + return null; then `}` must not fall through to skipUntilTerminal
+// on `}` (negative brace depth swallowed clearAuthCookies and nested initializeFooterYear).
+TEST(JSObfuscatorTest, GetCookieStyleForLoopThenFunctionsStayTopLevel) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+function getCookie(name) {
+    const nameEQ = name + '=';
+    const ca = document.cookie.split(';');
+    for(let i=0;i < ca.length;i++) {
+        let c = ca[i];
+        while (c.charAt(0)==' ') c = c.substring(1,c.length);
+        if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length,c.length);
+    }
+    return null;
+}
+
+function clearAuthCookies() {
+    document.cookie = "x";
+}
+
+function initializeFooterYear() {
+    const footerYear = document.getElementById('footer-year');
+    if (footerYear) footerYear.textContent = '1';
+}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_FALSE(contains(obfuscated, "initializeFooterYear")) << obfuscated;
+    std::regex declPat(
+        R"(function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(\s*\)\s*\{\s*const\s+[a-zA-Z_$][a-zA-Z0-9_$]*\s*=\s*document\.getElementById\(['\"]footer-year['\"]\))");
+    std::smatch m;
+    ASSERT_TRUE(std::regex_search(obfuscated, m, declPat)) << obfuscated;
+    std::string mangled = m[1].str();
+    EXPECT_GE(countOccurrences(obfuscated, mangled), 1) << obfuscated;
+    int fnCount = 0;
+    for (size_t p = 0; (p = obfuscated.find("function ", p)) != std::string::npos; ++p) {
+        ++fnCount;
+    }
+    EXPECT_EQ(fnCount, 3) << obfuscated;
+}
+
+// Exact slice from meine-buecher main.js (getCookie … initializeFooterYear) plus a DOMContentLoaded
+// call — reproduces footer-year call/decl binding when the full file is not present.
+TEST(JSObfuscatorTest, MainJsGetCookieSliceFooterYearSharesBinding) {
+    JSObfuscator obfuscator(1);
+    static const char* const kSlice = R"WJ1(
+document.addEventListener("DOMContentLoaded",function(){
+initializeFooterYear();
+});
+function getCookie(name) {
+    const nameEQ = name + '=';
+    const ca = document.cookie.split(';');
+    for(let i=0;i < ca.length;i++) {
+        let c = ca[i];
+        while (c.charAt(0)==' ') c = c.substring(1,c.length);
+        if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length,c.length);
+    }
+    return null;
+}
+
+function clearAuthCookies() {
+    document.cookie = "username=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    document.cookie = "key=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    document.cookie = "user_id=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+}
+
+// === Functions moved from index.js for shared functionality ===
+
+function initializeFooterYear() {
+    const footerYear = document.getElementById('footer-year');
+    if (footerYear) {
+        footerYear.textContent = new Date().getFullYear();
+    }
+}
+
+)WJ1";
+    std::string obfuscated = obfuscator.obfuscate(std::string(kSlice));
+    EXPECT_FALSE(contains(obfuscated, "initializeFooterYear")) << obfuscated;
+    std::regex declPat(
+        R"(function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(\s*\)\s*\{\s*const\s+[a-zA-Z_$][a-zA-Z0-9_$]*\s*=\s*document\.getElementById\(['\"]footer-year['\"]\))");
+    std::smatch m;
+    ASSERT_TRUE(std::regex_search(obfuscated, m, declPat)) << obfuscated;
+    std::string mangled = m[1].str();
+    EXPECT_GE(countOccurrences(obfuscated, mangled), 2) << obfuscated;
+}
+
+TEST(JSObfuscatorTest, BracketStringKeyPreservesBareIdentifier) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+window['getCookie'] = function() { return 1; };
+var x = getCookie();
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_TRUE(contains(obfuscated, "getCookie")) << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "'getCookie'") || contains(obfuscated, "\"getCookie\"")) << obfuscated;
+}
+
+TEST(JSObfuscatorTest, BracketStringKeyDoubleQuotes) {
+    JSObfuscator obfuscator(1);
+    std::string original = "globalThis[\"localizedPath\"] = 1;\nfoo(localizedPath);\n";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_TRUE(contains(obfuscated, "localizedPath")) << obfuscated;
+}
+
+TEST(JSObfuscatorTest, AutoBracketKeysCanBeDisabled) {
+    JSObfuscateSettings st;
+    st.autoPreserveBracketStringKeys = false;
+    JSObfuscator obfuscator(1, st);
+    std::string original = "window['api'] = 1;\nfunction g() { api(); }\n";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_FALSE(contains(obfuscated, "api();")) << obfuscated;
+}
+
+TEST(JSObfuscatorTest, TemplateLiteralSlashAfterInterpolationIntact) {
+    JSObfuscator obfuscator(1);
+    std::string original = "function fn() { return 1; } var u = `x${fn()}/y`;\n";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_GE(countOccurrences(obfuscated, "`"), 2);
+    EXPECT_TRUE(contains(obfuscated, "/y")) << obfuscated;
+}
+
+// Regression: tokenize must not treat \/ + / in /^\// as // line comment (level ≥2 uses tokenize).
+// Regression: after ';' the lexer allows a regex; failed parse of "//" must not consume
+// only the first slash — otherwise "// ... doesn't" is misparsed and apostrophes break strings.
+TEST(JSObfuscatorTest, LineCommentSlashSlashAfterSemicolonSurvivesLevel2) {
+    JSObfuscator obfuscator(2);
+    std::string original =
+        "function f(){return false;// Ensure form doesn't submit\n"
+        "g();}\n";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_NE(obfuscated.find("doesn't"), std::string::npos) << obfuscated;
+}
+
+// Regression: window._languages= used to trip lodash-style passthrough and break
+// HTML attribute quotes; quoted fragments must always be JSON-style encoded.
+TEST(JSObfuscatorTest, Level2WindowUnderscorePropertyDoesNotBreakHtmlStrings) {
+    JSObfuscator obfuscator(2);
+    std::string original = R"(
+window._languages = [];
+function devNoticeHtml(wrap) {
+  wrap.innerHTML = '<h3 id="dev-heading" class="overlay__title"></h3>';
+}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_EQ(obfuscated.find("innerHTML=\"<h3 id=\""), std::string::npos)
+        << "double-quoted innerHTML with raw attribute quotes: " << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "dev-heading") || contains(obfuscated, "\\x22dev-heading\\x22"))
+        << obfuscated;
+}
+
+// Identifiers inside nested template literals (${...} containing `...${id}...`) must rename.
+TEST(JSObfuscatorTest, NestedTemplateLiteralIdentRenamed) {
+    JSObfuscator obfuscator(1);
+    std::string original = R"(
+function pathHelper(x) { return x; }
+function f() {
+  const encToken = 'u1';
+  return `${pathHelper(`checkUserBooks?username=${encToken}`)}`;
+}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_FALSE(contains(obfuscated, "encToken")) << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "checkUserBooks")) << obfuscated;
+}
+
+TEST(JSObfuscatorTest, Level2PreservesRegexWithEscapedSlash) {
+    JSObfuscator obfuscator(2);
+    std::string original = R"(
+function localizedPath(pathAndQuery) {
+    const lang = getLanguageFromURL();
+    const trimmed = String(pathAndQuery).replace(/^\//, '');
+    const qi = trimmed.indexOf('?');
+    if (qi === -1) {
+        return `/${lang}/${trimmed}`;
+    }
+    return `/${lang}/${trimmed.slice(0, qi)}${trimmed.slice(qi)}`;
+}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    // Regex literal is /^\/ with closing / — bytes: / ^ \ / /
+    EXPECT_NE(obfuscated.find("/^\\//"), std::string::npos) << obfuscated;
+    EXPECT_EQ(obfuscated.find(".replace(/^\\\n"), std::string::npos) << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "${") || contains(obfuscated, "`/${")) << obfuscated;
+}
+
+// Regression: single inBacktick flag treated inner ` of nested template as closing outer —
+// following `/` in markup was scanned as RegExpLiteral and corrupt output (SyntaxError: '{').
+TEST(JSObfuscatorTest, NestedTemplateLiteralMinifyPreservesContent) {
+    JSObfuscator obfuscator(1);
+    std::string original =
+        "function t(k){return k;} var authors='A'; var x = `hdr${"
+        " authors ? `<div class=\"flex/basis\">${t('a')}</div>` : ''}tail`;\n";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_TRUE(contains(obfuscated, "flex/basis")) << obfuscated;
+    EXPECT_GE(countOccurrences(obfuscated, "`"), 4);
+}
+
+// Ternary + nested template + inner ${param}: all uses of `author` must share one mangled name
+// (otherwise runtime ReferenceError: mangledName is not defined).
+TEST(JSObfuscatorTest, NestedTemplateTernaryInnerInterpolationSharesBinding) {
+    JSObfuscator obfuscator(3);
+    const std::string original = R"JS(
+function renderPending(cond, author) {
+  const html = `before ${cond ? `inner ${author} tail` : ''} after`;
+  return html + String(author);
+}
+)JS";
+    const std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_EQ(countOccurrences(obfuscated, "author"), 0) << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "inner ") || contains(obfuscated, "inner"))
+        << obfuscated;
+}
+
+// Regression: `${origin}/v1` + closing ` + `;` then more code — the closing ` must not be parsed
+// as opening a nested literal whose "close" is the next ` in the file (swallowed main.js into one
+// Tpl token → following functions stayed unmangled).
+TEST(JSObfuscatorTest, TemplateOriginSlashV1ThenFunctionWithTemplateNotSwallowed) {
+    JSObfuscator obfuscator(1);
+    const std::string original = R"JS(
+const apiUrl = `${window.location.origin}/v1`;
+
+function homepagePath() {
+    return `/${getLanguageFromURL()}/homepage`;
+}
+)JS";
+    const std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_FALSE(contains(obfuscated, "homepagePath")) << obfuscated;
+    EXPECT_FALSE(contains(obfuscated, "getLanguageFromURL")) << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "/homepage")) << obfuscated;
+}
+
+// ECMAScript: unescaped ` in template body opens a nested template literal (not the outer close).
+TEST(JSObfuscatorTest, TemplateRawNestedBacktickSegmentsStayOneToken) {
+    JSObfuscator obfuscator(1);
+    const std::string original = "function f(){return `a `b` c`;}\n";
+    const std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_GE(countOccurrences(obfuscated, "`"), 4) << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "b")) << obfuscated;
+}
+
+TEST(JSObfuscatorTest, QuotedPathAfterPlusSurvivesMinify) {
+    JSObfuscator obfuscator(1);
+    std::string original = "var a = fn() + \"/path/to/x\";\n";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_TRUE(contains(obfuscated, "/path/to/x")) << obfuscated;
+}
+
+TEST(JSObfuscatorTest, PreserveDirectiveKeepsName) {
+    JSObfuscator obfuscator(1);
+    std::string original = "// @obfuscate:preserve apiUrl\nvar apiUrl = 1;\nvar secret = 2;\n";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_TRUE(contains(obfuscated, "apiUrl")) << obfuscated;
+    EXPECT_FALSE(contains(obfuscated, "secret")) << obfuscated;
+}
+
+TEST(JSObfuscatorTest, StrictUndefinedThrows) {
+    JSObfuscateSettings st;
+    st.strictUndefinedSymbols = true;
+    JSObfuscator obfuscator(1, st);
+    EXPECT_THROW(obfuscator.obfuscate("notARealGlobal();"), std::runtime_error);
+}
+
+TEST(JSObfuscatorTest, ExternSkipsStrictUndefined) {
+    JSObfuscateSettings st;
+    st.strictUndefinedSymbols = true;
+    st.externGlobalNames.insert("notARealGlobal");
+    JSObfuscator obfuscator(1, st);
+    EXPECT_NO_THROW(obfuscator.obfuscate("notARealGlobal();"));
+}
+
+TEST(JSObfuscatorTest, EmitGlobalThisForPreservedTopLevelFunction) {
+    JSObfuscateSettings st;
+    st.emitGlobalThisAssignments = true;
+    st.preserveIdentNames.insert("getCookie");
+    JSObfuscator obfuscator(1, st);
+    std::string original = "function getCookie() { return 1; }\n";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_TRUE(contains(obfuscated, "globalThis['getCookie']")) << obfuscated;
+}
+
+// Optional: set GERUEST_RUN_ACORN_VALIDATE=1 and npm i acorn in cwd for this to pass.
+TEST(JSObfuscatorTest, AcornValidationWhenNodeAndAcornAvailable) {
+    if (std::getenv("GERUEST_RUN_ACORN_VALIDATE") == nullptr) {
+        GTEST_SKIP() << "Set GERUEST_RUN_ACORN_VALIDATE=1 with acorn installed";
+    }
+    JSObfuscateSettings st;
+    st.validateOutputWithAcorn = true;
+    JSObfuscator obfuscator(1, st);
+    std::string out = obfuscator.obfuscate("var x = 1;\n");
+    EXPECT_FALSE(out.empty());
+    const auto& diag = obfuscator.getLastDiagnostics();
+    bool acornOk = true;
+    for (const auto& line : diag) {
+        if (line.find("Acorn validation failed") != std::string::npos) {
+            acornOk = false;
+        }
+    }
+    EXPECT_TRUE(acornOk) << "Install acorn: npm i acorn";
+}
+
+// Same gate: merged-style snippets that previously risked regex/division confusion after minify.
+TEST(JSObfuscatorTest, AcornValidatesTemplateAndBracketPreserveGolden) {
+    if (std::getenv("GERUEST_RUN_ACORN_VALIDATE") == nullptr) {
+        GTEST_SKIP() << "Set GERUEST_RUN_ACORN_VALIDATE=1 with acorn installed";
+    }
+    JSObfuscateSettings st;
+    st.validateOutputWithAcorn = true;
+    JSObfuscator obfuscator(1, st);
+    const char* snippets[] = {
+        "function fn() { return 1; } var u = `x${fn()}/y`;\n",
+        "window['getCookie'] = function(){}; getCookie();\n",
+        "var a = fn() + \"/api/v1\";\nfunction fn(){return 1;}\n",
+    };
+    for (const char* src : snippets) {
+        std::string out = obfuscator.obfuscate(src);
+        EXPECT_FALSE(out.empty()) << src;
+        bool acornOk = true;
+        for (const auto& line : obfuscator.getLastDiagnostics()) {
+            if (line.find("Acorn validation failed") != std::string::npos) {
+                acornOk = false;
+            }
+        }
+        EXPECT_TRUE(acornOk) << src << " -> " << out;
+    }
 }

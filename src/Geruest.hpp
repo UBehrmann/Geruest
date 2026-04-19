@@ -211,6 +211,21 @@ class Geruest {
      */
     void addObfuscationExclusion(const std::string& filename);
 
+    void addObfuscationPreserveIdent(const std::string& name);
+    void addObfuscationExternGlobal(const std::string& name);
+
+    /**
+     * Load extern global names from a UTF-8 text file (one per line, # comments).
+     * @param pathRelativeToRoot Path relative to server content root
+     * @return false if file missing or unreadable
+     */
+    bool loadObfuscationExternsFile(const std::string& pathRelativeToRoot);
+
+    void setObfuscationStrictUndefined(bool enabled);
+    void setObfuscationEmitGlobalThisAssignments(bool enabled);
+    void setObfuscationValidateWithAcorn(bool enabled);
+    void setObfuscationAutoBracketKeys(bool enabled);
+
     /**
      * @brief Load configuration from .env file and environment variables
      * 
@@ -229,6 +244,13 @@ class Geruest {
      * - WORKER_THREADS (size_t): Number of worker threads (default: CPU cores * 2)
      * - MAX_QUEUE_SIZE (size_t): Maximum connection queue size (default: 500)
      * - LOG_LEVEL (string): Log level: "none", "error", "warning", "info", "debug" (default: "error")
+     * - OBFUSCATE_PRESERVE (string): Comma-separated identifiers to never rename
+     * - OBFUSCATE_EXTERNS (string): Comma-separated global names (host-provided)
+     * - OBFUSCATE_EXTERNS_FILE (string): Path under content root with one name per line
+     * - OBFUSCATE_STRICT_UNDEFINED (bool): Fail obfuscation on undefined free identifiers
+     * - OBFUSCATE_EMIT_GLOBALTHIS (bool): Append globalThis['name']=name for preserved top-level decls
+     * - OBFUSCATE_VALIDATE_ACORN (bool): Run optional Acorn parse when node+acorn are installed
+     * - OBFUSCATE_AUTO_BRACKET_KEYS (bool): Add static ['id']/[\"id\"] keys to preserve (default: true)
      * 
      * Email Configuration:
      * - SMTP_SERVER (string): SMTP server hostname
@@ -264,6 +286,23 @@ class Geruest {
      * @note Must be called before init() or start() to affect initial conversion
      */
     void setWebPQuality(float quality);
+
+    /**
+     * @brief Set the maximum pixel dimension for WebP conversion.
+     *
+     * Images whose longest side (width or height) exceeds this value are
+     * downscaled proportionally before encoding.  This is the primary way to
+     * control peak memory usage during conversion — a 5120×3413 image decoded
+     * to RGBA uses ~49 MB; the same image resized to max-1920 uses ~7 MB.
+     *
+     * Memory budget estimate: peak ≈ (src_pixels × 3) + (dst_pixels × 3)
+     * Example for a 5120×3413 JPEG with maxDimension=1920:
+     *   peak ≈ 49 MB (load) + 7 MB (resized) + ~10 MB (encode) ≈ 66 MB
+     *
+     * @param maxDimension Maximum width or height in pixels (default: 1920).
+     *                     Set to 0 to disable automatic resizing.
+     */
+    void setWebPMaxDimension(int maxDimension);
 
     /**
      * @brief Enable development mode for easier debugging and rapid development.
@@ -449,6 +488,13 @@ class Geruest {
     bool isRunning();
 
     /**
+     * @brief TCP port the listen socket is bound to (valid after init()).
+     * @return Port in host byte order, or -1 if init() has not succeeded / socket is invalid.
+     * @note When setPort(0) was used, this returns the OS-assigned ephemeral port.
+     */
+    int getListenPort() const;
+
+    /**
      * @brief Activate the /status metrics endpoint (token-protected).
      *
      * The endpoint returns a JSON snapshot of server health and metrics.
@@ -459,7 +505,8 @@ class Geruest {
      * - health: "ok" | "degraded" | "overloaded"
      * - version: Geruest framework version (useful for multi-version comparisons)
      * - timestamp: ISO 8601 UTC time of the snapshot
-     * - uptime_seconds: seconds since server start
+     * - uptime_seconds: seconds since this process entered start() (session)
+     * - uptime_hours_total: cumulative uptime in hours across restarts (persisted)
      * - requests.total / last_hour / avg_per_hour / active
      * - errors.total / client_4xx / server_5xx / internal (+ last_hour/avg_per_hour breakdown)
      * - queue.current_size / max_size / rejections_total / avg_fill_percent_hour / avg_fill_percent_per_hour
@@ -483,6 +530,14 @@ class Geruest {
      */
     void enableStatus(const std::string& token);
 
+    /**
+     * @brief Override path for persisted /status metrics (JSON). Default: geruest-status-state.json in cwd.
+     * @note Call before start().
+     */
+    void setStatusPersistencePath(std::string path);
+
+    const std::string& getStatusPersistencePath() const { return _statusPersistencePath; }
+
    private:
 #ifdef _WIN32
     SOCKET server_fd = INVALID_SOCKET;  // Socket descriptor for the server
@@ -492,7 +547,7 @@ class Geruest {
 
     struct sockaddr_in address{};
 
-    bool running = false;
+    std::atomic<bool> running{false};
 
     int port = 8080;
 
@@ -500,6 +555,9 @@ class Geruest {
 
     bool _statusActive = false;
     std::string _statusToken;
+
+    std::string _statusPersistencePath{"geruest-status-state.json"};
+    std::thread _statusPersistenceThread;
 
     ServerData serverData;
 
@@ -563,6 +621,8 @@ class Geruest {
      * @brief Stops the worker thread pool and waits for all threads to finish.
      */
     void stopWorkers();
+
+    void statusPersistenceLoop();
 
 #ifdef _WIN32
     void giveToHandler(SOCKET new_socket, std::string& IP);

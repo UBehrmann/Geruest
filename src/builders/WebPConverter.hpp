@@ -15,10 +15,15 @@
 
 #include <string>
 #include <vector>
+#include <deque>
+#include <memory>
 #include <unordered_map>
 #include <unordered_set>
 #include <mutex>
+#include <condition_variable>
 #include <cstdint>
+
+#include "../data/ServerData.hpp"
 
 namespace geruest {
 
@@ -34,6 +39,20 @@ public:
      * @brief Default WebP quality (0-100, where 100 is lossless)
      */
     static constexpr float WEBP_DEFAULT_QUALITY = 75.0f;
+
+    /**
+     * @brief Default maximum in-memory cache size (64 MB).
+     *        Oldest entries are evicted once this limit is reached.
+     */
+    static constexpr size_t WEBP_DEFAULT_MAX_CACHE_BYTES = 64ULL * 1024 * 1024;
+
+    /**
+     * @brief Default maximum pixel dimension (longest side) before downscaling.
+     *        Images wider or taller than this are scaled down proportionally
+     *        before encoding, dramatically reducing peak memory usage.
+     *        Set to 0 to disable resizing.
+     */
+    static constexpr int WEBP_DEFAULT_MAX_DIMENSION = 1920;
 
     // ========== Static methods for direct use without instance ==========
 
@@ -64,11 +83,36 @@ public:
     static std::string replaceImageReferencesWithWebP(const std::string& htmlContent);
 
     /**
-     * @brief Get WebP data from the static in-memory cache
+     * @brief Get WebP data from the static in-memory cache (zero-copy).
      * @param webpPath The path of the WebP file
-     * @return The WebP binary data, or empty vector if not found
+     * @return Shared pointer to the WebP binary data, or nullptr if not found
      */
-    static std::vector<uint8_t> getFromCache(const std::string& webpPath);
+    static std::shared_ptr<const std::vector<uint8_t>> getFromCache(const std::string& webpPath);
+
+    /**
+     * @brief Set the maximum total byte size of the in-memory cache.
+     *        Oldest entries are evicted to stay within the limit.
+     * @param maxBytes Maximum cache size in bytes
+     */
+    static void setMaxCacheBytes(size_t maxBytes);
+
+    /**
+     * @brief Set the maximum pixel dimension (longest side) for conversion.
+     *        Images larger than this are downscaled proportionally before
+     *        encoding.  This bounds peak decode/encode memory to a predictable
+     *        value regardless of the source image size.
+     *        Set to 0 to disable automatic resizing.
+     * @param maxDimension Maximum width or height in pixels (default 1920)
+     */
+    static void setMaxConversionDimension(int maxDimension);
+
+    /**
+     * @brief Link WebPConverter to the server's ServerData so it shares the
+     *        same log level.  Call once at startup before any conversions.
+     *        Debug level enables Loading / Resizing / Skipping progress lines.
+     * @param sd Pointer to the live ServerData instance (must outlive all conversions)
+     */
+    static void setServerData(const ServerData* sd);
 
     /**
      * @brief Check if a WebP image exists in static cache
@@ -137,28 +181,101 @@ private:
     bool _devMode;
     float _quality;
 
-    // Static cache for WebP images (shared across all instances)
+    // Static cache for WebP images (shared across all instances).
+    // Values are shared_ptr so callers can hold a reference without copying.
+    // A parallel deque tracks insertion order for FIFO eviction.
+    // _staticCacheMutex also guards _inProgressConversions (see below).
     static std::mutex _staticCacheMutex;
-    static std::unordered_map<std::string, std::vector<uint8_t>> _staticWebpCache;
+    static std::unordered_map<std::string, std::shared_ptr<const std::vector<uint8_t>>> _staticWebpCache;
+    static std::deque<std::string> _staticCacheOrder;
+    static size_t _staticCacheSizeBytes;
+    static size_t _staticMaxCacheBytes;
+
+    // Conversion serialisation — two-level scheme:
+    //
+    //  1. _conversionActive (global): only ONE decode/encode pipeline runs at a
+    //     time, regardless of image path.  This bounds peak memory to a single
+    //     source-buffer + resize-buffer, preventing concurrent loads from
+    //     different images (e.g. 6 browser tab connections) from collectively
+    //     exhausting the container's RAM.
+    //
+    //  2. _inProgressConversions (per-path): when a second thread wants the same
+    //     image that is already being converted it waits on _conversionCV and
+    //     picks up the result from cache instead of repeating the work.
+    //
+    // Both flags are guarded by _staticCacheMutex and signalled via _conversionCV.
+    static std::condition_variable _conversionCV;
+    static std::unordered_set<std::string> _inProgressConversions;
+    static bool _conversionActive;
+
+    // Maximum pixel dimension (longest side) before downscaling.  0 = disabled.
+    static int _maxConversionDimension;
+
+    // Pointer to the server's ServerData — used to read the live log level.
+    // Set once via setServerData(); nullptr means all verbose logs are off.
+    static const ServerData* _serverData;
 
     /**
-     * @brief Load a PNG or JPEG file into RGBA buffer using stb_image
-     * @param path Path to the image file
-     * @param width Output: Image width
-     * @param height Output: Image height
-     * @return RGBA pixel data, or empty vector on failure
+     * @brief Return the number of bytes currently available to this process.
+     *        Reads the Docker/cgroup memory limit when running in a container
+     *        so the estimate is correct even inside a memory-limited container.
+     *        Returns 0 if the limit cannot be determined.
      */
-    static std::vector<uint8_t> loadImage(const std::string& path, int& width, int& height);
+    static size_t getAvailableMemoryBytes();
 
     /**
-     * @brief Encode RGBA data to WebP format
-     * @param rgba RGBA pixel data
-     * @param width Image width
-     * @param height Image height
-     * @param quality WebP quality (0-100)
+     * @brief Estimate peak memory (bytes) needed to convert an image.
+     *        With resize: source buffer + resized buffer (source freed mid-way).
+     *        Without resize: source buffer × 2.5 (libwebp working memory).
+     */
+    static size_t estimateConversionPeakBytes(int srcW, int srcH, int channels);
+
+    // RAII wrapper for stbi_load output — avoids copying the raw pixel buffer.
+    // The deleter body is defined in WebPConverter.cpp where stb_image.h lives.
+    struct StbiDeleter { void operator()(uint8_t* p) const noexcept; };
+    using StbiBuffer = std::unique_ptr<uint8_t[], StbiDeleter>;
+
+    /**
+     * @brief Load a PNG or JPEG file using stb_image.
+     *        JPEGs load as RGB (3 ch); PNGs with alpha load as RGBA (4 ch).
+     *        The returned buffer is the raw stbi allocation — no copy is made.
+     * @param path     Path to the image file
+     * @param width    Output: image width in pixels
+     * @param height   Output: image height in pixels
+     * @param channels Output: number of channels loaded (3 or 4)
+     * @return Owning stbi buffer, or nullptr on failure
+     */
+    static StbiBuffer loadImage(const std::string& path,
+                                int& width, int& height, int& channels);
+
+    /**
+     * @brief Downscale a pixel buffer so its longest side is at most maxDim.
+     *        Aspect ratio is preserved.  Takes ownership of the source buffer
+     *        and frees it immediately after writing the resized output, so
+     *        peak memory = source + target (not source + source + target).
+     * @param src      Source stbi buffer (consumed / freed inside)
+     * @param width    In/out: source width → target width
+     * @param height   In/out: source height → target height
+     * @param channels Number of channels (3 or 4)
+     * @param maxDim   Maximum allowed dimension on the longest side
+     * @return Resized pixel data as a vector
+     */
+    static std::vector<uint8_t> resizeImage(StbiBuffer src,
+                                             int& width, int& height,
+                                             int channels, int maxDim);
+
+    /**
+     * @brief Encode a raw pixel buffer to WebP format.
+     * @param pixels   Pointer to RGB or RGBA pixel data
+     * @param width    Image width
+     * @param height   Image height
+     * @param channels 3 (RGB) or 4 (RGBA)
+     * @param quality  WebP quality (0-100)
      * @return WebP binary data, or empty vector on failure
      */
-    static std::vector<uint8_t> encodeToWebP(const std::vector<uint8_t>& rgba, int width, int height, float quality);
+    static std::vector<uint8_t> encodeToWebP(const uint8_t* pixels,
+                                              int width, int height,
+                                              int channels, float quality);
 
     /**
      * @brief Save WebP data to a file

@@ -9,6 +9,7 @@
 #include <string>
 #include "../../data/HTTPResponse.hpp"
 #include "../../data/HTTPRequest.hpp"
+#include "../../data/MethodNotAllowed.hpp"
 
 using namespace geruest;
 
@@ -115,4 +116,21 @@ TEST(HTTPResponseTest, BuildHeaderFunctions) {
     std::string authHeader = buildAuthHeader();
     EXPECT_NE(authHeader.find("HTTP/1.1 401 Unauthorized"), std::string::npos);
     EXPECT_NE(authHeader.find("WWW-Authenticate"), std::string::npos);
+}
+
+TEST(HTTPResponseTest, MethodNotAllowedAllowHeader) {
+    HTTPRequest req("GET / HTTP/1.1\r\nHost: x\r\n\r\n", "127.0.0.1", "/");
+    HTTPResponse r = responseMethodNotAllowed(&req, "GET, HEAD");
+    const std::string s = r.toString();
+    EXPECT_NE(s.find("HTTP/1.1 405 Method Not Allowed"), std::string::npos);
+    EXPECT_NE(s.find("Allow: GET, HEAD"), std::string::npos);
+}
+
+TEST(HTTPResponseTest, MethodNotAllowedExceptionType) {
+    try {
+        throw method_not_allowed("GET, POST");
+    } catch (const method_not_allowed& e) {
+        EXPECT_EQ(e.allowMethods(), "GET, POST");
+        EXPECT_NE(std::string(e.what()).find("405"), std::string::npos);
+    }
 }

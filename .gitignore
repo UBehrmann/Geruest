@@ -44,9 +44,20 @@ cmake-build-debug
 
 # All the build directories
 build*
+!builders
 
 # All environment files
 .env
 
 # All shell scripts
 *.sh
+
+package-lock.json
+package.json
+node_modules
+
+# Local editor / IDE / tooling (keep locally, not in repo)
+.cursor/
+.github/copilot-instructions.md
+.idea/
+.vscode/

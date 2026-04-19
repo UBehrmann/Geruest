@@ -16,6 +16,7 @@ configure_file(
 )
 
 # Fetch Google Test
+# DOWNLOAD_EXTRACT_TIMESTAMP requires CMake 3.24+; this directory sets 3.28+.
 include(FetchContent)
 FetchContent_Declare(
   googletest
@@ -65,6 +66,8 @@ set(GERUEST_SOURCES
     ../config/ConfigLoader.cpp
     ../data/HTTPRequest.cpp
     ../data/HTTPResponse.cpp
+    ../data/MethodNotAllowed.cpp
+    ../data/ServerData.cpp
     ../parser/JSONParser.cpp
     ../FileManagement/FileManagement.cpp
     ../builders/AssetMerger.cpp
@@ -73,8 +76,10 @@ set(GERUEST_SOURCES
     ../builders/CSSBuilder.cpp
     ../builders/JSBuilder.cpp
     ../builders/JSObfuscator.cpp
+    ../builders/JSObfuscatorScope.cpp
     ../builders/WebPConverter.cpp
     ../handler/Handler.cpp
+    ../security/Security.cpp
 )
 
 # Conditionally add EmailSender if CURL is available
@@ -85,16 +90,28 @@ endif()
 # Create individual test executables
 # Note: No longer building a combined Geruest_Unit_Tests executable
 # All tests are run via individual executables or ctest
-add_executable(JSONParser_Tests JSONParser/JSONParser_tests.cpp ../parser/JSONParser.cpp)
+add_executable(JSONParser_Tests
+    JSONParser/JSONParser_tests.cpp
+    ../parser/JSONParser.cpp
+    ../security/Security.cpp
+)
 target_link_libraries(JSONParser_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
-add_executable(HTTPRequest_Tests HTTPRequest/HTTPRequest_tests.cpp ../data/HTTPRequest.cpp)
+add_executable(HTTPRequest_Tests
+    HTTPRequest/HTTPRequest_tests.cpp
+    ../data/HTTPRequest.cpp
+    ../parser/JSONParser.cpp
+    ../security/Security.cpp
+)
 target_link_libraries(HTTPRequest_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
-add_executable(HTTPResponse_Tests 
-    HTTPResponse/HTTPResponse_tests.cpp 
-    ../data/HTTPResponse.cpp 
+add_executable(HTTPResponse_Tests
+    HTTPResponse/HTTPResponse_tests.cpp
+    ../data/HTTPResponse.cpp
     ../data/HTTPRequest.cpp
+    ../data/MethodNotAllowed.cpp
+    ../parser/JSONParser.cpp
+    ../security/Security.cpp
 )
 target_link_libraries(HTTPResponse_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
@@ -110,8 +127,10 @@ add_executable(ContentBuilder_Tests
     ../builders/CSSBuilder.cpp
     ../builders/JSBuilder.cpp
     ../builders/JSObfuscator.cpp
+    ../builders/JSObfuscatorScope.cpp
     ../builders/WebPConverter.cpp
     ../parser/JSONParser.cpp
+    ../security/Security.cpp
     ../FileManagement/FileManagement.cpp
 )
 target_link_libraries(ContentBuilder_Tests ${PLATFORM_LIBS} GTest::gtest_main)
@@ -119,8 +138,10 @@ target_link_libraries(ContentBuilder_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 add_executable(JSObfuscator_Tests 
     JSObfuscator/JSObfuscator_tests.cpp 
     ../builders/JSObfuscator.cpp
+    ../builders/JSObfuscatorScope.cpp
 )
 target_link_libraries(JSObfuscator_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+# Optional syntax check: npm i acorn && js < tools/acorn_validate_stdin.js (repo root)
 
 add_executable(BasicAuth_Tests 
     BasicAuth/BasicAuth_tests.cpp 
@@ -142,6 +163,30 @@ add_executable(AssetMerger_Tests
 )
 target_link_libraries(AssetMerger_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
+add_executable(Security_Tests
+    Security/Security_tests.cpp
+    ../security/Security.cpp
+)
+target_link_libraries(Security_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+
+add_executable(ServerDataMetricsPersistence_Tests
+    ServerData/ServerDataMetricsPersistence_tests.cpp
+    ../data/ServerData.cpp
+    ../parser/JSONParser.cpp
+    ../auth/BasicAuth.cpp
+    ../security/Security.cpp
+)
+target_link_libraries(ServerDataMetricsPersistence_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+
+add_executable(GeruestLifecycle_Tests
+    Geruest/GeruestLifecycle_tests.cpp
+    ${GERUEST_SOURCES}
+)
+target_link_libraries(GeruestLifecycle_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+if(GERUEST_HAS_CURL)
+    target_link_libraries(GeruestLifecycle_Tests CURL::libcurl)
+endif()
+
 # Add tests to CTest using Google Test discovery
 include(GoogleTest)
 gtest_discover_tests(JSONParser_Tests)
@@ -153,11 +198,14 @@ gtest_discover_tests(JSObfuscator_Tests)
 gtest_discover_tests(BasicAuth_Tests)
 gtest_discover_tests(ConfigLoader_Tests)
 gtest_discover_tests(AssetMerger_Tests)
+gtest_discover_tests(Security_Tests)
+gtest_discover_tests(ServerDataMetricsPersistence_Tests)
+gtest_discover_tests(GeruestLifecycle_Tests)
 
 # Custom target to run all tests
 add_custom_target(run_tests
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-    DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests
+    DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests ServerDataMetricsPersistence_Tests GeruestLifecycle_Tests
     COMMENT "Running all unit tests via CTest"
 )
 

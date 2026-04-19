@@ -14,6 +14,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cctype>
 #include <cstdint>
 #include <functional>
 #include <mutex>
@@ -21,12 +22,14 @@
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include "HTTPRequest.hpp"
 #include "HTTPResponse.hpp"
 #include "../auth/BasicAuth.hpp"
+#include "parser/JSONParser.hpp"
 
 namespace geruest {
 
@@ -69,6 +72,12 @@ class ServerData {
     unsigned int _obfuscationLevel = 0;  // JS obfuscation level (0=disabled, 1-3=increasing complexity)
     int _obfuscationCacheExpiryDays = 7;  // Days to keep obfuscated files cached
     std::vector<std::string> _obfuscationExclusions;  // Files excluded from obfuscation and merging
+    std::unordered_set<std::string> _obfuscationPreserveIdents;   // Never rename (API / cross-chunk)
+    std::unordered_set<std::string> _obfuscationExternGlobals;    // Assumed global at runtime
+    bool _obfuscationStrictUndefined = false;   // Throw if obfuscator reports undefined free identifiers
+    bool _obfuscationEmitGlobalThisBracket = false;  // Append globalThis['name']=name for preserved top-level
+    bool _obfuscationValidateWithAcorn = false; // Optional parse via node+acorn after transform
+    bool _obfuscationAutoBracketKeys = true;    // Add ['name'] / ["name"] keys to preserve set
     std::vector<std::string> _availableLanguages;
     std::string _defaultLanguage;
     std::string _notFoundPage;
@@ -103,6 +112,9 @@ class ServerData {
     mutable std::array<LatencySample, _LAT_CAP> _latSamples{};
     mutable size_t _latHead{0};
     mutable size_t _latCount{0};
+
+    /// Cumulative process uptime (seconds) through the last successful metrics save; loaded from disk at startup.
+    uint64_t _lifetimeUptimeBaselineSeconds{0};
 
     /**
      * Check if a path matches a wildcard pattern
@@ -302,14 +314,23 @@ class ServerData {
     ServerData(const ServerData& other)
         : _routes(other._routes),
           _wildcardRoutes(other._wildcardRoutes),
-                    _redirects(other._redirects),
-                    _wildcardRedirects(other._wildcardRedirects),
+          _redirects(other._redirects),
+          _wildcardRedirects(other._wildcardRedirects),
           _root(other._root),
           _removeComments(other._removeComments),
           _mergeAssets(other._mergeAssets),
           _devMode(other._devMode),
           _webpConversion(other._webpConversion),
           _webpQuality(other._webpQuality),
+          _obfuscationLevel(other._obfuscationLevel),
+          _obfuscationCacheExpiryDays(other._obfuscationCacheExpiryDays),
+          _obfuscationExclusions(other._obfuscationExclusions),
+          _obfuscationPreserveIdents(other._obfuscationPreserveIdents),
+          _obfuscationExternGlobals(other._obfuscationExternGlobals),
+          _obfuscationStrictUndefined(other._obfuscationStrictUndefined),
+          _obfuscationEmitGlobalThisBracket(other._obfuscationEmitGlobalThisBracket),
+          _obfuscationValidateWithAcorn(other._obfuscationValidateWithAcorn),
+          _obfuscationAutoBracketKeys(other._obfuscationAutoBracketKeys),
           _availableLanguages(other._availableLanguages),
           _defaultLanguage(other._defaultLanguage),
           _notFoundPage(other._notFoundPage),
@@ -329,6 +350,15 @@ class ServerData {
             _devMode = other._devMode;
             _webpConversion = other._webpConversion;
             _webpQuality = other._webpQuality;
+            _obfuscationLevel = other._obfuscationLevel;
+            _obfuscationCacheExpiryDays = other._obfuscationCacheExpiryDays;
+            _obfuscationExclusions = other._obfuscationExclusions;
+            _obfuscationPreserveIdents = other._obfuscationPreserveIdents;
+            _obfuscationExternGlobals = other._obfuscationExternGlobals;
+            _obfuscationStrictUndefined = other._obfuscationStrictUndefined;
+            _obfuscationEmitGlobalThisBracket = other._obfuscationEmitGlobalThisBracket;
+            _obfuscationValidateWithAcorn = other._obfuscationValidateWithAcorn;
+            _obfuscationAutoBracketKeys = other._obfuscationAutoBracketKeys;
             _availableLanguages = other._availableLanguages;
             _defaultLanguage = other._defaultLanguage;
             _notFoundPage = other._notFoundPage;
@@ -682,6 +712,69 @@ class ServerData {
         return _obfuscationExclusions;
     }
 
+    void addObfuscationPreserveIdent(const std::string& name) {
+        if (!name.empty()) {
+            _obfuscationPreserveIdents.insert(name);
+        }
+    }
+
+    void addObfuscationExternGlobal(const std::string& name) {
+        if (!name.empty()) {
+            _obfuscationExternGlobals.insert(name);
+        }
+    }
+
+    const std::unordered_set<std::string>& getObfuscationPreserveIdents() const {
+        return _obfuscationPreserveIdents;
+    }
+
+    const std::unordered_set<std::string>& getObfuscationExternGlobals() const {
+        return _obfuscationExternGlobals;
+    }
+
+    /**
+     * One name per line; empty lines and lines starting with # ignored.
+     */
+    void loadObfuscationExternsFromText(const std::string& text) {
+        size_t pos = 0;
+        while (pos < text.size()) {
+            size_t end = text.find('\n', pos);
+            if (end == std::string::npos) {
+                end = text.size();
+            }
+            std::string line = text.substr(pos, end - pos);
+            size_t a = 0;
+            while (a < line.size()
+                   && std::isspace(static_cast<unsigned char>(line[a]))) {
+                ++a;
+            }
+            size_t b = line.size();
+            while (b > a && std::isspace(static_cast<unsigned char>(line[b - 1]))) {
+                --b;
+            }
+            line = line.substr(a, b - a);
+            if (!line.empty() && line[0] != '#') {
+                addObfuscationExternGlobal(line);
+            }
+            pos = end + 1;
+        }
+    }
+
+    void setObfuscationStrictUndefined(bool v) { _obfuscationStrictUndefined = v; }
+
+    bool getObfuscationStrictUndefined() const { return _obfuscationStrictUndefined; }
+
+    void setObfuscationEmitGlobalThisAssignments(bool v) { _obfuscationEmitGlobalThisBracket = v; }
+
+    bool getObfuscationEmitGlobalThisAssignments() const { return _obfuscationEmitGlobalThisBracket; }
+
+    void setObfuscationValidateWithAcorn(bool v) { _obfuscationValidateWithAcorn = v; }
+
+    bool getObfuscationValidateWithAcorn() const { return _obfuscationValidateWithAcorn; }
+
+    void setObfuscationAutoBracketKeys(bool v) { _obfuscationAutoBracketKeys = v; }
+    bool getObfuscationAutoBracketKeys() const { return _obfuscationAutoBracketKeys; }
+
     /**
      * Check if obfuscation should be applied
      * Returns false if dev mode is on or obfuscation level is 0
@@ -843,6 +936,28 @@ class ServerData {
         return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - _startTime).count());
     }
+
+    /**
+     * Load persisted metrics from JSON (schema v1). Missing file is OK. Resets session start time after load.
+     * @return false if the file existed but was invalid; metrics may be partially applied or cleared.
+     */
+    bool loadPersistentMetricsFromFile(const std::string& path);
+
+    /**
+     * Atomically snapshot metrics to JSON (schema v1), including lifetime uptime through this moment.
+     */
+    bool savePersistentMetricsToFile(const std::string& path) const;
+
+    /** Cumulative uptime in hours: baseline from disk plus current session (since last load in start()). */
+    double getUptimeHoursTotal() const {
+        return static_cast<double>(_lifetimeUptimeBaselineSeconds + getUptimeSeconds()) / 3600.0;
+    }
+
+   private:
+    void clearAllMetrics_();
+
+    /// @param root copied so JSONParser getters (non-const) can be used during import
+    bool importPersistentMetricsJson_(JSONParser root);
 };
 
 }  // namespace geruest

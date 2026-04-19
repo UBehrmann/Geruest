@@ -31,6 +31,10 @@ Geruest (German for "scaffold") is a lightweight C++ web framework designed to s
   - Works seamlessly with asset merging
   - Respects development mode (auto-disables for debugging)
 - Security
+  - SQL injection protection (`Security::buildQuery`, `Security::escapeSql`)
+  - XSS protection (`Security::escapeHtml`)
+  - JSON injection protection (`Security::escapeJson`, built into `JSONParser`)
+  - Path traversal protection (`Security::isSafePath`, applied automatically to static files)
   - Logic bomb for bots?
   - Rate limiting
   - IP blocking
@@ -97,6 +101,7 @@ git clone https://github.com/UBehrmann/Geruest.git && cd Geruest && mkdir build 
 
 ### Security
 
+- **[Security Utilities](doc/SECURITY.md)** - SQL injection, XSS, JSON injection, path traversal protection
 - **[Basic Authentication](doc/BASIC_AUTH.md)** - HTTP Basic Auth for protected pages
 
 ### Contributing

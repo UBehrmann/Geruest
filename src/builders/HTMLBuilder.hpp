@@ -12,6 +12,7 @@
 #define HTMLBUILDER_HPP
 
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <mutex>
@@ -34,7 +35,7 @@ class HtmlBuilder : public ContentBuilder {
     static bool hasMergedAssetInCache(const std::string& path);
 
     // Static accessor for WebP cache (used by Handler)
-    static std::vector<uint8_t> getWebPFromCache(const std::string& path);
+    static std::shared_ptr<const std::vector<uint8_t>> getWebPFromCache(const std::string& path);
     static bool hasWebPInCache(const std::string& path);
 
    private:

@@ -17,6 +17,180 @@ namespace fs = std::filesystem;
 
 namespace geruest {
 
+namespace {
+
+/** True iff code[pos] is '/' and the immediately preceding run of '\\' has odd length (escaped slash). */
+bool isEscapedSlashBefore(const std::string& code, size_t pos) {
+    if (pos == 0 || code[pos] != '/') {
+        return false;
+    }
+    size_t backslashes = 0;
+    for (size_t k = pos; k > 0 && code[k - 1] == '\\'; --k) {
+        ++backslashes;
+    }
+    return (backslashes % 2U) == 1U;
+}
+
+/** Close brace for '${' inside template interpolation (matches JSObfuscator / Acorn-style skipping). */
+size_t templateInterpolationCloseAm(const std::string& s, size_t innerBegin) {
+    size_t pos = innerBegin;
+    int depth = 1;
+    bool inDq = false;
+    bool inSq = false;
+    bool inBt = false;
+
+    while (pos < s.size()) {
+        const char c = s[pos];
+        if (!inDq && !inSq && !inBt) {
+            if (c == '/' && pos + 1 < s.size() && s[pos + 1] == '/') {
+                pos += 2;
+                while (pos < s.size() && s[pos] != '\n') {
+                    ++pos;
+                }
+                continue;
+            }
+            if (c == '/' && pos + 1 < s.size() && s[pos + 1] == '*') {
+                pos += 2;
+                while (pos + 1 < s.size() && !(s[pos] == '*' && s[pos + 1] == '/')) {
+                    ++pos;
+                }
+                pos = (pos + 1 < s.size()) ? pos + 2 : s.size();
+                continue;
+            }
+            if (c == '"') {
+                inDq = true;
+                ++pos;
+                continue;
+            }
+            if (c == '\'') {
+                inSq = true;
+                ++pos;
+                continue;
+            }
+            if (c == '`') {
+                inBt = true;
+                ++pos;
+                continue;
+            }
+            if (c == '{') {
+                ++depth;
+                ++pos;
+                continue;
+            }
+            if (c == '}') {
+                --depth;
+                if (depth == 0) {
+                    return pos;
+                }
+                ++pos;
+                continue;
+            }
+            ++pos;
+            continue;
+        }
+        if (inDq) {
+            if (c == '\\' && pos + 1 < s.size()) {
+                pos += 2;
+                continue;
+            }
+            if (c == '"') {
+                inDq = false;
+            }
+            ++pos;
+            continue;
+        }
+        if (inSq) {
+            if (c == '\\' && pos + 1 < s.size()) {
+                pos += 2;
+                continue;
+            }
+            if (c == '\'') {
+                inSq = false;
+            }
+            ++pos;
+            continue;
+        }
+        if (inBt) {
+            if (c == '\\' && pos + 1 < s.size()) {
+                pos += 2;
+                continue;
+            }
+            if (c == '`') {
+                inBt = false;
+                ++pos;
+                continue;
+            }
+            if (c == '$' && pos + 1 < s.size() && s[pos + 1] == '{') {
+                pos += 2;
+                const size_t closeInner = templateInterpolationCloseAm(s, pos);
+                if (closeInner == std::string::npos) {
+                    return std::string::npos;
+                }
+                pos = closeInner + 1;
+                continue;
+            }
+            ++pos;
+            continue;
+        }
+    }
+    return std::string::npos;
+}
+
+/// From opening '`', return index past closing '`' (handles `${...}` and nested templates).
+size_t skipTemplateLiteralAm(const std::string& code, size_t openTick) {
+    if (openTick >= code.size() || code[openTick] != '`') {
+        return openTick + 1;
+    }
+    size_t pos = openTick + 1;
+    const size_t n = code.size();
+    while (pos < n) {
+        if (code[pos] == '\\' && pos + 1 < n) {
+            pos += 2;
+            continue;
+        }
+        if (code[pos] == '`') {
+            return pos + 1;
+        }
+        if (code[pos] == '$' && pos + 1 < n && code[pos + 1] == '{') {
+            pos += 2;
+            const size_t close = templateInterpolationCloseAm(code, pos);
+            if (close == std::string::npos) {
+                return n;
+            }
+            pos = close + 1;
+            continue;
+        }
+        ++pos;
+    }
+    return n;
+}
+
+static void skipJsStringOrTemplate(const std::string& s, size_t& pos) {
+    if (pos >= s.size()) {
+        return;
+    }
+    if (s[pos] == '`') {
+        pos = skipTemplateLiteralAm(s, pos);
+        return;
+    }
+    if (s[pos] == '"' || s[pos] == '\'') {
+        const char quote = s[pos];
+        ++pos;
+        while (pos < s.size()) {
+            if (s[pos] == '\\' && pos + 1 < s.size()) {
+                pos += 2;
+            } else if (s[pos] == quote) {
+                ++pos;
+                break;
+            } else {
+                ++pos;
+            }
+        }
+    }
+}
+
+}  // namespace
+
 AssetMerger::AssetMerger(const std::string& serverRoot, bool removeComments,
                          const std::vector<std::string>& exclusions)
     : _serverRoot(serverRoot), _removeComments(removeComments), _exclusions(exclusions) {
@@ -65,25 +239,26 @@ std::string AssetMerger::removeJsComments(const std::string& content) {
     // Remove /* ... */ comments (handling string literals)
     size_t pos = 0;
     while (pos < result.length()) {
-        // Check if we're inside a string literal
         if (result[pos] == '"' || result[pos] == '\'' || result[pos] == '`') {
-            char quote = result[pos];
-            pos++; // Skip opening quote
-            
-            // Find the closing quote, handling escaped quotes
-            while (pos < result.length()) {
-                if (result[pos] == '\\' && pos + 1 < result.length()) {
-                    pos += 2; // Skip escaped character
-                } else if (result[pos] == quote) {
-                    pos++; // Skip closing quote
-                    break;
-                } else {
-                    pos++;
-                }
-            }
+            skipJsStringOrTemplate(result, pos);
             continue;
         }
-        
+
+        // Skip // line comments first. Otherwise a line like
+        //   // ... path/translations/*.json
+        // contains "/*" inside the comment text; treating it as a block opener pairs with a
+        // later real "*/" (e.g. JSDoc) and erases the entire region — catastrophic.
+        if (pos < result.length() - 1 && result[pos] == '/' && result[pos + 1] == '/' &&
+            !isEscapedSlashBefore(result, pos)) {
+            size_t lineEnd = result.find('\n', pos);
+            if (lineEnd == std::string::npos) {
+                result.erase(pos);
+                break;
+            }
+            result.erase(pos, lineEnd - pos);
+            continue;
+        }
+
         // Look for /* comment outside of strings
         if (pos < result.length() - 1 && result[pos] == '/' && result[pos + 1] == '*') {
             size_t end = result.find("*/", pos + 2);
@@ -98,27 +273,14 @@ std::string AssetMerger::removeJsComments(const std::string& content) {
     // Remove // ... comments (single line)
     pos = 0;
     while (pos < result.length()) {
-        // Check if we're inside a string literal
         if (result[pos] == '"' || result[pos] == '\'' || result[pos] == '`') {
-            char quote = result[pos];
-            pos++; // Skip opening quote
-            
-            // Find the closing quote, handling escaped quotes
-            while (pos < result.length()) {
-                if (result[pos] == '\\' && pos + 1 < result.length()) {
-                    pos += 2; // Skip escaped character
-                } else if (result[pos] == quote) {
-                    pos++; // Skip closing quote
-                    break;
-                } else {
-                    pos++;
-                }
-            }
+            skipJsStringOrTemplate(result, pos);
             continue;
         }
         
-        // Look for // comment outside of strings
-        if (pos < result.length() - 1 && result[pos] == '/' && result[pos + 1] == '/') {
+        // Look for // comment outside of strings. Do not treat \/ + / (end of regex) as // .
+        if (pos < result.length() - 1 && result[pos] == '/' && result[pos + 1] == '/' &&
+            !isEscapedSlashBefore(result, pos)) {
             size_t lineEnd = result.find('\n', pos);
             if (lineEnd == std::string::npos) {
                 result.erase(pos);
@@ -275,6 +437,75 @@ std::string AssetMerger::mergeJsFiles(const std::vector<std::string>& jsFiles) {
     return merged;
 }
 
+namespace {
+
+std::string readWholeFileForMerge(const std::string& filePath) {
+    std::ifstream in(filePath, std::ios::binary | std::ios::ate);
+    if (!in) {
+        return {};
+    }
+    const auto fileSize = in.tellg();
+    if (fileSize <= 0) {
+        return {};
+    }
+    std::string content(static_cast<size_t>(fileSize), '\0');
+    in.seekg(0);
+    in.read(&content[0], fileSize);
+    return content;
+}
+
+/**
+ * Merged page bundles are often written to the same path as a source <script src>
+ * (e.g. assets/js/checkUserBooks.js). The next merge must not load that file as a
+ * fresh segment when it already contains the full bundle (would duplicate main.js, etc.).
+ */
+std::string mergeJsFilesResolvingBundleWriteback(AssetMerger& merger,
+                                                 const std::vector<std::string>& localJsFiles,
+                                                 const std::string& serverRoot,
+                                                 const std::string& pageName,
+                                                 const std::string& jsSubdir) {
+    fs::path expectedMerged = fs::path(serverRoot) / "assets" / "js" / (pageName + ".js");
+    if (!jsSubdir.empty()) {
+        expectedMerged = fs::path(serverRoot) / "assets" / "js" / jsSubdir / (pageName + ".js");
+    }
+
+    std::error_code ec;
+    const fs::path canonOut = fs::weakly_canonical(expectedMerged, ec);
+    if (ec) {
+        return merger.mergeJsFiles(localJsFiles);
+    }
+
+    int conflictIndex = -1;
+    for (size_t i = 0; i < localJsFiles.size(); ++i) {
+        ec.clear();
+        if (fs::weakly_canonical(localJsFiles[i], ec) == canonOut && !ec) {
+            conflictIndex = static_cast<int>(i);
+            break;
+        }
+    }
+
+    if (conflictIndex < 0) {
+        return merger.mergeJsFiles(localJsFiles);
+    }
+
+    const std::vector<std::string> prefixPaths(localJsFiles.begin(),
+                                               localJsFiles.begin() + conflictIndex);
+    const std::string prefixMerged =
+        prefixPaths.empty() ? std::string() : merger.mergeJsFiles(prefixPaths);
+    const std::string raw = readWholeFileForMerge(localJsFiles[static_cast<size_t>(conflictIndex)]);
+
+    if (!prefixMerged.empty() && raw.size() >= prefixMerged.size() &&
+        raw.compare(0, prefixMerged.size(), prefixMerged) == 0) {
+        return raw;
+    }
+    if (prefixPaths.empty()) {
+        return merger.mergeJsFiles({localJsFiles[static_cast<size_t>(conflictIndex)]});
+    }
+    return prefixMerged + merger.mergeJsFiles({localJsFiles[static_cast<size_t>(conflictIndex)]});
+}
+
+}  // namespace
+
 MergeResult AssetMerger::processHtml(const std::string& htmlContent, const std::string& pageName) {
     MergeResult result;
     result.modifiedHtml = htmlContent;
@@ -360,7 +591,8 @@ MergeResult AssetMerger::processHtml(const std::string& htmlContent, const std::
     }
     
     if (shouldMergeJs) {
-        result.mergedJs = mergeJsFiles(localJsFiles);
+        result.mergedJs = mergeJsFilesResolvingBundleWriteback(*this, localJsFiles, _serverRoot,
+                                                               pageName, result.jsSubdir);
         result.hasJs = true;
     }
     

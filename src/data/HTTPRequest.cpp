@@ -9,6 +9,8 @@
 
 #include "HTTPRequest.hpp"
 
+#include "parser/JSONParser.hpp"
+
 namespace geruest {
 
 std::string urlDecode(const std::string& str) {
@@ -177,21 +179,14 @@ void HTTPRequest::parseCookies(const std::string& cookieHeader) {
 }
 
 void HTTPRequest::parseJsonBody(const std::string& jsonStr) {
-    std::string s = jsonStr;
-
-    if (!s.empty() && s.front() == '{') s.erase(s.begin());
-    if (!s.empty() && s.back() == '}') s.pop_back();
-
-    auto pairs = splitString(s, ',');
-
-    for (auto& kv : pairs) {
-        auto colonPos = kv.find(':');
-        if (colonPos == std::string::npos) continue;
-
-        std::string key = stripQuotes(trim(kv.substr(0, colonPos)));
-        std::string value = stripQuotes(trim(kv.substr(colonPos + 1)));
-
-        _jsonParams[key] = value;
+    if (jsonStr.empty()) {
+        return;
+    }
+    // Must use a real JSON object parser: naive comma-splitting breaks values that contain commas
+    // (e.g. "author":"Doe, Jane","title":"…").
+    JSONParser parser(jsonStr);
+    for (const std::string& key : parser.getKeys()) {
+        _jsonParams[key] = parser.getString(key);
     }
 }
 

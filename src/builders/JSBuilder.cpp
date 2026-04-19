@@ -7,8 +7,17 @@
  * @brief This class is used to build the JavaScript files.
  * 
  * When mergeAssets=false: Serves individual JS files as-is.
- * When mergeAssets=true: Serves pre-generated merged JS files created by HTMLBuilder.
- * 
+ * When mergeAssets=true: Serves the same per-page merged bundle as HTMLBuilder/AssetMerger.
+ * JSBuilder rebuilds that bundle from the page HTML template when serving the merged
+ * script URL so obfuscation always sees one compilation unit even if the .js file was
+ * requested before any HTML response (dev cache miss or production cold start).
+ *
+ * Obfuscation compilation unit: The string passed to JSObfuscator is always the exact
+ * bytes served for that script URL (per-file source or the merged bundle). Rename maps
+ * are computed once per obfuscate() call — use merged output as the input when mergeAssets
+ * is true so cross-script bindings share one scope pass. Per-file obfuscation caches for
+ * later concatenation are unsupported and would desynchronize names.
+ *
  * Obfuscation flow:
  * 1. Check if file is excluded -> serve original
  * 2. Check if dev mode or level=0 -> serve original (possibly merged)
@@ -18,12 +27,190 @@
 
 #include "JSBuilder.hpp"
 #include "HTMLBuilder.hpp"
+#include "AssetMerger.hpp"
 #include "JSObfuscator.hpp"
 #include "../FileManagement/FileManagement.hpp"
-#include <filesystem>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <limits>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace geruest {
+
+namespace {
+
+struct TemplateMergedJsInfo {
+    std::string mergedJs;
+    std::string htmlTemplatePath;
+    std::vector<std::string> mergedJsHrefs;
+};
+
+std::string readEntireFile(const std::string& filePath) {
+    std::ifstream in(filePath, std::ios::binary | std::ios::ate);
+    if (!in) {
+        return {};
+    }
+    const auto fileSize = in.tellg();
+    if (fileSize <= 0) {
+        return {};
+    }
+    std::string content(static_cast<size_t>(fileSize), '\0');
+    in.seekg(0);
+    in.read(&content[0], fileSize);
+    return content;
+}
+
+std::string findBestPageTemplateHtml(const std::string& htmlDir, const std::string& pageName) {
+    namespace fs = std::filesystem;
+    const std::string target = pageName + ".html";
+    const std::string direct = htmlDir + "/" + target;
+    if (fs::exists(direct)) {
+        return direct;
+    }
+
+    std::vector<std::string> matches;
+    std::error_code ec;
+    const fs::path rootPath(htmlDir);
+    for (const auto& entry : fs::recursive_directory_iterator(htmlDir, ec)) {
+        if (ec) {
+            break;
+        }
+        if (!entry.is_regular_file()) {
+            continue;
+        }
+        if (entry.path().filename() == target) {
+            matches.push_back(entry.path().string());
+        }
+    }
+    if (matches.empty()) {
+        return {};
+    }
+
+    auto best = matches.begin();
+    size_t bestDepth = std::numeric_limits<size_t>::max();
+    for (auto it = matches.begin(); it != matches.end(); ++it) {
+        ec.clear();
+        fs::path rel = fs::relative(*it, rootPath, ec);
+        if (ec) {
+            continue;
+        }
+        size_t depth = static_cast<size_t>(std::distance(rel.begin(), rel.end()));
+        if (depth < bestDepth) {
+            bestDepth = depth;
+            best = it;
+        } else if (depth == bestDepth && *it < *best) {
+            best = it;
+        }
+    }
+    return *best;
+}
+
+std::optional<TemplateMergedJsInfo> tryTemplateMergedJs(const std::string& jsAbsPath,
+                                                        const ServerData& serverData) {
+    namespace fs = std::filesystem;
+    if (!serverData.getMergeAssets()) {
+        return std::nullopt;
+    }
+
+    const std::string& root = serverData.getRoot();
+    fs::path jsPath(jsAbsPath);
+    const std::string pageStem = jsPath.stem().string();
+    if (pageStem.empty()) {
+        return std::nullopt;
+    }
+
+    const std::string htmlDir = root + "/html";
+    if (!fs::is_directory(htmlDir)) {
+        return std::nullopt;
+    }
+
+    const std::string templatePath = findBestPageTemplateHtml(htmlDir, pageStem);
+    if (templatePath.empty()) {
+        return std::nullopt;
+    }
+
+    const std::string htmlContent = readEntireFile(templatePath);
+    if (htmlContent.empty()) {
+        return std::nullopt;
+    }
+
+    AssetMerger merger(root, serverData.getRemoveComments(), serverData.getObfuscationExclusions());
+    MergeResult mergeResult = merger.processHtml(htmlContent, pageStem);
+
+    if (!mergeResult.hasJs || mergeResult.mergedJs.empty()) {
+        return std::nullopt;
+    }
+
+    fs::path expectedMerged = fs::path(root) / "assets" / "js" / (pageStem + ".js");
+    if (!mergeResult.jsSubdir.empty()) {
+        expectedMerged = fs::path(root) / "assets" / "js" / mergeResult.jsSubdir / (pageStem + ".js");
+    }
+
+    std::error_code ec;
+    const fs::path canonJs = fs::weakly_canonical(jsPath, ec);
+    if (ec) {
+        return std::nullopt;
+    }
+    const fs::path canonExpected = fs::weakly_canonical(expectedMerged, ec);
+    if (ec) {
+        return std::nullopt;
+    }
+    if (canonJs != canonExpected) {
+        return std::nullopt;
+    }
+
+    TemplateMergedJsInfo info;
+    info.mergedJs = std::move(mergeResult.mergedJs);
+    info.htmlTemplatePath = templatePath;
+    info.mergedJsHrefs = std::move(mergeResult.jsFiles);
+    return info;
+}
+
+bool mergedBundleObfuscationCacheValid(const ServerData& serverData,
+                                       const std::string& cacheFilePath,
+                                       const std::string& htmlTemplatePath,
+                                       const std::vector<std::string>& jsHrefs) {
+    namespace fs = std::filesystem;
+    if (!fs::exists(cacheFilePath)) {
+        return false;
+    }
+
+    try {
+        const auto cacheTime = fs::last_write_time(cacheFilePath);
+        auto newestInput = fs::last_write_time(htmlTemplatePath);
+
+        AssetMerger merger(serverData.getRoot(), serverData.getRemoveComments(),
+                           serverData.getObfuscationExclusions());
+        for (const auto& href : jsHrefs) {
+            const std::string scriptPath = merger.resolveAssetPath(href, "js");
+            if (!fs::exists(scriptPath)) {
+                // Source removed since cache was built — merged bundle would differ; do not reuse cache.
+                return false;
+            }
+            const auto t = fs::last_write_time(scriptPath);
+            if (t > newestInput) {
+                newestInput = t;
+            }
+        }
+
+        if (newestInput > cacheTime) {
+            return false;
+        }
+
+        const auto now = fs::file_time_type::clock::now();
+        const auto age =
+            std::chrono::duration_cast<std::chrono::hours>(now - cacheTime).count() / 24;
+        return age < serverData.getObfuscationCacheExpiry();
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
+}  // namespace
 
 JSBuilder::JSBuilder(const std::string &inputPath, const ServerData& serverData) 
     : ContentBuilder(inputPath, serverData) {
@@ -59,6 +246,11 @@ void JSBuilder::builJS() {
             }
         }
     }
+
+    std::optional<TemplateMergedJsInfo> templateMerge = tryTemplateMergedJs(path, _serverData);
+    if (templateMerge.has_value()) {
+        builtFile = std::move(templateMerge->mergedJs);
+    }
     
     // Handle comment removal if enabled
     if (_serverData.getRemoveComments() && !builtFile.empty()) {
@@ -80,20 +272,40 @@ void JSBuilder::builJS() {
     } else {
         cacheFilePath += ".obfuscated";
     }
+
+    const bool usedTemplateMerge = templateMerge.has_value();
     
-    if (hasValidObfuscationCache(path)) {
+    if (!usedTemplateMerge && hasValidObfuscationCache(path)) {
         // Load from cache
         try {
             builtFile = ContentBuilder::loadFile(cacheFilePath);
         } catch (const std::exception&) {
             // Failed to load cache - fall through to re-obfuscate
         }
+    } else if (usedTemplateMerge &&
+               mergedBundleObfuscationCacheValid(_serverData, cacheFilePath,
+                                                 templateMerge->htmlTemplatePath,
+                                                 templateMerge->mergedJsHrefs)) {
+        try {
+            builtFile = ContentBuilder::loadFile(cacheFilePath);
+        } catch (const std::exception&) {
+            try {
+                builtFile = obfuscateAndCache(builtFile, cacheFilePath);
+            } catch (const std::exception&) {
+                if (_serverData.getObfuscationStrictUndefined()) {
+                    throw;
+                }
+            }
+        }
     } else {
         // Need to obfuscate and cache
         try {
             builtFile = obfuscateAndCache(builtFile, cacheFilePath);
         } catch (const std::exception&) {
-            // Obfuscation failed - builtFile already contains original content
+            if (_serverData.getObfuscationStrictUndefined()) {
+                throw;
+            }
+            // Obfuscation failed - builtFile still contains original content
         }
     }
 }
@@ -146,10 +358,16 @@ bool JSBuilder::hasValidObfuscationCache(const std::string& filePath) {
 }
 
 std::string JSBuilder::obfuscateAndCache(const std::string& content, const std::string& cacheFilePath) {
-    // Create obfuscator with configured level
-    JSObfuscator obfuscator(_serverData.getObfuscationLevel());
-    
-    // Obfuscate the content
+    JSObfuscateSettings st;
+    st.preserveIdentNames = _serverData.getObfuscationPreserveIdents();
+    st.externGlobalNames = _serverData.getObfuscationExternGlobals();
+    st.strictUndefinedSymbols = _serverData.getObfuscationStrictUndefined();
+    st.emitGlobalThisAssignments = _serverData.getObfuscationEmitGlobalThisAssignments();
+    st.validateOutputWithAcorn = _serverData.getObfuscationValidateWithAcorn();
+    st.autoPreserveBracketStringKeys = _serverData.getObfuscationAutoBracketKeys();
+
+    JSObfuscator obfuscator(_serverData.getObfuscationLevel(), st);
+
     std::string obfuscated = obfuscator.obfuscate(content);
     
     // Save to disk cache file (e.g., utils.obfuscated.js)

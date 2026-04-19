@@ -21,6 +21,7 @@
 #include <vector>
 #include <fstream>
 #include <sstream>
+#include <filesystem>
 
 namespace geruest {
 
@@ -269,6 +270,43 @@ inline bool saveJSONToFile(const JSONParser &json, const std::string &filePath) 
     file << json.toString();
     file.close();
 
+    return true;
+}
+
+/**
+ * Write JSON atomically: temp file in the same directory, then rename over target.
+ */
+inline bool saveJSONToFileAtomic(const JSONParser& json, const std::string& filePath) {
+    namespace fs = std::filesystem;
+    const fs::path dest(filePath);
+    const fs::path parent = dest.parent_path();
+    if (!parent.empty()) {
+        std::error_code ec;
+        fs::create_directories(parent, ec);
+    }
+    const fs::path tmp = dest.string() + ".tmp";
+    {
+        std::ofstream file(tmp, std::ios::binary | std::ios::trunc);
+        if (!file.is_open()) {
+            return false;
+        }
+        file << json.toString();
+        file.flush();
+        if (!file.good()) {
+            std::error_code ignore;
+            fs::remove(tmp, ignore);
+            return false;
+        }
+    }
+    std::error_code ec;
+    fs::remove(dest, ec);
+    ec.clear();
+    fs::rename(tmp, dest, ec);
+    if (ec) {
+        std::error_code ignore;
+        fs::remove(tmp, ignore);
+        return false;
+    }
     return true;
 }
 

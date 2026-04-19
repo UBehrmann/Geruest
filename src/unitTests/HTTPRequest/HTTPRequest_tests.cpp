@@ -46,6 +46,22 @@ TEST(HTTPRequestTest, PostWithBody) {
     EXPECT_EQ(request.getBody(), "{\"name\":\"John Doe\"}");
 }
 
+TEST(HTTPRequestTest, JsonBodyCommaInsideStringValue) {
+    const std::string body = R"({"user_id":"1","key":"k","author":"Alpha, Beta","title":"T","genre":"fiction"})";
+    std::string rawRequest = "PUT /v1/books HTTP/1.1\r\n"
+                            "Host: example.com\r\n"
+                            "Content-Type: application/json\r\n"
+                            "Content-Length: " + std::to_string(body.size()) + "\r\n"
+                            "\r\n" + body;
+
+    HTTPRequest request(rawRequest, "127.0.0.1", "/test/root");
+
+    EXPECT_TRUE(request.hasParam("author"));
+    EXPECT_EQ(request.getParam("author"), "Alpha, Beta");
+    EXPECT_EQ(request.getParam("title"), "T");
+    EXPECT_EQ(request.getParam("genre"), "fiction");
+}
+
 TEST(HTTPRequestTest, QueryParameters) {
     std::string rawRequest = "GET /search?q=test&limit=10 HTTP/1.1\r\n"
                             "Host: example.com\r\n"
@@ -91,4 +107,14 @@ TEST(HTTPRequestTest, CaseInsensitiveHeaders) {
     EXPECT_TRUE(request.hasHeader("HOST"));
     EXPECT_TRUE(request.hasHeader("Host"));
     EXPECT_EQ(request.getHeader("host"), "example.com");
+}
+
+TEST(HTTPRequestTest, HttpExpect100ContinueMatcher) {
+    EXPECT_TRUE(httpExpectIs100Continue("100-continue"));
+    EXPECT_TRUE(httpExpectIs100Continue("100-Continue"));
+    EXPECT_TRUE(httpExpectIs100Continue("  100-continue  "));
+    EXPECT_TRUE(httpExpectIs100Continue("100-continue, continue"));
+    EXPECT_FALSE(httpExpectIs100Continue("continue"));
+    EXPECT_FALSE(httpExpectIs100Continue(""));
+    EXPECT_FALSE(httpExpectIs100Continue("100"));
 }

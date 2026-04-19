@@ -13,6 +13,7 @@
 #include <csignal>
 #include <filesystem>
 #include "Geruest.hpp"
+#include "data/MethodNotAllowed.hpp"
 #if GERUEST_HAS_CURL
 #include "email/EmailSender.hpp"
 #endif
@@ -390,6 +391,9 @@ void addRoutes(Geruest* serverToAddRoutes) {
     
     // GET endpoint (exact match takes precedence over /api/*)
     serverToAddRoutes->addRoute("/api/get", [](const HTTPRequest& req) {
+        if (req.getMethod() != "GET" && req.getMethod() != "HEAD") {
+            throw method_not_allowed("GET, HEAD");
+        }
         HTTPResponse response("200 OK");
         response.setHeader("Content-Type", "application/json");
         response.setBody("{\"method\": \"GET\", \"message\": \"Exact GET endpoint (not wildcard)\", \"body\": \"" + req.getBody() + "\"}");

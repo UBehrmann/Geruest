@@ -95,6 +95,16 @@ public:
      */
     std::string mergeJsFiles(const std::vector<std::string>& jsFiles);
 
+    /**
+     * Remove comments from JS content (used when merging; exposed for tests / tooling).
+     */
+    static std::string removeJsComments(const std::string& content);
+
+    /**
+     * Resolve a script or stylesheet href to an absolute filesystem path (same rules as merge).
+     */
+    std::string resolveAssetPath(const std::string& href, const std::string& assetType);
+
 private:
     std::string _serverRoot;
     bool _removeComments;
@@ -128,20 +138,6 @@ private:
      */
     static std::string removeCssComments(const std::string& content);
 
-    /**
-     * Remove comments from JS content
-     * @param content JS content
-     * @return Content with comments removed
-     */
-    static std::string removeJsComments(const std::string& content);
-
-    /**
-     * Resolve a relative path to an absolute path based on server root
-     * @param href The href value from the tag
-     * @param assetType "css" or "js" to determine subdirectory
-     * @return Absolute file path
-     */
-    std::string resolveAssetPath(const std::string& href, const std::string& assetType);
 };
 
 }  // namespace geruest

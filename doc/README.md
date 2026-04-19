@@ -24,6 +24,7 @@ Welcome to the Geruest documentation! This guide will help you get started with 
 
 ### Security
 
+- [**Security Utilities**](SECURITY.md) - SQL injection, XSS, JSON injection, path traversal
 - [**Basic Authentication**](BASIC_AUTH.md) - HTTP Basic Auth for protected pages
 
 ### Development
@@ -75,6 +76,7 @@ int main() {
 | **Asset Merging** | CSS/JS bundling per page | [Asset Merging](ASSET_MERGING.md) |
 | **Components** | Reusable HTML includes | [HTML Injections](HTML_INJECTIONS.md) |
 | **Translations** | JSON-based i18n | [Translations](TRANSLATIONS.md) |
+| **Security** | SQL injection, XSS, JSON injection, path traversal | [Security](SECURITY.md) |
 | **Basic Auth** | HTTP authentication | [Basic Auth](BASIC_AUTH.md) |
 | **Dev Mode** | Verbose logs, no file caching | [Dev Mode](DEV_MODE.md) |
 | **JSON Parser** | Built-in JSON handling | [Data Classes](DATA_CLASSES.md#jsonparser) |

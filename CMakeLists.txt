@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 
 # Define the project name and version
-project(GeruestLibrary VERSION 0.7.0 LANGUAGES CXX)
+project(GeruestLibrary VERSION 0.7.34 LANGUAGES CXX)
 
 # Configure version header
 configure_file(
@@ -87,14 +87,18 @@ add_library(Geruest STATIC
     src/builders/HTMLBuilder.cpp
     src/builders/JSBuilder.cpp
     src/builders/JSObfuscator.cpp
+    src/builders/JSObfuscatorScope.cpp
     src/builders/WebPConverter.cpp
     src/config/ConfigLoader.cpp
     src/data/HTTPRequest.cpp
     src/data/HTTPResponse.cpp
+    src/data/MethodNotAllowed.cpp
+    src/data/ServerData.cpp
     src/email/EmailSender.cpp
     src/FileManagement/FileManagement.cpp
     src/handler/Handler.cpp
     src/parser/JSONParser.cpp
+    src/security/Security.cpp
 )
 
 # Public headers
