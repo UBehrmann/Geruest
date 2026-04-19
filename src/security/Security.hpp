@@ -103,12 +103,12 @@ class Security {
     /**
      * Verify that a resolved filesystem path stays inside a trusted root.
      *
-     * Returns `true` only when the canonical form of `root + requestPath`
-     * begins with the canonical root directory, blocking `../` traversal
-     * attacks.
+     * Returns `true` only when `weakly_canonical(root / requestPath)` is rooted
+     * under `weakly_canonical(root)`, so `..`, symlinks, and other lexical tricks
+     * cannot escape the jail.
      *
      * @param root        Absolute filesystem root (e.g. serverData.getRoot()).
-     * @param requestPath URL-derived path segment (may contain `..`).
+     * @param requestPath URL-derived path segment (often starts with `/`).
      *
      * @code
      *   if (!Security::isSafePath(serverData.getRoot(), req.getPathString())) {

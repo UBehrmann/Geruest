@@ -540,7 +540,7 @@ class Geruest {
 
     struct sockaddr_in address{};
 
-    bool running = false;
+    std::atomic<bool> running{false};
 
     int port = 8080;
 

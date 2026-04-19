@@ -53,6 +53,10 @@ Geruest::Geruest() {
 }
 
 Geruest::~Geruest() {
+    running.store(false, std::memory_order_relaxed);
+    if (_statusPersistenceThread.joinable()) {
+        _statusPersistenceThread.join();
+    }
     stopWorkers();
 
 #ifdef _WIN32
@@ -261,7 +265,10 @@ void Geruest::enableDevMode() {
 // ========== Thread Pool Configuration ==========
 
 void Geruest::setWorkerThreadCount(size_t count) {
-    if (running || _workersRunning) { sendToLoggerError("Cannot change worker thread count while server is running"); return; }
+    if (running.load(std::memory_order_relaxed) || _workersRunning.load(std::memory_order_relaxed)) {
+        sendToLoggerError("Cannot change worker thread count while server is running");
+        return;
+    }
     if (count == 0) { sendToLoggerError("Worker thread count must be at least 1, setting to 1"); _workerThreadCount = 1; _configFlags.workerThreadsSet = true; return; }
     _workerThreadCount = count;
     _configFlags.workerThreadsSet = true;
@@ -269,7 +276,10 @@ void Geruest::setWorkerThreadCount(size_t count) {
 }
 
 void Geruest::setMaxQueueSize(size_t size) {
-    if (running || _workersRunning) { sendToLoggerError("Cannot change queue size while server is running"); return; }
+    if (running.load(std::memory_order_relaxed) || _workersRunning.load(std::memory_order_relaxed)) {
+        sendToLoggerError("Cannot change queue size while server is running");
+        return;
+    }
     if (size == 0) { sendToLoggerError("Queue size must be at least 1, setting to 1"); _maxQueueSize = 1; _configFlags.maxQueueSizeSet = true; return; }
     _maxQueueSize = size;
     _configFlags.maxQueueSizeSet = true;

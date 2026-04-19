@@ -23,11 +23,11 @@
 namespace geruest {
 
 void Geruest::statusPersistenceLoop() {
-    while (running) {
-        for (int i = 0; i < 3600 && running; ++i) {
+    while (running.load(std::memory_order_relaxed)) {
+        for (int i = 0; i < 3600 && running.load(std::memory_order_relaxed); ++i) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
-        if (!running) {
+        if (!running.load(std::memory_order_relaxed)) {
             break;
         }
         if (!serverData.savePersistentMetricsToFile(_statusPersistencePath)) {
@@ -115,15 +115,21 @@ void Geruest::start() {
 
     int addrlen = sizeof(this->address);
 
-    running = true;
-    _statusPersistenceThread = std::thread(&Geruest::statusPersistenceLoop, this);
     startWorkers();
+    running.store(true, std::memory_order_relaxed);
+    try {
+        _statusPersistenceThread = std::thread(&Geruest::statusPersistenceLoop, this);
+    } catch (...) {
+        running.store(false, std::memory_order_relaxed);
+        stopWorkers();
+        throw;
+    }
 
     sendToLogger("Waiting for connections...");
     sendToLogger("Worker threads: " + std::to_string(_workerThreadCount) +
                  ", Max queue size: " + std::to_string(_maxQueueSize));
 
-    while (running) {
+    while (running.load(std::memory_order_relaxed)) {
         try {
 #ifdef _WIN32
             SOCKET new_socket = accept(this->server_fd, reinterpret_cast<struct sockaddr*>(&this->address), &addrlen);
@@ -196,9 +202,9 @@ void Geruest::start() {
 
 void Geruest::stop() {
     sendToLogger("Stopping server at next opportunity.");
-    running = false;
+    running.store(false, std::memory_order_relaxed);
 }
 
-bool Geruest::isRunning() { return running; }
+bool Geruest::isRunning() { return running.load(std::memory_order_relaxed); }
 
 }  // namespace geruest

@@ -7,11 +7,34 @@
 
 #include "Security.hpp"
 
+#include <algorithm>
 #include <filesystem>
-#include <sstream>
 #include <iomanip>
+#include <sstream>
 
 namespace geruest {
+
+namespace {
+
+/**
+ * Build the same logical path as string concatenation `root + requestPath` would
+ * imply for URL-style segments that begin with `/`, without letting an absolute
+ * `requestPath` replace `root` when using `std::filesystem::path::operator/`.
+ */
+std::filesystem::path combinedPathForCanonicalCheck(const std::string& root, const std::string& requestPath) {
+    namespace fs = std::filesystem;
+    fs::path r(root);
+    if (requestPath.empty()) {
+        return r;
+    }
+    fs::path p(requestPath);
+    if (p.is_absolute()) {
+        return r / p.relative_path();
+    }
+    return r / p;
+}
+
+}  // namespace
 
 // ─── JSON escaping ──────────────────────────────────────────────────────────
 
@@ -153,24 +176,23 @@ std::string Security::buildQuery(const std::string& queryTemplate,
 // ─── Path traversal protection ──────────────────────────────────────────────
 
 bool Security::isSafePath(const std::string& root, const std::string& requestPath) {
-    if (requestPath.find("..") != std::string::npos) {
-        // Fast rejection: any ".." component is suspect.
-        // We still do the canonical check below for robustness, but this
-        // short-circuits the filesystem call for the common case.
-        std::filesystem::path combined = std::filesystem::path(root) / requestPath;
-        std::error_code ec;
-        std::filesystem::path canonical = std::filesystem::weakly_canonical(combined, ec);
-        if (ec) return false;
-
-        std::filesystem::path canonicalRoot = std::filesystem::weakly_canonical(root, ec);
-        if (ec) return false;
-
-        // The resolved path must start with the canonical root.
-        auto [rootEnd, _] = std::mismatch(canonicalRoot.begin(), canonicalRoot.end(),
-                                          canonical.begin(), canonical.end());
-        return rootEnd == canonicalRoot.end();
+    if (root.empty()) {
+        return false;
     }
-    return true;
+    namespace fs = std::filesystem;
+    const fs::path combined = combinedPathForCanonicalCheck(root, requestPath);
+    std::error_code ec;
+    const fs::path canonical = fs::weakly_canonical(combined, ec);
+    if (ec) {
+        return false;
+    }
+    const fs::path canonicalRoot = fs::weakly_canonical(fs::path(root), ec);
+    if (ec) {
+        return false;
+    }
+    const auto [rootEnd, _] = std::mismatch(canonicalRoot.begin(), canonicalRoot.end(),
+                                           canonical.begin(), canonical.end());
+    return rootEnd == canonicalRoot.end();
 }
 
 std::string Security::safeCombinePath(const std::string& root, const std::string& requestPath) {

@@ -233,6 +233,10 @@ TEST_F(BuildQueryTest, TooManyParamsThrows) {
 
 class IsSafePathTest : public ::testing::Test {};
 
+TEST_F(IsSafePathTest, EmptyRootIsRejected) {
+    EXPECT_FALSE(Security::isSafePath("", "/html/index.html"));
+}
+
 TEST_F(IsSafePathTest, NormalPathIsAlwaysSafe) {
     EXPECT_TRUE(Security::isSafePath("/var/www", "/html/index.html"));
 }
