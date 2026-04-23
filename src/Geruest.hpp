@@ -250,6 +250,7 @@ class Geruest {
      * - MERGE_ASSETS (bool): Enable asset merging (default: false)
      * - WORKER_THREADS (size_t): Number of worker threads (default: CPU cores * 2)
      * - MAX_QUEUE_SIZE (size_t): Maximum concurrent client sessions (default: 500)
+     * - MAX_REQUESTS_PER_CONNECTION (size_t): Keep-alive request cap per connection (default: 1000, 0 = unlimited)
      * - LOG_LEVEL (string): Log level: "none", "error", "warning", "info", "debug" (default: "error")
      * - OBFUSCATE_PRESERVE (string): Comma-separated identifiers to never rename
      * - OBFUSCATE_EXTERNS (string): Comma-separated global names (host-provided)
@@ -343,6 +344,13 @@ class Geruest {
      * @note Must be called before init() or start()
      */
     void setMaxQueueSize(size_t size);
+
+    /**
+     * @brief Sets maximum requests handled per keep-alive connection.
+     * @param count Request cap per connection (default: 1000). Set to 0 for unlimited.
+     * @note Must be called before init() or start()
+     */
+    void setMaxRequestsPerConnection(size_t count);
 
     // ========== Basic Authentication Methods ==========
     
@@ -585,6 +593,7 @@ class Geruest {
         bool mergeAssetsSet = false;
         bool workerThreadsSet = false;
         bool maxQueueSizeSet = false;
+        bool maxRequestsPerConnectionSet = false;
         bool logLevelSet = false;
         
 #if GERUEST_HAS_CURL

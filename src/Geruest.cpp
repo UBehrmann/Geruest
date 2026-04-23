@@ -283,6 +283,20 @@ void Geruest::setMaxQueueSize(size_t size) {
     sendToLogger("Maximum concurrent sessions set to: " + std::to_string(_maxQueueSize));
 }
 
+void Geruest::setMaxRequestsPerConnection(size_t count) {
+    if (running.load(std::memory_order_relaxed) || _workersRunning.load(std::memory_order_relaxed)) {
+        sendToLoggerError("Cannot change max requests per connection while server is running");
+        return;
+    }
+    serverData.setMaxRequestsPerConnection(count);
+    _configFlags.maxRequestsPerConnectionSet = true;
+    if (count == 0) {
+        sendToLogger("Max requests per connection set to unlimited");
+    } else {
+        sendToLogger("Max requests per connection set to: " + std::to_string(count));
+    }
+}
+
 // ========== Basic Authentication ==========
 
 void Geruest::setBasicAuth(bool enabled) {

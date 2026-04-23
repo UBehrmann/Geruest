@@ -100,6 +100,20 @@ void Geruest::loadConfig(const std::string& envFilePath) {
             sendToLogger("MAX_QUEUE_SIZE (max concurrent sessions) loaded from config: " + std::to_string(_maxQueueSize));
         }
     }
+
+    // MAX_REQUESTS_PER_CONNECTION (0 = unlimited)
+    if (!_configFlags.maxRequestsPerConnectionSet) {
+        const size_t currentValue = serverData.getMaxRequestsPerConnection();
+        const size_t configValue = ConfigLoader::getSizeT("MAX_REQUESTS_PER_CONNECTION", currentValue);
+        if (configValue != currentValue) {
+            serverData.setMaxRequestsPerConnection(configValue);
+            if (configValue == 0) {
+                sendToLogger("MAX_REQUESTS_PER_CONNECTION loaded from config: unlimited");
+            } else {
+                sendToLogger("MAX_REQUESTS_PER_CONNECTION loaded from config: " + std::to_string(configValue));
+            }
+        }
+    }
     
     // LOG_LEVEL
     if (!_configFlags.logLevelSet) {

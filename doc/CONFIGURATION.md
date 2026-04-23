@@ -20,6 +20,8 @@ HOSTNAME=0.0.0.0
 WORKER_THREADS=16
 # Max simultaneous TCP/HTTP sessions (not a pre-accept backlog queue)
 MAX_QUEUE_SIZE=500
+# Keep-alive request cap per connection (0 = unlimited)
+MAX_REQUESTS_PER_CONNECTION=1000
 LOG_LEVEL=error
 
 # Feature Flags
@@ -61,6 +63,7 @@ float webpQuality = geruest::ConfigLoader::getFloat("WEBP_QUALITY", 75.0);
 bool devMode = geruest::ConfigLoader::getBool("DEV_MODE", false);
 std::string host = geruest::ConfigLoader::get("HOSTNAME", "localhost");
 size_t maxConcurrentSessions = geruest::ConfigLoader::getSizeT("MAX_QUEUE_SIZE", 500);
+size_t maxRequestsPerConnection = geruest::ConfigLoader::getSizeT("MAX_REQUESTS_PER_CONNECTION", 1000);
 
 // Check existence
 bool hasKey = geruest::ConfigLoader::has("SMTP_SERVER");
@@ -73,7 +76,7 @@ geruest::ConfigLoader::clear();
 
 ### Server Configuration
 
-**`WORKER_THREADS`** controls how many threads (in addition to the thread that called `start()`) run **`boost::asio::io_context::run()`** for async I/O. **`MAX_QUEUE_SIZE`** is the **maximum number of concurrent client TCP sessions** the process will serve; extra connections are closed and appear in `/status` as `queue.rejections_total`. The JSON field `queue.current_size` is the current active session count.
+**`WORKER_THREADS`** controls how many threads (in addition to the thread that called `start()`) run **`boost::asio::io_context::run()`** for async I/O. **`MAX_QUEUE_SIZE`** is the **maximum number of concurrent client TCP sessions** the process will serve; extra connections are closed and appear in `/status` as `queue.rejections_total`. The JSON field `queue.current_size` is the current active session count. **`MAX_REQUESTS_PER_CONNECTION`** controls how many HTTP requests one keep-alive connection can serve before it is closed (`0` means unlimited, default `1000`).
 
 ```cpp
 using namespace geruest;
@@ -84,12 +87,14 @@ int port = ConfigLoader::getInt("PORT", 8080);
 std::string host = ConfigLoader::get("HOSTNAME", "0.0.0.0");
 size_t workers = ConfigLoader::getSizeT("WORKER_THREADS", 16);
 size_t maxSessions = ConfigLoader::getSizeT("MAX_QUEUE_SIZE", 500);
+size_t maxRequestsPerConnection = ConfigLoader::getSizeT("MAX_REQUESTS_PER_CONNECTION", 1000);
 
 // Option 1: Manual configuration
 server.setPort(port);
 server.setHostname(host);
 server.setWorkerThreadCount(workers);
 server.setMaxQueueSize(maxSessions);
+server.setMaxRequestsPerConnection(maxRequestsPerConnection);
 
 // Option 2: Auto-load from .env (only loads unset values)
 // This reads all Geruest-specific keys automatically

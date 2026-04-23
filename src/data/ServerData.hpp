@@ -69,6 +69,7 @@ class ServerData {
     bool _devMode = false;          // Development mode (no file caching, verbose logging)
     bool _webpConversion = false;   // Automatic PNG/JPG to WebP conversion
     float _webpQuality = 75.0f;     // WebP encoding quality (0-100, default 75%)
+    size_t _maxRequestsPerConnection = 1000;  // Keep-alive request cap (0 = unlimited)
     unsigned int _obfuscationLevel = 0;  // JS obfuscation level (0=disabled, 1-3=increasing complexity)
     int _obfuscationCacheExpiryDays = 7;  // Days to keep obfuscated files cached
     std::vector<std::string> _obfuscationExclusions;  // Files excluded from obfuscation and merging
@@ -326,6 +327,7 @@ class ServerData {
           _devMode(other._devMode),
           _webpConversion(other._webpConversion),
           _webpQuality(other._webpQuality),
+          _maxRequestsPerConnection(other._maxRequestsPerConnection),
           _obfuscationLevel(other._obfuscationLevel),
           _obfuscationCacheExpiryDays(other._obfuscationCacheExpiryDays),
           _obfuscationExclusions(other._obfuscationExclusions),
@@ -354,6 +356,7 @@ class ServerData {
             _devMode = other._devMode;
             _webpConversion = other._webpConversion;
             _webpQuality = other._webpQuality;
+            _maxRequestsPerConnection = other._maxRequestsPerConnection;
             _obfuscationLevel = other._obfuscationLevel;
             _obfuscationCacheExpiryDays = other._obfuscationCacheExpiryDays;
             _obfuscationExclusions = other._obfuscationExclusions;
@@ -546,6 +549,18 @@ class ServerData {
      * @return Current quality setting (0-100)
      */
     float getWebPQuality() const { return _webpQuality; }
+
+    /**
+     * Set maximum number of HTTP requests handled per keep-alive connection.
+     * @param value 0 means unlimited, otherwise exact request cap per connection.
+     */
+    void setMaxRequestsPerConnection(size_t value) { _maxRequestsPerConnection = value; }
+
+    /**
+     * Get maximum number of requests per keep-alive connection.
+     * @return 0 for unlimited, otherwise configured cap.
+     */
+    size_t getMaxRequestsPerConnection() const { return _maxRequestsPerConnection; }
 
     /**
      * Enable development mode

@@ -170,7 +170,9 @@ boost::asio::awaitable<void> Handler::runAsync() {
         buffer = std::make_unique<char[]>(BUFFER_SIZE);
     }
 
-    while (++messageCount < 100) {
+    const size_t maxRequestsPerConnection = serverData.getMaxRequestsPerConnection();
+    while (maxRequestsPerConnection == 0 || messageCount < maxRequestsPerConnection) {
+        ++messageCount;
         std::string raw = std::move(pendingRequestData);
         pendingRequestData.clear();
 
