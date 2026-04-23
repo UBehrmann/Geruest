@@ -9,76 +9,85 @@
 
 #include "HTTPResponse.hpp"
 
+#include <algorithm>
 #include <string_view>
 
 #include "HTTPRequest.hpp"
 
 namespace geruest {
 
+namespace {
+
+void eraseHeaderKey(std::vector<std::pair<std::string, std::string>>& hdrs, const std::string& key) {
+    std::erase_if(hdrs, [&key](const std::pair<std::string, std::string>& p) { return p.first == key; });
+}
+
+bool hasHeaderKey(const std::vector<std::pair<std::string, std::string>>& hdrs, const std::string& key) {
+    return std::any_of(hdrs.begin(), hdrs.end(),
+                       [&key](const std::pair<std::string, std::string>& p) { return p.first == key; });
+}
+
+}  // namespace
+
 HTTPResponse::HTTPResponse(const std::string& statusCode) : status(statusCode) {
-    // Default headers
-    headers.insert({"Content-Type", "text/html"});
-    headers.insert({"Connection", "Keep-Alive"});
-    headers.insert({"Keep-Alive", "timeout=5, max=100"});
+    headers.reserve(8);
+    headers.emplace_back("Content-Type", "text/html");
+    headers.emplace_back("Connection", "Keep-Alive");
+    headers.emplace_back("Keep-Alive", "timeout=5, max=100");
 }
 
 void HTTPResponse::setHeader(const std::string& key, const std::string& value) {
-    // Remove any existing headers with the same key, then add the new one
-    headers.erase(key);
-    headers.insert({key, value});
+    eraseHeaderKey(headers, key);
+    headers.emplace_back(key, value);
 }
 
 void HTTPResponse::addHeader(const std::string& key, const std::string& value) {
-    // Add header to the multimap, allowing multiple headers with same key
-    headers.insert({key, value});
+    headers.emplace_back(key, value);
 }
 
 void HTTPResponse::setBody(const std::string& responseBody) {
     body = responseBody;
-    // Remove existing Content-Length headers and add new one
-    headers.erase("Content-Length");
-    headers.insert({"Content-Length", std::to_string(body.size())});
+    eraseHeaderKey(headers, "Content-Length");
+    headers.emplace_back("Content-Length", std::to_string(body.size()));
+}
+
+void HTTPResponse::serializeTo(std::string& out) const {
+    size_t estimatedSize = 32 + status.size() + body.size();
+    for (const auto& header : headers) {
+        estimatedSize += header.first.size() + header.second.size() + 4;
+    }
+
+    out.clear();
+    out.reserve(estimatedSize);
+
+    out += "HTTP/1.1 ";
+    out += status;
+    out += "\r\n";
+
+    for (const auto& header : headers) {
+        out += header.first;
+        out += ": ";
+        out += header.second;
+        out += "\r\n";
+    }
+
+    if (!hasHeaderKey(headers, "Content-Length")) {
+        out += "Content-Length: ";
+        if (body.empty()) {
+            out += "0";
+        } else {
+            out += std::to_string(body.size());
+        }
+        out += "\r\n";
+    }
+
+    out += "\r\n";
+    out += body;
 }
 
 std::string HTTPResponse::toString() const {
-    // Pre-calculate approximate size to avoid reallocations
-    size_t estimatedSize = 32 + status.size() + body.size();  // "HTTP/1.1 " + status + "\r\n\r\n" + body
-    for (const auto& header : headers) {
-        estimatedSize += header.first.size() + header.second.size() + 4;  // ": " + "\r\n"
-    }
-    
     std::string response;
-    response.reserve(estimatedSize);
-    
-    response += "HTTP/1.1 ";
-    response += status;
-    response += "\r\n";
-
-    // Add all headers from the multimap
-    for (const auto& header : headers) {
-        response += header.first;
-        response += ": ";
-        response += header.second;
-        response += "\r\n";
-    }
-
-    // Check body size and add Content-Length if body is not empty
-    if (headers.count("Content-Length") == 0) {
-        response += "Content-Length: ";
-        if (body.empty()) {
-            response += "0";
-        } else {
-            response += std::to_string(body.size());
-        }
-        response += "\r\n";
-    }
-
-    // add a blank line to separate headers from the body
-    response += "\r\n";
-
-    // Append the body to the response
-    response += body;
-
+    serializeTo(response);
     return response;
 }
 

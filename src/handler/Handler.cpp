@@ -22,8 +22,8 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
-#include <map>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #ifdef __linux__
 #include <fcntl.h>
@@ -76,6 +76,55 @@ bool parseContentLengthBytes(const geruest::HTTPRequest& req, size_t* out) {
     } catch (...) {
         return false;
     }
+}
+
+/** Extension -> site-relative root (without html/htm; those use htmlMount in buildPath). */
+const std::unordered_map<std::string, std::string>& handlerAssetRootByExtension() {
+    static const std::unordered_map<std::string, std::string> m = {
+        {"css", "/assets/css"},
+        {"js", "/assets/js"},
+        {"jpg", "/assets/images"},
+        {"jpeg", "/assets/images"},
+        {"png", "/assets/images"},
+        {"gif", "/assets/images"},
+        {"svg", "/assets/images"},
+        {"ico", "/assets/images"},
+        {"webp", "/assets/images"},
+        {"JSON", "/assets/JSONs"},
+        {"pdf", "/assets/docs"},
+        {"zip", "/assets/docs"},
+        {"mp3", "/assets/audio"},
+        {"mp4", "/assets/video"},
+        {"xml", "/assets/docs"},
+        {"csv", "/assets/docs"},
+        {"txt", "/assets/docs"},
+    };
+    return m;
+}
+
+const std::unordered_map<std::string, std::string>& handlerContentTypeByExtension() {
+    static const std::unordered_map<std::string, std::string> m = {
+        {"html", "text/html"},
+        {"htm", "text/html"},
+        {"css", "text/css"},
+        {"js", "text/javascript"},
+        {"jpg", "image/jpeg"},
+        {"jpeg", "image/jpeg"},
+        {"png", "image/png"},
+        {"gif", "image/gif"},
+        {"webp", "image/webp"},
+        {"svg", "image/svg+xml"},
+        {"ico", "image/x-icon"},
+        {"JSON", "application/JSON"},
+        {"pdf", "application/pdf"},
+        {"zip", "application/zip"},
+        {"mp3", "audio/mpeg"},
+        {"mp4", "video/mp4"},
+        {"xml", "application/xml"},
+        {"csv", "text/csv"},
+        {"txt", "text/plain"},
+    };
+    return m;
 }
 
 }  // namespace
@@ -287,8 +336,8 @@ boost::asio::awaitable<void> Handler::runAsync() {
             if (probe.hasHeader("content-length")) {
                 if (!parseContentLengthBytes(probe, &bodyExpected)) {
                     HTTPResponse br = responseBadRequest(&probe);
-                    const std::string s = br.toString();
-                    co_await sendSocketAsync(s.c_str(), s.size());
+                    br.serializeTo(responseScratch_);
+                    co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size());
                     co_return;
                 }
                 hasCL = true;
@@ -298,8 +347,8 @@ boost::asio::awaitable<void> Handler::runAsync() {
         if (hasCL && bodyExpected > kMaxHttpBodyBytes) {
             HTTPRequest probe(raw, IP, serverData.getRoot());
             HTTPResponse br = responseBadRequest(&probe);
-            const std::string s = br.toString();
-            co_await sendSocketAsync(s.c_str(), s.size());
+            br.serializeTo(responseScratch_);
+            co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size());
             const size_t already = raw.size() > headerEnd ? raw.size() - headerEnd : 0;
             const size_t remain = bodyExpected > already ? bodyExpected - already : 0;
             static_cast<void>(co_await discardFromSocketAsync(remain));
@@ -365,8 +414,8 @@ boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
         redirectResponse.setHeader("Location", target);
         redirectResponse.setBody("");
 
-        std::string responseStr = redirectResponse.toString();
-        if (!co_await sendSocketAsync(responseStr.c_str(), responseStr.size())) {
+        redirectResponse.serializeTo(responseScratch_);
+        if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
             sendToLoggerError("Failed to send redirect response for: " + request->getPathString());
         }
         co_return;
@@ -376,7 +425,6 @@ boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
     auto routeHandler = serverData.findMatchingRoute(request->getPathString());
     if (routeHandler) {
         // co_await is not allowed inside catch clauses; build the body first, send once.
-        std::string responseStr;
         const char* failLog = nullptr;
         try {
             HTTPResponse response = (*routeHandler)(*request);
@@ -390,28 +438,28 @@ boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
                 }
             }
 
-            responseStr = response.toString();
-            failLog     = "Failed to send route response for: ";
+            response.serializeTo(responseScratch_);
+            failLog = "Failed to send route response for: ";
         } catch (const method_not_allowed& e) {
             HTTPResponse response = responseMethodNotAllowed(request, e.allowMethods());
             serverData.record4xx();
-            responseStr = response.toString();
-            failLog     = "Failed to send 405 for: ";
+            response.serializeTo(responseScratch_);
+            failLog = "Failed to send 405 for: ";
         } catch (const std::exception& e) {
             sendToLoggerError(std::string("Exception in route handler: ") + e.what());
             HTTPResponse response = responseInternalServerError(request);
             serverData.record5xx();
-            responseStr = response.toString();
-            failLog     = "Failed to send 500 for: ";
+            response.serializeTo(responseScratch_);
+            failLog = "Failed to send 500 for: ";
         } catch (...) {
             sendToLoggerError("Unknown exception in route handler");
             HTTPResponse response = responseInternalServerError(request);
             serverData.record5xx();
-            responseStr = response.toString();
-            failLog     = "Failed to send 500 for: ";
+            response.serializeTo(responseScratch_);
+            failLog = "Failed to send 500 for: ";
         }
 
-        if (!co_await sendSocketAsync(responseStr.c_str(), responseStr.size())) {
+        if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
             sendToLoggerError(std::string(failLog) + request->getPathString());
         }
 
@@ -439,11 +487,13 @@ boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
  */
 boost::asio::awaitable<void> Handler::sendResponseAsync(const std::string& status, const std::string& contentType,
                                                         const std::string& content) {
-    std::string response = buildHeader(status, contentType, std::to_string(content.size()));
+    HTTPResponse hdr(status);
+    hdr.setHeader("Content-Type", contentType);
+    hdr.setHeader("Content-Length", std::to_string(content.size()));
+    hdr.serializeTo(responseScratch_);
+    responseScratch_ += content;
 
-    response += content;
-
-    if (!co_await sendSocketAsync(response.c_str(), response.size())) {
+    if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
         sendToLoggerError("Failed to send response: " + status);
     }
     co_return;
@@ -579,9 +629,9 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
 
         htmlResponse.setBody(contentBuilder->file());
 
-        std::string bufferToSocket = htmlResponse.toString();
+        htmlResponse.serializeTo(responseScratch_);
 
-        if (!co_await sendSocketAsync(bufferToSocket.c_str(), bufferToSocket.size())) {
+        if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
             sendToLoggerError("Failed to send file: " + contentPath);
         }
 
@@ -593,9 +643,9 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
                 htmlResponse.setHeader("Content-Type", contentType);
                 htmlResponse.setHeader("Content-Length", std::to_string(cachedWebP->size()));
 
-                std::string response = htmlResponse.toString();
+                htmlResponse.serializeTo(responseScratch_);
 
-                if (!co_await sendSocketAsync(response.c_str(), response.size())) {
+                if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
                     sendToLoggerError("Failed to send cached WebP header: " + contentPath);
                     co_return;
                 }
@@ -615,9 +665,9 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
             HTTPResponse htmlResponse("200 OK");
             htmlResponse.setHeader("Content-Type", contentType);
             htmlResponse.setHeader("Content-Length", std::to_string(fileSize));
-            std::string response = htmlResponse.toString();
+            htmlResponse.serializeTo(responseScratch_);
 
-            if (!co_await sendSocketAsync(response.c_str(), response.size())) {
+            if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
                 sendToLoggerError("Failed to send binary file header: " + contentPath);
                 co_return;
             }
@@ -660,9 +710,9 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
                                 webpResponse.setHeader("Content-Type", contentType);
                                 webpResponse.setHeader("Content-Length", std::to_string(webpData->size()));
 
-                                std::string response = webpResponse.toString();
+                                webpResponse.serializeTo(responseScratch_);
 
-                                if (!co_await sendSocketAsync(response.c_str(), response.size())) {
+                                if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
                                     sendToLoggerError("Failed to send on-demand WebP header: " + contentPath);
                                     co_return;
                                 }
@@ -689,9 +739,9 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
                             HTTPResponse      origResp("200 OK");
                             origResp.setHeader("Content-Type", origType);
                             origResp.setHeader("Content-Length", std::to_string(origSize));
-                            std::string origHeader = origResp.toString();
+                            origResp.serializeTo(responseScratch_);
 
-                            if (!co_await sendSocketAsync(origHeader.c_str(), origHeader.size())) {
+                            if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
                                 sendToLoggerError("Failed to send fallback image header: " + sourcePath);
                                 co_return;
                             }
@@ -731,9 +781,9 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
         htmlResponse.setHeader("Content-Type", contentType);
         htmlResponse.setHeader("Content-Length", std::to_string(fileSize));
 
-        std::string response = htmlResponse.toString();
+        htmlResponse.serializeTo(responseScratch_);
 
-        if (!co_await sendSocketAsync(response.c_str(), response.size())) {
+        if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
             sendToLoggerError("Failed to send binary file header: " + contentPath);
             file.close();
             co_return;
@@ -778,12 +828,7 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
         return "";
     }
 
-    std::map<std::string, std::string> contentRoot = {
-        {"html", "/html"},         {"htm", "/html"},           {"css", "/assets/css"},    {"js", "/assets/js"},
-        {"jpg", "/assets/images"}, {"jpeg", "/assets/images"}, {"png", "/assets/images"}, {"gif", "/assets/images"},
-        {"svg", "/assets/images"}, {"ico", "/assets/images"},  {"webp", "/assets/images"}, {"JSON", "/assets/JSONs"}, {"pdf", "/assets/docs"},
-        {"zip", "/assets/docs"},   {"mp3", "/assets/audio"},   {"mp4", "/assets/video"},  {"xml", "/assets/docs"},
-        {"csv", "/assets/docs"},   {"txt", "/assets/docs"}};
+    std::string htmlMount = "/html";
 
     // Check if specific language is requested
 
@@ -883,10 +928,10 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
 
             // Always use language-specific path when languages are configured
             // HTMLBuilder will handle loading from template if language file doesn't exist
-            contentRoot["html"] = "/html/" + preferredLang;
+            htmlMount = "/html/" + preferredLang;
         } else {
             // No languages configured, use simple /html
-            contentRoot["html"] = "/html";
+            htmlMount = "/html";
         }
     } else if (pathReceived.size() == 4) {
         // if the size of the pathReceived has a language indicator and is only 4 characters long
@@ -903,10 +948,20 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
         pathReceived += ".html";
     }
 
-    if (!contentRoot.count(Extension)) return "";
+    std::string mount;
+    if (Extension == "html" || Extension == "htm") {
+        mount = htmlMount;
+    } else {
+        const auto& roots = handlerAssetRootByExtension();
+        auto        it    = roots.find(Extension);
+        if (it == roots.end()) {
+            return "";
+        }
+        mount = it->second;
+    }
 
-    std::string finalPath = serverData.getRoot() + contentRoot[Extension] + pathReceived;
-    if (!Security::isSafePath(serverData.getRoot(), contentRoot[Extension] + pathReceived)) {
+    std::string finalPath = serverData.getRoot() + mount + pathReceived;
+    if (!Security::isSafePath(serverData.getRoot(), mount + pathReceived)) {
         sendToLoggerError("Path traversal attempt blocked after assembly: " + finalPath);
         return "";
     }
@@ -919,14 +974,9 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
  * @return
  */
 std::string Handler::getContentType(const std::string& extension) {
-    std::map<std::string, std::string> contentTypes = {
-        {"html", "text/html"},      {"htm", "text/html"},    {"css", "text/css"},          {"js", "text/javascript"},
-        {"jpg", "image/jpeg"},      {"jpeg", "image/jpeg"},  {"png", "image/png"},         {"gif", "image/gif"},
-        {"webp", "image/webp"},     {"svg", "image/svg+xml"},{"ico", "image/x-icon"},      {"JSON", "application/JSON"},
-        {"pdf", "application/pdf"}, {"zip", "application/zip"}, {"mp3", "audio/mpeg"},     {"mp4", "video/mp4"},
-        {"xml", "application/xml"}, {"csv", "text/csv"},        {"txt", "text/plain"}};
-
-    return contentTypes.count(extension) ? contentTypes[extension] : "application/octet-stream";
+    const auto& types = handlerContentTypeByExtension();
+    auto        it    = types.find(extension);
+    return it != types.end() ? it->second : "application/octet-stream";
 }
 
 }  // namespace geruest

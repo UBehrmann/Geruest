@@ -506,6 +506,32 @@ std::string mergeJsFilesResolvingBundleWriteback(AssetMerger& merger,
 
 }  // namespace
 
+JsMergeDiscovery AssetMerger::discoverJsMergeInputs(const std::string& htmlContent) {
+    JsMergeDiscovery d;
+    auto jsRefs = extractJsReferences(htmlContent);
+    for (const auto& ref : jsRefs) {
+        if (ref.isExternal) {
+            continue;
+        }
+        if (isExcluded(ref.href)) {
+            continue;
+        }
+        std::string filePath = resolveAssetPath(ref.href, "js");
+        if (fs::exists(filePath)) {
+            d.localJsAbsolutePaths.push_back(std::move(filePath));
+            d.jsHrefs.push_back(ref.href);
+            if (d.jsSubdir.empty()) {
+                size_t lastSlash = ref.href.find_last_of('/');
+                if (lastSlash != std::string::npos) {
+                    d.jsSubdir = ref.href.substr(0, lastSlash);
+                }
+            }
+        }
+    }
+    d.hasJs = d.localJsAbsolutePaths.size() >= 1;
+    return d;
+}
+
 MergeResult AssetMerger::processHtml(const std::string& htmlContent, const std::string& pageName) {
     MergeResult result;
     result.modifiedHtml = htmlContent;
@@ -514,9 +540,6 @@ MergeResult AssetMerger::processHtml(const std::string& htmlContent, const std::
     
     // Extract CSS references
     auto cssRefs = extractCssReferences(htmlContent);
-    
-    // Extract JS references
-    auto jsRefs = extractJsReferences(htmlContent);
     
     // Collect local CSS files (skip external URLs and excluded files)
     std::vector<std::string> localCssFiles;
@@ -544,33 +567,13 @@ MergeResult AssetMerger::processHtml(const std::string& htmlContent, const std::
             }
         }
     }
-    
-    // Collect local JS files (skip external URLs and excluded files)
-    std::vector<std::string> localJsFiles;
-    for (const auto& ref : jsRefs) {
-        if (!ref.isExternal) {
-            // Check if file is excluded
-            if (isExcluded(ref.href)) {
-                continue;  // Skip excluded files
-            }
-            
-            std::string filePath = resolveAssetPath(ref.href, "js");
-            if (fs::exists(filePath)) {
-                localJsFiles.push_back(filePath);
-                result.jsFiles.push_back(ref.href);
-                
-                // Extract subdirectory from first JS file (full nested path)
-                if (result.jsSubdir.empty()) {
-                    // href format: "subdir/subdir2/file.js" or "file.js"
-                    // Extract everything before the filename
-                    size_t lastSlash = ref.href.find_last_of('/');
-                    if (lastSlash != std::string::npos) {
-                        result.jsSubdir = ref.href.substr(0, lastSlash);
-                    }
-                }
-            }
-        }
-    }
+
+    JsMergeDiscovery jsDisc = discoverJsMergeInputs(htmlContent);
+    result.jsFiles = std::move(jsDisc.jsHrefs);
+    result.jsSubdir = std::move(jsDisc.jsSubdir);
+    std::vector<std::string> localJsFiles = std::move(jsDisc.localJsAbsolutePaths);
+
+    auto jsRefs = extractJsReferences(htmlContent);
     
     // Determine if we should merge (always merge if there's at least 1 file)
     bool shouldMergeCss = localCssFiles.size() >= 1;

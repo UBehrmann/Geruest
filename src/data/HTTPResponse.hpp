@@ -10,9 +10,10 @@
 #ifndef GERUEST_HTTPRESPONSE_HPP
 #define GERUEST_HTTPRESPONSE_HPP
 
-#include <map>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 #include <sstream>
 #include "HTTPRequest.hpp"
 
@@ -25,7 +26,8 @@ namespace geruest {
 class HTTPResponse {
 private:
     std::string status;
-    std::multimap<std::string, std::string> headers; // Changed to multimap to allow duplicate keys
+    /** Insertion order; duplicate keys allowed (e.g. Set-Cookie). */
+    std::vector<std::pair<std::string, std::string>> headers;
     std::string body;
 
 public:
@@ -61,6 +63,12 @@ public:
      * @return The status string.
      */
     const std::string& getStatus() const { return status; }
+
+    /**
+     * Serializes the full HTTP response into @p out (cleared first).
+     * Reuses @p out's capacity across requests when used from a connection scratch buffer.
+     */
+    void serializeTo(std::string& out) const;
 
     /**
      * Builds and returns the full HTTP response as a string.

@@ -6,6 +6,7 @@
  */
 
 #include <gtest/gtest.h>
+#include <chrono>
 #include <string>
 #include <filesystem>
 #include <fstream>
@@ -221,6 +222,20 @@ TEST_F(ContentBuilderTest, JSBuilderWithMergeAssetsBuildsOneBundleFromHtmlTempla
     {
         std::ofstream stub(TEST_ROOT + "/assets/js/mergepage.js");
         stub << "DISK_STUB_SHOULD_NOT_APPEAR_IN_OUTPUT\n";
+    }
+
+    // Stale on-disk merged file must not win over HTML+sources: age stub behind inputs so
+    // production disk-reuse path skips it and JSBuilder rebuilds from the template.
+    {
+        std::error_code ec;
+        const std::string stubPath = TEST_ROOT + "/assets/js/mergepage.js";
+        const auto        oldTime =
+            fs::file_time_type::clock::now() - std::chrono::hours(24 * 365);
+        fs::last_write_time(stubPath, oldTime, ec);
+        const auto now = fs::file_time_type::clock::now();
+        fs::last_write_time(TEST_ROOT + "/html/mergepage.html", now, ec);
+        fs::last_write_time(TEST_ROOT + "/assets/js/a.js", now, ec);
+        fs::last_write_time(TEST_ROOT + "/assets/js/b.js", now, ec);
     }
 
     const std::string absRoot = fs::absolute(TEST_ROOT).string();

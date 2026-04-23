@@ -51,6 +51,9 @@ class Handler {
     /** Unread bytes after the last fully parsed request (HTTP/1.1 pipelining / partial reads). */
     std::string pendingRequestData;
 
+    /** Reused for HTTPResponse::serializeTo and similar to reduce per-send allocations. */
+    std::string responseScratch_;
+
     boost::asio::awaitable<bool> readSocketAsync();
     boost::asio::awaitable<bool> readSocketAsync(char* bufferToUse, size_t size);
 

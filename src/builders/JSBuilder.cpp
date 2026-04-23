@@ -11,6 +11,8 @@
  * JSBuilder rebuilds that bundle from the page HTML template when serving the merged
  * script URL so obfuscation always sees one compilation unit even if the .js file was
  * requested before any HTML response (dev cache miss or production cold start).
+ * In production, if the on-disk merged bundle is at least as new as the template and
+ * source scripts, that file is reused without re-running merge.
  *
  * Obfuscation compilation unit: The string passed to JSObfuscator is always the exact
  * bytes served for that script URL (per-file source or the merged bundle). Rename maps
@@ -47,6 +49,8 @@ struct TemplateMergedJsInfo {
     std::string mergedJs;
     std::string htmlTemplatePath;
     std::vector<std::string> mergedJsHrefs;
+    /** If true, mergedJs is empty and builtFile already came from loadFile (on-disk bundle). */
+    bool diskReuse = false;
 };
 
 std::string readEntireFile(const std::string& filePath) {
@@ -167,6 +171,95 @@ std::optional<TemplateMergedJsInfo> tryTemplateMergedJs(const std::string& jsAbs
     info.mergedJs = std::move(mergeResult.mergedJs);
     info.htmlTemplatePath = templatePath;
     info.mergedJsHrefs = std::move(mergeResult.jsFiles);
+    info.diskReuse = false;
+    return info;
+}
+
+/**
+ * Production: if merged bundle on disk is not older than the HTML template and source scripts,
+ * skip processHtml/merge (builtFile already loaded in ContentBuilder).
+ */
+std::optional<TemplateMergedJsInfo> tryReuseOnDiskMergedBundle(const std::string& jsAbsPath,
+                                                               const ServerData& serverData,
+                                                               const std::string& loadedBundle) {
+    namespace fs = std::filesystem;
+    if (serverData.isDevMode() || !serverData.getMergeAssets() || loadedBundle.empty()) {
+        return std::nullopt;
+    }
+
+    const std::string& root = serverData.getRoot();
+    fs::path            jsPath(jsAbsPath);
+    const std::string   pageStem = jsPath.stem().string();
+    if (pageStem.empty()) {
+        return std::nullopt;
+    }
+
+    const std::string htmlDir = root + "/html";
+    if (!fs::is_directory(htmlDir)) {
+        return std::nullopt;
+    }
+
+    const std::string templatePath = findBestPageTemplateHtml(htmlDir, pageStem);
+    if (templatePath.empty()) {
+        return std::nullopt;
+    }
+
+    const std::string htmlContent = readEntireFile(templatePath);
+    if (htmlContent.empty()) {
+        return std::nullopt;
+    }
+
+    AssetMerger merger(root, serverData.getRemoveComments(), serverData.getObfuscationExclusions());
+    JsMergeDiscovery disc = merger.discoverJsMergeInputs(htmlContent);
+    if (!disc.hasJs) {
+        return std::nullopt;
+    }
+
+    fs::path expectedMerged = fs::path(root) / "assets" / "js" / (pageStem + ".js");
+    if (!disc.jsSubdir.empty()) {
+        expectedMerged = fs::path(root) / "assets" / "js" / disc.jsSubdir / (pageStem + ".js");
+    }
+
+    std::error_code ec;
+    const fs::path canonJs = fs::weakly_canonical(jsPath, ec);
+    if (ec) {
+        return std::nullopt;
+    }
+    const fs::path canonExpected = fs::weakly_canonical(expectedMerged, ec);
+    if (ec) {
+        return std::nullopt;
+    }
+    if (canonJs != canonExpected) {
+        return std::nullopt;
+    }
+
+    try {
+        const auto bundleTime = fs::last_write_time(jsAbsPath, ec);
+        if (ec) {
+            return std::nullopt;
+        }
+        auto newestInput = fs::last_write_time(templatePath);
+        for (const auto& href : disc.jsHrefs) {
+            const std::string scriptPath = merger.resolveAssetPath(href, "js");
+            if (!fs::exists(scriptPath)) {
+                return std::nullopt;
+            }
+            const auto t = fs::last_write_time(scriptPath);
+            if (t > newestInput) {
+                newestInput = t;
+            }
+        }
+        if (newestInput > bundleTime) {
+            return std::nullopt;
+        }
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+
+    TemplateMergedJsInfo info;
+    info.diskReuse = true;
+    info.htmlTemplatePath = templatePath;
+    info.mergedJsHrefs = std::move(disc.jsHrefs);
     return info;
 }
 
@@ -247,13 +340,17 @@ void JSBuilder::builJS() {
         }
     }
 
-    std::optional<TemplateMergedJsInfo> templateMerge = tryTemplateMergedJs(path, _serverData);
-    if (templateMerge.has_value()) {
-        builtFile = std::move(templateMerge->mergedJs);
+    std::optional<TemplateMergedJsInfo> templateMerge = tryReuseOnDiskMergedBundle(path, _serverData, builtFile);
+    if (!templateMerge.has_value()) {
+        templateMerge = tryTemplateMergedJs(path, _serverData);
+        if (templateMerge.has_value() && !templateMerge->diskReuse) {
+            builtFile = std::move(templateMerge->mergedJs);
+        }
     }
-    
-    // Handle comment removal if enabled
-    if (_serverData.getRemoveComments() && !builtFile.empty()) {
+
+    // Comment removal: mergeJsFiles already strips per segment when removeComments is on;
+    // avoid a second full-bundle removeJsComments pass for template-merged or on-disk merged output.
+    if (_serverData.getRemoveComments() && !builtFile.empty() && !templateMerge.has_value()) {
         builtFile = removeCommentsFromString(builtFile, FILETYPE_JS);
     }
     
