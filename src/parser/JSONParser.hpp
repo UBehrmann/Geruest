@@ -10,7 +10,9 @@
 #ifndef JSONParser_HPP
 #define JSONParser_HPP
 
+#include <memory>
 #include <string>
+#include <string_view>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -34,7 +36,11 @@ private:
 
     std::vector<std::string> keys;
 
-    std::string basicString;
+    /** Owns text when constructed from `std::string` or map-only (empty view). */
+    std::string _ownedStorage;
+    /** Keeps parent HTTP message alive when `_view` is a slice of it. */
+    std::shared_ptr<const std::string> _lifetimeBacking;
+    std::string_view _view;
     size_t jp = 0;
 
     /**
@@ -109,6 +115,9 @@ public:
     JSONParser() = default;
 
     explicit JSONParser(const std::string &input);
+
+    /** Parse JSON from `json`; keep `lifetime` alive while this parser exists (slice must lie inside *lifetime). */
+    JSONParser(std::string_view json, std::shared_ptr<const std::string> lifetime);
 
     explicit JSONParser(std::map<std::string, std::string> initialData);
 

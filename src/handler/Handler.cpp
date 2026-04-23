@@ -22,7 +22,9 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 #ifdef __linux__
@@ -317,42 +319,40 @@ boost::asio::awaitable<void> Handler::runAsync() {
 
         const size_t headerEnd = findHeaderEndPos(raw);
 
-        // RFC 7231: clients may send Expect: 100-continue and wait (e.g. httpx POST with Content-Length: 0).
-        // Respond before reading the body or finalizing the message so the client does not stall.
+        bool hasCL = false;
+        size_t bodyExpected = 0;
         {
-            HTTPRequest headOnly(raw.substr(0, headerEnd), IP, serverData.getRoot());
-            if (headOnly.hasHeader("expect") && httpExpectIs100Continue(headOnly.getHeader("expect"))) {
+            const std::string_view headerPrefix(raw.data(), headerEnd);
+            HTTPRequest headerPhase(HttpHeadersOnlyTag{}, headerPrefix, IP, serverData.getRoot());
+
+            // RFC 7231: clients may send Expect: 100-continue and wait (e.g. httpx POST with Content-Length: 0).
+            if (headerPhase.hasHeader("expect") &&
+                httpExpectIs100Continue(headerPhase.getHeader("expect"))) {
                 static const char k100[] = "HTTP/1.1 100 Continue\r\n\r\n";
                 if (!co_await sendSocketAsync(k100, sizeof(k100) - 1)) {
                     co_return;
                 }
             }
-        }
 
-        bool hasCL = false;
-        size_t bodyExpected = 0;
-        {
-            HTTPRequest probe(raw, IP, serverData.getRoot());
-            if (probe.hasHeader("content-length")) {
-                if (!parseContentLengthBytes(probe, &bodyExpected)) {
-                    HTTPResponse br = responseBadRequest(&probe);
+            if (headerPhase.hasHeader("content-length")) {
+                if (!parseContentLengthBytes(headerPhase, &bodyExpected)) {
+                    HTTPResponse br = responseBadRequest(&headerPhase);
                     br.serializeTo(responseScratch_);
                     co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size());
                     co_return;
                 }
                 hasCL = true;
             }
-        }
 
-        if (hasCL && bodyExpected > kMaxHttpBodyBytes) {
-            HTTPRequest probe(raw, IP, serverData.getRoot());
-            HTTPResponse br = responseBadRequest(&probe);
-            br.serializeTo(responseScratch_);
-            co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size());
-            const size_t already = raw.size() > headerEnd ? raw.size() - headerEnd : 0;
-            const size_t remain = bodyExpected > already ? bodyExpected - already : 0;
-            static_cast<void>(co_await discardFromSocketAsync(remain));
-            co_return;
+            if (hasCL && bodyExpected > kMaxHttpBodyBytes) {
+                HTTPResponse br = responseBadRequest(&headerPhase);
+                br.serializeTo(responseScratch_);
+                co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size());
+                const size_t already = raw.size() > headerEnd ? raw.size() - headerEnd : 0;
+                const size_t remain = bodyExpected > already ? bodyExpected - already : 0;
+                static_cast<void>(co_await discardFromSocketAsync(remain));
+                co_return;
+            }
         }
 
         const size_t needTotal = headerEnd + (hasCL ? bodyExpected : 0);
@@ -367,13 +367,17 @@ boost::asio::awaitable<void> Handler::runAsync() {
             raw.append(buffer.get(), static_cast<size_t>(bufferLength));
         }
 
-        std::string message = raw.substr(0, needTotal);
+        std::shared_ptr<const std::string> messageBacking =
+            std::make_shared<const std::string>(raw, 0, needTotal);
         if (raw.size() > needTotal) {
-            pendingRequestData = raw.substr(needTotal);
+            pendingRequestData.assign(raw.data() + needTotal, raw.size() - needTotal);
+        } else {
+            pendingRequestData.clear();
         }
+        raw.clear();
 
-        HTTPRequest hTTPRequest(message, IP, serverData.getRoot());
-        requestStream = std::istringstream(message);
+        HTTPRequest hTTPRequest(std::move(messageBacking), IP, serverData.getRoot());
+        requestStream = std::istringstream();
 
         serverData.recordRequest();
         {

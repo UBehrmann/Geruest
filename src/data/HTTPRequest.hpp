@@ -12,7 +12,8 @@
 
 #include <algorithm>
 #include <cctype>
-#include <sstream>
+#include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -21,11 +22,46 @@
 
 namespace geruest {
 
-std::string urlDecode(const std::string& str);
+std::string urlDecode(std::string_view str);
+inline std::string urlDecode(const std::string& str) { return urlDecode(std::string_view(str)); }
+
+/** Tag: parse only headers + request line from a prefix view (caller must keep storage alive for ctor duration). */
+struct HttpHeadersOnlyTag {
+    explicit HttpHeadersOnlyTag() = default;
+};
+
+struct HeaderMapHash {
+    using is_transparent = void;
+    [[nodiscard]] std::size_t operator()(std::string_view sv) const noexcept;
+    [[nodiscard]] std::size_t operator()(const std::string& s) const noexcept { return (*this)(std::string_view(s)); }
+};
+
+struct HeaderMapEq {
+    using is_transparent = void;
+    [[nodiscard]] bool operator()(std::string_view a, std::string_view b) const noexcept;
+    [[nodiscard]] bool operator()(std::string_view a, const std::string& b) const noexcept {
+        return (*this)(a, std::string_view(b));
+    }
+    [[nodiscard]] bool operator()(const std::string& a, std::string_view b) const noexcept {
+        return (*this)(std::string_view(a), b);
+    }
+    [[nodiscard]] bool operator()(const std::string& a, const std::string& b) const noexcept {
+        return (*this)(std::string_view(a), std::string_view(b));
+    }
+};
+
+using HeaderFieldMap = std::unordered_map<std::string, std::string, HeaderMapHash, HeaderMapEq>;
 
 class HTTPRequest {
    public:
     HTTPRequest(std::string rawRequest, std::string clientIP, std::string serverRootPath);
+
+    /** Full message bytes owned by `backing` (typically one per request from Handler). */
+    HTTPRequest(std::shared_ptr<const std::string> backing, std::string clientIP, std::string serverRootPath);
+
+    /** Prefix through end of headers (see Handler `headerEnd`); no body; synchronous parse only. */
+    HTTPRequest(HttpHeadersOnlyTag, std::string_view headerBytesPrefix, std::string clientIP,
+                std::string serverRootPath);
 
     const std::string& getMethod() const;
     const std::string& getPathString() const;
@@ -53,41 +89,36 @@ class HTTPRequest {
     std::string _method;
     std::string _path;
     std::string _rawRequestLine;
-    std::string _body;
 
-    std::string _rawRequest;
+    std::shared_ptr<const std::string> _backing;
+    std::string_view _bodyView;
+    mutable std::optional<std::string> _bodyMaterialized;
 
     std::vector<std::string> _pathParts;
     std::unordered_map<std::string, std::string> _queryParams;
     std::unordered_map<std::string, std::string> _jsonParams;
-    std::unordered_map<std::string, std::string> _headers;
+    HeaderFieldMap _headers;
     std::unordered_map<std::string, std::string> _cookies;
 
-    void parseRequest(const std::string& rawRequest);
+    bool _headersOnly = false;
 
-    void parsePathAndParams(const std::string& pathWithQuery);
+    mutable std::optional<std::string> _rawRequestMaterialized;
 
-    void parseHeadersAndBody(const std::string& rawRequest);
+    void parseFromWire(std::string_view raw);
+    void parsePathAndParams(std::string_view pathWithQuery);
+    void parseHeadersAndBody(std::string_view rawRequest);
+    void parseHeaders(std::string_view headerSection);
+    void parseCookies(std::string_view cookieHeader);
+    void parseJsonBody();
 
-    void parseHeaders(const std::string& headerSection);
-
-    void parseCookies(const std::string& cookieHeader);
-
-    void parseJsonBody(const std::string& jsonStr);
-
-    static std::vector<std::string> splitString(const std::string& str, char delimiter);
-
-    static std::string removeWhitespace(const std::string& input);
-
-    static std::string trim(const std::string& input);
-
-    static std::string stripQuotes(const std::string& input);
-
-    static std::string toLower(const std::string& str);
+    static std::vector<std::string> splitPathSegments(std::string_view pathOnly);
+    static std::string removeWhitespace(std::string_view input);
+    static std::string trim(std::string_view input);
+    static std::string stripQuotes(std::string_view input);
+    static std::string toLower(std::string_view str);
 };
 
-/** True when an Expect header value requests 100-continue (trimmed, case-insensitive, RFC 7231). */
-[[nodiscard]] inline bool httpExpectIs100Continue(const std::string& value) {
+[[nodiscard]] inline bool httpExpectIs100Continue(std::string_view value) {
     size_t i = 0;
     while (i < value.size() && std::isspace(static_cast<unsigned char>(value[i]))) {
         ++i;

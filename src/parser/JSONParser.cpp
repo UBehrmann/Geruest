@@ -6,7 +6,12 @@
 
 namespace geruest {
 
-JSONParser::JSONParser(const std::string &input) : basicString(input), jp(0) {
+JSONParser::JSONParser(const std::string &input) : _ownedStorage(input), _view(_ownedStorage), jp(0) {
+    parseJSON();
+}
+
+JSONParser::JSONParser(std::string_view json, std::shared_ptr<const std::string> lifetime)
+    : _lifetimeBacking(std::move(lifetime)), _view(json), jp(0) {
     parseJSON();
 }
 
@@ -17,28 +22,28 @@ bool JSONParser::isWhiteSpace(char c) {
 }
 
 std::string JSONParser::readKey() {
-    while (jp < basicString.length() && isWhiteSpace(basicString[jp])) {
+    while (jp < _view.length() && isWhiteSpace(_view[jp])) {
         jp++;
     }
-    if (jp >= basicString.length() || basicString[jp] != '"') {
+    if (jp >= _view.length() || _view[jp] != '"') {
         return "";
     }
     jp++;
     std::string key;
     bool escape = false;
-    while (jp < basicString.length()) {
+    while (jp < _view.length()) {
         if (escape) {
-            key += basicString[jp];
+            key += _view[jp];
             escape = false;
             jp++;
-        } else if (basicString[jp] == '\\') {
+        } else if (_view[jp] == '\\') {
             escape = true;
             jp++;
-        } else if (basicString[jp] == '"') {
+        } else if (_view[jp] == '"') {
             jp++;
             break;
         } else {
-            key += basicString[jp];
+            key += _view[jp];
             jp++;
         }
     }
@@ -46,28 +51,28 @@ std::string JSONParser::readKey() {
 }
 
 std::string JSONParser::readString() {
-    while (jp < basicString.length() && isWhiteSpace(basicString[jp])) {
+    while (jp < _view.length() && isWhiteSpace(_view[jp])) {
         jp++;
     }
-    if (jp >= basicString.length() || basicString[jp] != '"') {
+    if (jp >= _view.length() || _view[jp] != '"') {
         return "";
     }
     jp++;
     std::string value;
     bool escape = false;
-    while (jp < basicString.length()) {
+    while (jp < _view.length()) {
         if (escape) {
-            value += basicString[jp];
+            value += _view[jp];
             escape = false;
             jp++;
-        } else if (basicString[jp] == '\\') {
+        } else if (_view[jp] == '\\') {
             escape = true;
             jp++;
-        } else if (basicString[jp] == '"') {
+        } else if (_view[jp] == '"') {
             jp++;
             break;
         } else {
-            value += basicString[jp];
+            value += _view[jp];
             jp++;
         }
     }
@@ -75,17 +80,17 @@ std::string JSONParser::readString() {
 }
 
 std::string JSONParser::readNumber() {
-    while (jp < basicString.length() && isWhiteSpace(basicString[jp])) {
+    while (jp < _view.length() && isWhiteSpace(_view[jp])) {
         jp++;
     }
     std::string number;
-    if (jp < basicString.length() && basicString[jp] == '-') {
-        number += basicString[jp];
+    if (jp < _view.length() && _view[jp] == '-') {
+        number += _view[jp];
         jp++;
     }
-    while (jp < basicString.length() && 
-           (std::isdigit(basicString[jp]) || basicString[jp] == '.')) {
-        number += basicString[jp];
+    while (jp < _view.length() && 
+           (std::isdigit(_view[jp]) || _view[jp] == '.')) {
+        number += _view[jp];
         jp++;
     }
     return number;
@@ -107,8 +112,8 @@ std::string JSONParser::readNestedObject() {
     bool inString = false;
     bool escape = false;
     
-    while (jp < basicString.length()) {
-        char c = basicString[jp];
+    while (jp < _view.length()) {
+        char c = _view[jp];
         if (escape) {
             escape = false;
         } else if (c == '\\') {
@@ -129,7 +134,7 @@ std::string JSONParser::readNestedObject() {
         jp++;
     }
     
-    return basicString.substr(start, jp - start);
+    return std::string(_view.substr(start, jp - start));
 }
 
 std::string JSONParser::readNestedArray() {
@@ -138,8 +143,8 @@ std::string JSONParser::readNestedArray() {
     bool inString = false;
     bool escape = false;
 
-    while (jp < basicString.length()) {
-        char c = basicString[jp];
+    while (jp < _view.length()) {
+        char c = _view[jp];
         if (escape) {
             escape = false;
         } else if (c == '\\') {
@@ -159,28 +164,28 @@ std::string JSONParser::readNestedArray() {
         }
         jp++;
     }
-    return basicString.substr(start, jp - start);
+    return std::string(_view.substr(start, jp - start));
 }
 
 std::string JSONParser::readData() {
-    while (jp < basicString.length() && isWhiteSpace(basicString[jp])) {
+    while (jp < _view.length() && isWhiteSpace(_view[jp])) {
         jp++;
     }
-    if (jp >= basicString.length()) {
+    if (jp >= _view.length()) {
         return "";
     }
-    char c = basicString[jp];
+    char c = _view[jp];
     if (c == '"') {
         return readString();
     } else if (std::isdigit(c) || c == '-') {
         return readNumber();
-    } else if (basicString.substr(jp, 4) == "true") {
+    } else if (jp + 4 <= _view.size() && _view.substr(jp, 4) == "true") {
         jp += 4;
         return "true";
-    } else if (basicString.substr(jp, 5) == "false") {
+    } else if (jp + 5 <= _view.size() && _view.substr(jp, 5) == "false") {
         jp += 5;
         return "false";
-    } else if (basicString.substr(jp, 4) == "null") {
+    } else if (jp + 4 <= _view.size() && _view.substr(jp, 4) == "null") {
         jp += 4;
         return "null";
     } else if (c == '{') {
@@ -196,25 +201,25 @@ void JSONParser::parseArray() {
     jp = 0;
     
     // Skip whitespace
-    while (jp < basicString.length() && isWhiteSpace(basicString[jp])) {
+    while (jp < _view.length() && isWhiteSpace(_view[jp])) {
         jp++;
     }
     
     // Must start with '['
-    if (jp >= basicString.length() || basicString[jp] != '[') {
+    if (jp >= _view.length() || _view[jp] != '[') {
         return;
     }
     jp++;
     
     // Parse array elements
-    while (jp < basicString.length()) {
+    while (jp < _view.length()) {
         // Skip whitespace
-        while (jp < basicString.length() && isWhiteSpace(basicString[jp])) {
+        while (jp < _view.length() && isWhiteSpace(_view[jp])) {
             jp++;
         }
         
         // Check for end of array
-        if (jp < basicString.length() && basicString[jp] == ']') {
+        if (jp < _view.length() && _view[jp] == ']') {
             jp++;
             break;
         }
@@ -229,14 +234,14 @@ void JSONParser::parseArray() {
         }
         
         // Skip whitespace
-        while (jp < basicString.length() && isWhiteSpace(basicString[jp])) {
+        while (jp < _view.length() && isWhiteSpace(_view[jp])) {
             jp++;
         }
         
         // Check for comma or end of array
-        if (jp < basicString.length() && basicString[jp] == ',') {
+        if (jp < _view.length() && _view[jp] == ',') {
             jp++;
-        } else if (jp < basicString.length() && basicString[jp] == ']') {
+        } else if (jp < _view.length() && _view[jp] == ']') {
             jp++;
             break;
         }
@@ -249,28 +254,28 @@ void JSONParser::parseJSON() {
     jp = 0;
     
     // Skip leading whitespace
-    while (jp < basicString.length() && isWhiteSpace(basicString[jp])) {
+    while (jp < _view.length() && isWhiteSpace(_view[jp])) {
         jp++;
     }
     
     // Check if this is an array or object
-    if (jp < basicString.length() && basicString[jp] == '[') {
+    if (jp < _view.length() && _view[jp] == '[') {
         // This is an array, parse it
         parseArray();
         return;
     }
     
     // This should be an object
-    if (jp >= basicString.length() || basicString[jp] != '{') {
+    if (jp >= _view.length() || _view[jp] != '{') {
         return;
     }
     jp++;
     
-    while (jp < basicString.length()) {
-        while (jp < basicString.length() && isWhiteSpace(basicString[jp])) {
+    while (jp < _view.length()) {
+        while (jp < _view.length() && isWhiteSpace(_view[jp])) {
             jp++;
         }
-        if (jp < basicString.length() && basicString[jp] == '}') {
+        if (jp < _view.length() && _view[jp] == '}') {
             jp++;
             break;
         }
@@ -279,10 +284,10 @@ void JSONParser::parseJSON() {
         if (key.empty()) break;
         keys.push_back(key);
         
-        while (jp < basicString.length() && isWhiteSpace(basicString[jp])) {
+        while (jp < _view.length() && isWhiteSpace(_view[jp])) {
             jp++;
         }
-        if (jp >= basicString.length() || basicString[jp] != ':') {
+        if (jp >= _view.length() || _view[jp] != ':') {
             break;
         }
         jp++;
@@ -290,12 +295,12 @@ void JSONParser::parseJSON() {
         std::string value = readData();
         data[key] = value;
         
-        while (jp < basicString.length() && isWhiteSpace(basicString[jp])) {
+        while (jp < _view.length() && isWhiteSpace(_view[jp])) {
             jp++;
         }
-        if (jp < basicString.length() && basicString[jp] == ',') {
+        if (jp < _view.length() && _view[jp] == ',') {
             jp++;
-        } else if (jp < basicString.length() && basicString[jp] == '}') {
+        } else if (jp < _view.length() && _view[jp] == '}') {
             jp++;
             break;
         }
