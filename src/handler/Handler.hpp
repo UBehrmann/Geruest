@@ -77,6 +77,7 @@ class Handler {
                                                    const std::string& content);
 
     boost::asio::awaitable<void> sendNotFoundResponseAsync(HTTPRequest* httpRequest);
+    boost::asio::awaitable<void> sendServiceUnavailableResponseAsync(const std::string& why);
 
     std::string getExtension(const std::string& path) const;
 

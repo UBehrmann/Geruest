@@ -24,8 +24,10 @@
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/steady_timer.hpp>
 
 #include <atomic>
+#include <chrono>
 #include <cstring>  // For memset
 #include <functional>
 #include <memory>
@@ -516,6 +518,8 @@ class Geruest {
      * - requests.total / last_hour / avg_per_hour / active
      * - errors.total / client_4xx / server_5xx / internal (+ last_hour/avg_per_hour breakdown)
      * - queue.current_size (active sessions) / max_size / rejections_total / avg_fill_percent_hour / avg_fill_percent_per_hour
+     * - queue.overload_http_responses (count of accepted sockets replied with 503 due to session cap)
+     * - io.accept_errors_total / accept_emfile_total / file_open_failures_total
      * - latency_ms.p50 / p95 / p99 (milliseconds, last 60 seconds)
      * - system.memory.total_mb / used_mb / free_mb / percent_used (host memory)
      * - system.cpu.count (logical CPU cores)
@@ -548,6 +552,7 @@ class Geruest {
     boost::asio::io_context                         io_ctx_;
     std::optional<boost::asio::ip::tcp::acceptor> acceptor_;
     std::optional<boost::asio::executor_work_guard<boost::asio::io_context::executor_type>> work_guard_;
+    std::optional<boost::asio::steady_timer> _acceptRetryTimer;
 
     std::atomic<size_t> _activeSessions{0};
 
@@ -601,6 +606,7 @@ class Geruest {
     void sendToLoggerError(const std::string& message) const;
 
     void doAccept();
+    void scheduleAcceptRetry(std::chrono::milliseconds delay);
 
     /** Decrement active session count and refresh queue fill metrics (Option A). */
     void releaseSessionSlot();

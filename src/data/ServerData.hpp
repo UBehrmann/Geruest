@@ -90,6 +90,10 @@ class ServerData {
     mutable std::atomic<uint64_t> _total5xx{0};
     mutable std::atomic<uint64_t> _totalInternalErrors{0};
     mutable std::atomic<uint64_t> _queueRejections{0};
+    mutable std::atomic<uint64_t> _acceptErrorsTotal{0};
+    mutable std::atomic<uint64_t> _acceptEmfileTotal{0};
+    mutable std::atomic<uint64_t> _fileOpenFailures{0};
+    mutable std::atomic<uint64_t> _overloadHttpResponses{0};
     mutable std::atomic<int64_t>  _activeHandlers{0};
     std::chrono::steady_clock::time_point _startTime{std::chrono::steady_clock::now()};
 
@@ -818,6 +822,22 @@ class ServerData {
         _queueRejections.fetch_add(1, std::memory_order_relaxed);
     }
 
+    void recordAcceptError() const {
+        _acceptErrorsTotal.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void recordAcceptEmfile() const {
+        _acceptEmfileTotal.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void recordFileOpenFailure() const {
+        _fileOpenFailures.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void recordOverloadHttpResponse() const {
+        _overloadHttpResponses.fetch_add(1, std::memory_order_relaxed);
+    }
+
     void recordQueueFill(float fillPct) const {
         const auto ep = _nowEpochs();
         std::lock_guard<std::mutex> lock(_metricsMutex);
@@ -856,6 +876,10 @@ class ServerData {
     uint64_t getTotal5xx() const { return _total5xx.load(std::memory_order_relaxed); }
     uint64_t getTotalInternalErrors() const { return _totalInternalErrors.load(std::memory_order_relaxed); }
     uint64_t getQueueRejections() const { return _queueRejections.load(std::memory_order_relaxed); }
+    uint64_t getAcceptErrorsTotal() const { return _acceptErrorsTotal.load(std::memory_order_relaxed); }
+    uint64_t getAcceptEmfileTotal() const { return _acceptEmfileTotal.load(std::memory_order_relaxed); }
+    uint64_t getFileOpenFailures() const { return _fileOpenFailures.load(std::memory_order_relaxed); }
+    uint64_t getOverloadHttpResponses() const { return _overloadHttpResponses.load(std::memory_order_relaxed); }
     int64_t  getActiveHandlers() const { return _activeHandlers.load(std::memory_order_relaxed); }
 
     struct WindowMetrics {

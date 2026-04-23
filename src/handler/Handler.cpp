@@ -451,6 +451,15 @@ boost::asio::awaitable<void> Handler::sendNotFoundResponseAsync(HTTPRequest* htt
     co_return;
 }
 
+boost::asio::awaitable<void> Handler::sendServiceUnavailableResponseAsync(const std::string& why) {
+    serverData.record5xx();
+    serverData.recordFileOpenFailure();
+    sendToLoggerError("Service unavailable while serving file: " + why);
+    co_await sendResponseAsync("503 Service Unavailable", "text/plain",
+                               "Service temporarily unavailable. Please retry.\n");
+    co_return;
+}
+
 /**
  * Send a file
  * @param contentType
@@ -490,7 +499,11 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
         }
 
         if (contentBuilder->size() == 0) {
-            co_await sendNotFoundResponseAsync(httpRequest);
+            if (!contentPath.empty() && std::filesystem::exists(contentPath)) {
+                co_await sendServiceUnavailableResponseAsync(contentPath);
+            } else {
+                co_await sendNotFoundResponseAsync(httpRequest);
+            }
             co_return;
         }
 
@@ -601,6 +614,8 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
                                     break;
                                 }
                             }
+                        } else if (std::filesystem::exists(sourcePath)) {
+                            co_await sendServiceUnavailableResponseAsync(sourcePath);
                         }
                         co_return;
                     }
@@ -608,8 +623,12 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
             }
 
             if (!file.is_open()) {
-                sendToLogger("File not found: " + contentPath);
-                co_await sendNotFoundResponseAsync(httpRequest);
+                if (!contentPath.empty() && std::filesystem::exists(contentPath)) {
+                    co_await sendServiceUnavailableResponseAsync(contentPath);
+                } else {
+                    sendToLogger("File not found: " + contentPath);
+                    co_await sendNotFoundResponseAsync(httpRequest);
+                }
                 co_return;
             }
         }

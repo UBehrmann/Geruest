@@ -66,6 +66,10 @@ void ServerData::clearAllMetrics_() {
     _total5xx.store(0, std::memory_order_relaxed);
     _totalInternalErrors.store(0, std::memory_order_relaxed);
     _queueRejections.store(0, std::memory_order_relaxed);
+    _acceptErrorsTotal.store(0, std::memory_order_relaxed);
+    _acceptEmfileTotal.store(0, std::memory_order_relaxed);
+    _fileOpenFailures.store(0, std::memory_order_relaxed);
+    _overloadHttpResponses.store(0, std::memory_order_relaxed);
     _activeHandlers.store(0, std::memory_order_relaxed);
     std::lock_guard<std::mutex> lock(_metricsMutex);
     _minBuckets.fill({});

@@ -291,6 +291,10 @@ void Geruest::enableStatus(const std::string& token) {
         const uint64_t total5xx = serverData.getTotal5xx();
         const uint64_t totalInt = serverData.getTotalInternalErrors();
         const uint64_t rejTotal = serverData.getQueueRejections();
+        const uint64_t acceptErrTotal = serverData.getAcceptErrorsTotal();
+        const uint64_t acceptEmfileTotal = serverData.getAcceptEmfileTotal();
+        const uint64_t fileOpenFailures = serverData.getFileOpenFailures();
+        const uint64_t overloadHttpResponses = serverData.getOverloadHttpResponses();
         const int64_t  active   = serverData.getActiveHandlers();
         const ServerData::LatencyStats lat = serverData.getLatencyStats(60);
         const uint64_t curQueue = static_cast<uint64_t>(_activeSessions.load(std::memory_order_relaxed));
@@ -336,8 +340,14 @@ void Geruest::enableStatus(const std::string& token) {
         queue.setLongLong("current_size",             static_cast<long long>(curQueue));
         queue.setLongLong("max_size",                 static_cast<long long>(_maxQueueSize));
         queue.setLongLong("rejections_total",         static_cast<long long>(rejTotal));
+        queue.setLongLong("overload_http_responses",  static_cast<long long>(overloadHttpResponses));
         queue.setDouble("avg_fill_percent_hour",      wmHour.avg_queue_fill);
         queue.setDouble("avg_fill_percent_per_hour",  avgHour.avg_queue_fill);
+
+        JSONParser io;
+        io.setLongLong("accept_errors_total", static_cast<long long>(acceptErrTotal));
+        io.setLongLong("accept_emfile_total", static_cast<long long>(acceptEmfileTotal));
+        io.setLongLong("file_open_failures_total", static_cast<long long>(fileOpenFailures));
 
         JSONParser latency;
         latency.setDouble("p50", lat.p50);
@@ -392,6 +402,7 @@ void Geruest::enableStatus(const std::string& token) {
         root.setJSON("requests",           requests);
         root.setJSON("errors",             errors);
         root.setJSON("queue",              queue);
+        root.setJSON("io",                 io);
         root.setJSON("latency_ms",         latency);
         root.setJSON("system",             system);
 

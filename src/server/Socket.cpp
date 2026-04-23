@@ -12,9 +12,21 @@
 
 #include <boost/asio.hpp>
 #include <chrono>
+#include <cstring>
 #include <thread>
 
 namespace geruest {
+
+namespace {
+constexpr const char* kOverloadedResponse =
+    "HTTP/1.1 503 Service Unavailable\r\n"
+    "Content-Type: text/plain\r\n"
+    "Content-Length: 19\r\n"
+    "Connection: close\r\n"
+    "Retry-After: 1\r\n"
+    "\r\n"
+    "Server overloaded.\n";
+}
 
 void Geruest::statusPersistenceLoop() {
     while (running.load(std::memory_order_relaxed)) {
@@ -71,7 +83,17 @@ void Geruest::doAccept() {
         }
         if (ec) {
             if (ec != boost::asio::error::operation_aborted) {
+                serverData.recordAcceptError();
+                const bool fdExhausted =
+                    (ec == boost::asio::error::no_descriptors) ||
+                    (ec == boost::system::errc::too_many_files_open) ||
+                    (ec == boost::system::errc::too_many_files_open_in_system);
+                if (fdExhausted) {
+                    serverData.recordAcceptEmfile();
+                }
                 sendToLoggerError("Accept failed: " + ec.message());
+                scheduleAcceptRetry(fdExhausted ? std::chrono::milliseconds(50)
+                                                : std::chrono::milliseconds(5));
             }
             return;
         }
@@ -87,6 +109,9 @@ void Geruest::doAccept() {
             _activeSessions.fetch_sub(1U, std::memory_order_acq_rel);
             serverData.recordQueueRejection();
             serverData.recordQueueFill(100.0f);
+            serverData.recordOverloadHttpResponse();
+            boost::system::error_code write_ec;
+            boost::asio::write(socket, boost::asio::buffer(kOverloadedResponse, std::strlen(kOverloadedResponse)), write_ec);
             boost::system::error_code close_ec;
             socket.close(close_ec);
             if (running.load(std::memory_order_relaxed)) {
@@ -104,6 +129,25 @@ void Geruest::doAccept() {
         std::make_shared<HttpSession>(*this, std::move(socket), std::move(ip))->start();
 
         if (running.load(std::memory_order_relaxed)) {
+            doAccept();
+        }
+    });
+}
+
+void Geruest::scheduleAcceptRetry(std::chrono::milliseconds delay) {
+    if (!running.load(std::memory_order_relaxed) || !acceptor_.has_value() || !acceptor_->is_open()) {
+        return;
+    }
+
+    if (!_acceptRetryTimer.has_value()) {
+        _acceptRetryTimer.emplace(io_ctx_);
+    }
+    _acceptRetryTimer->expires_after(delay);
+    _acceptRetryTimer->async_wait([this](const boost::system::error_code& timer_ec) {
+        if (timer_ec == boost::asio::error::operation_aborted) {
+            return;
+        }
+        if (running.load(std::memory_order_relaxed) && acceptor_.has_value() && acceptor_->is_open()) {
             doAccept();
         }
     });
@@ -156,6 +200,9 @@ void Geruest::stop() {
     boost::system::error_code ec;
     if (acceptor_.has_value() && acceptor_->is_open()) {
         acceptor_->close(ec);
+    }
+    if (_acceptRetryTimer.has_value()) {
+        _acceptRetryTimer->cancel(ec);
     }
     work_guard_.reset();
     io_ctx_.stop();
