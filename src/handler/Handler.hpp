@@ -57,6 +57,7 @@ class Handler {
     boost::asio::awaitable<bool> discardFromSocketAsync(size_t byteCount);
 
     boost::asio::awaitable<bool> sendSocketAsync(const char* bufferToSend, size_t size);
+    boost::asio::awaitable<bool> sendFileBodyZeroCopyAsync(const std::string& contentPath, size_t fileSize);
 
     void sendToLogger(const std::string& message, LogLevel level = LogLevel::Info) const;
 

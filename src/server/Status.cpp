@@ -13,10 +13,7 @@
 #include <ctime>
 #include <fstream>
 #include <sstream>
-
-#ifndef _WIN32
 #include <sys/statvfs.h>
-#endif
 
 #include "geruest/Version.hpp"
 
@@ -63,16 +60,6 @@ struct SysDiskInfo {
 
 static SysMemInfo collectMemoryInfo() {
     SysMemInfo info;
-#ifdef _WIN32
-    MEMORYSTATUSEX ms{};
-    ms.dwLength = sizeof(ms);
-    if (GlobalMemoryStatusEx(&ms)) {
-        info.total_mb     = static_cast<uint64_t>(ms.ullTotalPhys) / (1024ULL * 1024);
-        info.free_mb      = static_cast<uint64_t>(ms.ullAvailPhys)  / (1024ULL * 1024);
-        info.used_mb      = info.total_mb - info.free_mb;
-        info.percent_used = info.total_mb > 0 ? 100.0 * static_cast<double>(info.used_mb) / static_cast<double>(info.total_mb) : 0.0;
-    }
-#else
     std::ifstream f("/proc/meminfo");
     std::string line;
     uint64_t total_kb = 0, avail_kb = 0;
@@ -87,13 +74,11 @@ static SysMemInfo collectMemoryInfo() {
     info.free_mb      = avail_kb / 1024;
     info.used_mb      = info.total_mb - info.free_mb;
     info.percent_used = info.total_mb > 0 ? 100.0 * static_cast<double>(info.used_mb) / static_cast<double>(info.total_mb) : 0.0;
-#endif
     return info;
 }
 
 static SysCgroupMemInfo collectCgroupMemInfo() {
     SysCgroupMemInfo info;
-#ifndef _WIN32
     // Try cgroup v2 first
     {
         std::ifstream usage_f("/sys/fs/cgroup/memory.current");
@@ -131,13 +116,11 @@ static SysCgroupMemInfo collectCgroupMemInfo() {
             }
         }
     }
-#endif
     return info;
 }
 
 static SysCgroupCpuInfo collectCgroupCpuInfo() {
     SysCgroupCpuInfo info;
-#ifndef _WIN32
     double allocated = 0.0;
     bool   hasLimit  = false;
 
@@ -212,31 +195,19 @@ static SysCgroupCpuInfo collectCgroupCpuInfo() {
         prev_usec = usage_usec;
         prev_tp   = now;
     }
-#endif
     return info;
 }
 
 static SysCpuInfo collectCpuInfo() {
     SysCpuInfo info;
     info.cpu_count = std::thread::hardware_concurrency();
-#ifndef _WIN32
     std::ifstream f("/proc/loadavg");
     if (f) f >> info.load_1m >> info.load_5m >> info.load_15m;
-#endif
     return info;
 }
 
 static SysDiskInfo collectDiskInfo() {
     SysDiskInfo info;
-#ifdef _WIN32
-    ULARGE_INTEGER freeBytesAvailable, totalBytes, totalFreeBytes;
-    if (GetDiskFreeSpaceExA("C:\\", &freeBytesAvailable, &totalBytes, &totalFreeBytes)) {
-        info.total_gb     = totalBytes.QuadPart     / (1024ULL * 1024 * 1024);
-        info.free_gb      = totalFreeBytes.QuadPart / (1024ULL * 1024 * 1024);
-        info.used_gb      = info.total_gb - info.free_gb;
-        info.percent_used = info.total_gb > 0 ? 100.0 * static_cast<double>(info.used_gb) / static_cast<double>(info.total_gb) : 0.0;
-    }
-#else
     struct statvfs sv{};
     if (statvfs("/", &sv) == 0) {
         const uint64_t block = sv.f_frsize;
@@ -248,7 +219,6 @@ static SysDiskInfo collectDiskInfo() {
         info.used_gb      = (total - free) / (1024ULL * 1024 * 1024);
         info.percent_used = total > 0 ? 100.0 * static_cast<double>(total - free) / static_cast<double>(total) : 0.0;
     }
-#endif
     return info;
 }
 
@@ -310,11 +280,7 @@ void Geruest::enableStatus(const std::string& token) {
         std::time_t now_t = std::time(nullptr);
         char timeBuf[32]  = {};
         struct tm utcTm{};
-#ifdef _WIN32
-        gmtime_s(&utcTm, &now_t);
-#else
         gmtime_r(&now_t, &utcTm);
-#endif
         std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%dT%H:%M:%SZ", &utcTm);
 
         // Build JSON objects

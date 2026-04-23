@@ -11,9 +11,7 @@ cd Geruest && mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Debug && make -j$(nproc) && sudo make install
 ```
 
-**Windows (MSVC):** `cmake .. -A x64 && cmake --build . --config Release`  
-**Windows (MinGW):** `cmake .. -G "MinGW Makefiles" && cmake --build .`  
-**Visual Studio:** File → Open → CMake → Build (Ctrl+Shift+B)
+Geruest targets Linux/Unix only.
 
 ## Docker
 
@@ -112,13 +110,6 @@ server {
 }
 ```
 
-**Windows Service (NSSM):**
-```powershell
-nssm install AppName "C:\path\to\myapp.exe"
-nssm set AppName AppDirectory "C:\path\to"
-nssm start AppName
-```
-
 ## Configuration
 
 ```cpp
@@ -140,5 +131,4 @@ server.setPort(port ? std::atoi(port) : 8080);
 ## Platform Notes
 
 **Linux:** Ports <1024 need root. Increase limits: `ulimit -n 65535`. TCP tuning: `/etc/sysctl.d/99-app.conf`
-**Windows:** Allow port in firewall. `Ctrl+C` graceful shutdown.
-**macOS:** Similar to Linux.
+**Unix-like systems:** Similar to Linux guidance above.

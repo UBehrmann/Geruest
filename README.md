@@ -56,20 +56,15 @@ Geruest (German for "scaffold") is a lightweight C++ web framework designed to s
 
 - **C++20** or later (coroutines with Boost.Asio)
 - **CMake** 3.10+
-- **Boost** (Asio + Boost.System): install `libboost-system-dev` (Debian/Ubuntu), `mingw-w64-*-boost` (MSYS2), or use vcpkg `boost-system`. If CMake cannot find Boost, the project can fetch Boost headers automatically (see `CMakeLists.txt`).
-- **Threads** (pthread / Windows sockets)
-- A compatible C++ compiler (GCC 10+, Clang 11+, MSVC with C++20 support)
+- **Boost** (Asio + Boost.System): install `libboost-system-dev` (Debian/Ubuntu/Fedora). If CMake cannot find Boost, configure your system package path.
+- **Threads** (pthread)
+- A compatible C++ compiler (GCC 10+, Clang 11+)
 
 ## Quick Start
 
 **One-command installation:**
 
-### Windows (PowerShell)
-```powershell
-git clone https://github.com/UBehrmann/Geruest.git; cd Geruest; mkdir build; cd build; cmake .. -A x64 -DCMAKE_BUILD_TYPE=Release; cmake --build . --config Release; cmake --install . --config Release
-```
-
-### Linux/macOS (Bash)
+### Linux/Unix (Bash)
 ```bash
 git clone https://github.com/UBehrmann/Geruest.git && cd Geruest && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build . && sudo cmake --install .
 ```
@@ -186,15 +181,10 @@ git clone https://github.com/UBehrmann/Geruest.git
 cd Geruest
 ```
 
-**Build instructions for your platform:**
+**Build instructions:**
 - [Linux Installation](doc/GETTING_STARTED.md#linux)
-- [Windows (MSVC) Installation](doc/GETTING_STARTED.md#windows-msvc)
-- [Windows (MinGW) Installation](doc/GETTING_STARTED.md#windows-mingw)
 
-We build the library for both Linux and Windows:
-- `.a` file for Linux
-- `.a` file for Windows using MinGW  
-- `.lib` file for Windows using MSVC 
+Geruest now targets Linux/Unix only. Windows support has been removed.
 
 ### Using Geruest in Your Project
 
@@ -219,7 +209,7 @@ target_include_directories(MyWebsiteApp
     /path/to/Geruest/src
 )
 
-# Add the library binary directory (where the .lib/.a is)
+# Add the library binary directory (where the static library is)
 link_directories(/path/to/Geruest/build)
 ```
 

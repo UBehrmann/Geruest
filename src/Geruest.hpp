@@ -10,17 +10,9 @@
 #ifndef GERUEST_GERUEST_HPP
 #define GERUEST_GERUEST_HPP
 
-#ifdef _WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#ifdef _MSC_VER
-#pragma comment(lib, "ws2_32.lib")
-#endif
-#else
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>  // For close
-#endif
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/tcp.hpp>
@@ -531,9 +523,9 @@ class Geruest {
      * - latency_ms.p50 / p95 / p99 (milliseconds, last 60 seconds)
      * - system.memory.total_mb / used_mb / free_mb / percent_used (host memory)
      * - system.cpu.count (logical CPU cores)
-     * - system.cpu.load_1m / load_5m / load_15m (system-wide, all cores combined; Linux only, 0 on Windows)
+     * - system.cpu.load_1m / load_5m / load_15m (system-wide, all cores combined)
      *     Normalize by count to get per-core utilization: load_1m / count * 100 ≈ CPU %
-     * - system.disk.total_gb / used_gb / free_gb / percent_used (root "/" on Linux, "C:\" on Windows)
+     * - system.disk.total_gb / used_gb / free_gb / percent_used (root "/")
      * - system.cgroup_memory.limit_mb / used_mb / free_mb / percent_used
      *     (only present when a cgroup memory limit is detected, e.g. inside Docker)
      * - system.cgroup_cpu.allocated_cores / usage_percent

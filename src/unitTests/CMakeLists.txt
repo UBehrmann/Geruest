@@ -4,11 +4,6 @@ project(Geruest_Unit_Tests VERSION 0.6.2)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Windows-specific: Prevent min/max macros that conflict with std::min/std::max
-if(WIN32)
-    add_compile_definitions(NOMINMAX)
-endif()
-
 # Configure version header (same as main project)
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/../Version.hpp.in"
@@ -23,7 +18,6 @@ FetchContent_Declare(
   URL https://github.com/google/googletest/archive/refs/tags/v1.15.2.zip
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
-# For Windows: Prevent overriding the parent project's compiler/linker settings
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
@@ -48,14 +42,8 @@ endif()
 
 find_package(Boost 1.75 REQUIRED COMPONENTS system)
 
-# Platform-specific settings
-if(WIN32)
-    # Windows-specific libraries
-    set(PLATFORM_LIBS ws2_32 Boost::system)
-else()
-    # Linux-specific libraries
-    set(PLATFORM_LIBS pthread Boost::system)
-endif()
+# Linux/Unix settings
+set(PLATFORM_LIBS pthread Boost::system)
 
 # Collect all source files from the main Geruest library
 set(GERUEST_SOURCES

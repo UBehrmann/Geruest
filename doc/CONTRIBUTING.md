@@ -2,17 +2,14 @@
 
 ## Setup
 
-**Prerequisites:** C++20 compiler (GCC 10+, Clang 11+, MSVC with `/std:c++20`), CMake 3.10+, Git, **Boost** (`libboost-system-dev` on Debian/Ubuntu, or MSYS2 `mingw-w64-*-boost`, or vcpkg `boost-system`)
+**Prerequisites:** C++20 compiler (GCC 10+, Clang 11+), CMake 3.10+, Git, **Boost** (`libboost-system-dev` on Debian/Ubuntu)
 
 ```bash
 git clone https://github.com/YOUR_USERNAME/Geruest.git && cd Geruest
 git remote add upstream https://github.com/ORIGINAL_OWNER/Geruest.git
 
-# Linux/macOS
+# Linux/Unix
 mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug && make -j$(nproc)
-
-# Windows (MSVC)
-mkdir build && cd build && cmake .. -A x64 -DCMAKE_BUILD_TYPE=Debug && cmake --build .
 
 # Test
 cd src/unitTests && mkdir build && cd build && cmake .. && make && ctest --output-on-failure
@@ -30,15 +27,10 @@ cd src/unitTests && mkdir build && cd build && cmake .. && make && ctest --outpu
 #endif
 ```
 
-**Cross-Platform:**
+**Platform:**
 ```cpp
-#ifdef _WIN32
-    SOCKET fd = INVALID_SOCKET;
-    closesocket(fd);
-#else
-    int fd = -1;
-    close(fd);
-#endif
+int fd = -1;
+close(fd);
 ```
 
 **Include Order:** Related header → C++ std → System/platform → Project headers
@@ -75,7 +67,7 @@ git push origin feature/my-feature
 # Open PR on GitHub
 ```
 
-**Checklist:** ☑ Compiles (Linux + Windows) ☑ Tests pass ☑ New tests added ☑ Docs updated ☑ No warnings ☑ Follows style
+**Checklist:** ☑ Compiles (Linux/Unix) ☑ Tests pass ☑ New tests added ☑ Docs updated ☑ No warnings ☑ Follows style
 
 ## Common Tasks
 

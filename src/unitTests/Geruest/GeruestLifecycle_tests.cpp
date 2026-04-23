@@ -11,15 +11,10 @@
 #include <gtest/gtest.h>
 #include <thread>
 
-#ifdef _WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#else
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
-#endif
 
 #include "Geruest.hpp"
 
@@ -31,18 +26,6 @@ void wakeAcceptOnLocalhost(int port) {
     if (port <= 0 || port > 65535) {
         return;
     }
-#ifdef _WIN32
-    SOCKET c = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (c == INVALID_SOCKET) {
-        return;
-    }
-    sockaddr_in a{};
-    a.sin_family = AF_INET;
-    a.sin_port = htons(static_cast<uint16_t>(port));
-    inet_pton(AF_INET, "127.0.0.1", &a.sin_addr);
-    (void)connect(c, reinterpret_cast<sockaddr*>(&a), static_cast<int>(sizeof(a)));
-    closesocket(c);
-#else
     const int c = socket(AF_INET, SOCK_STREAM, 0);
     if (c < 0) {
         return;
@@ -53,7 +36,6 @@ void wakeAcceptOnLocalhost(int port) {
     inet_pton(AF_INET, "127.0.0.1", &a.sin_addr);
     (void)::connect(c, reinterpret_cast<sockaddr*>(&a), sizeof(a));
     close(c);
-#endif
 }
 
 }  // namespace

@@ -18,12 +18,19 @@
 #include <climits>
 #include <cstddef>
 #include <cstring>
+#include <cerrno>
 #include <exception>
 #include <filesystem>
 #include <fstream>
 #include <map>
 #include <string>
 #include <vector>
+#ifdef __linux__
+#include <fcntl.h>
+#include <sys/sendfile.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 #include "builders/AssetMerger.hpp"
 #include "builders/CSSBuilder.hpp"
@@ -137,6 +144,63 @@ boost::asio::awaitable<bool> Handler::sendSocketAsync(const char* bufferToSend, 
         startPos += chunkSize;
     }
     co_return true;
+}
+
+boost::asio::awaitable<bool> Handler::sendFileBodyZeroCopyAsync(const std::string& contentPath, size_t fileSize) {
+#ifndef __linux__
+    (void)contentPath;
+    (void)fileSize;
+    co_return false;
+#else
+    const int fileFd = ::open(contentPath.c_str(), O_RDONLY);
+    if (fileFd < 0) {
+        co_return false;
+    }
+
+    struct stat st {};
+    if (::fstat(fileFd, &st) != 0 || !S_ISREG(st.st_mode)) {
+        ::close(fileFd);
+        co_return false;
+    }
+
+    const int socketFd = clientSocket.native_handle();
+    off_t offset = 0;
+    size_t remaining = fileSize;
+
+    while (remaining > 0) {
+        const size_t toSend = std::min(remaining, static_cast<size_t>(SSIZE_MAX));
+        const ssize_t sent = ::sendfile(socketFd, fileFd, &offset, toSend);
+
+        if (sent > 0) {
+            remaining -= static_cast<size_t>(sent);
+            continue;
+        }
+
+        if (sent == 0) {
+            break;
+        }
+
+        if (errno == EINTR) {
+            continue;
+        }
+
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            try {
+                co_await clientSocket.async_wait(boost::asio::ip::tcp::socket::wait_write, boost::asio::use_awaitable);
+                continue;
+            } catch (const boost::system::system_error&) {
+                ::close(fileFd);
+                co_return false;
+            }
+        }
+
+        ::close(fileFd);
+        co_return false;
+    }
+
+    ::close(fileFd);
+    co_return remaining == 0;
+#endif
 }
 
 void Handler::sendToLogger(const std::string& message, LogLevel level) const {
@@ -541,6 +605,29 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
                 }
                 co_return;
             }
+        }
+
+        std::error_code fsErr;
+        const uintmax_t fileSizeRaw = std::filesystem::file_size(contentPath, fsErr);
+        if (!fsErr && fileSizeRaw <= static_cast<uintmax_t>(SIZE_MAX)) {
+            const size_t fileSize = static_cast<size_t>(fileSizeRaw);
+
+            HTTPResponse htmlResponse("200 OK");
+            htmlResponse.setHeader("Content-Type", contentType);
+            htmlResponse.setHeader("Content-Length", std::to_string(fileSize));
+            std::string response = htmlResponse.toString();
+
+            if (!co_await sendSocketAsync(response.c_str(), response.size())) {
+                sendToLoggerError("Failed to send binary file header: " + contentPath);
+                co_return;
+            }
+
+            if (co_await sendFileBodyZeroCopyAsync(contentPath, fileSize)) {
+                co_return;
+            }
+
+            sendToLoggerError("Zero-copy sendfile failed after header write: " + contentPath);
+            co_return;
         }
 
         std::ifstream file(contentPath, std::ios::binary);

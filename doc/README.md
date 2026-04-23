@@ -7,7 +7,7 @@ Welcome to the Geruest documentation! This guide will help you get started with 
 ### Getting Started
 
 - [**Getting Started**](GETTING_STARTED.md) - Prerequisites, installation, and your first server
-- [**Usage Guide**](USAGE_GUIDE.md) - Local development, Docker deployment, Windows/Linux setup
+- [**Usage Guide**](USAGE_GUIDE.md) - Local development, Docker deployment, Linux/Unix setup
 - [**Configuration**](CONFIGURATION.md) - .env files, environment variables, configuration hierarchy
 
 ### Core Features
@@ -83,7 +83,7 @@ int main() {
 
 ## Requirements
 
-- **C++20** compatible compiler (GCC 10+, Clang 11+, recent MSVC)
+- **C++20** compatible compiler (GCC 10+, Clang 11+)
 - **CMake** 3.10+
 - **Boost** (1.75+): Asio + Boost.System for the HTTP server (see [Getting Started](GETTING_STARTED.md#requirements))
 - Optional: **libcurl**, **libwebp** (for email and WebP features)

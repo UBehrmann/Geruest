@@ -15,11 +15,6 @@
 #include "Geruest.hpp"
 #include "builders/WebPConverter.hpp"
 
-#ifdef _WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#endif
-
 #include <fstream>
 #include <filesystem>
 #include <iostream>
@@ -42,14 +37,6 @@ Geruest::Geruest() {
 
     std::cout << "Geruest Framework v" << getVersion() << std::endl;
 
-#ifdef _WIN32
-    WSADATA wsaData;
-    int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
-    if (result != 0) {
-        sendToLoggerError("WSAStartup failed: " + std::to_string(result));
-        exit(EXIT_FAILURE);
-    }
-#endif
 }
 
 Geruest::~Geruest() {
@@ -59,9 +46,6 @@ Geruest::~Geruest() {
     }
     stopWorkers();
 
-#ifdef _WIN32
-    WSACleanup();
-#endif
     sendToLogger("Server closed.");
 }
 

@@ -27,16 +27,13 @@ std::filesystem::path combinedPathForCanonicalCheck(const std::string& root, con
     if (requestPath.empty()) {
         return r;
     }
-#ifdef _WIN32
-    // On Windows, paths like "/html/page" are treated as absolute (root of the
-    // current drive). path(root) / path("/html/...") would ignore `root` and
-    // break the docroot jail check. URL segments from the handler always use a
-    // leading slash — strip it and join as a relative segment under `root`.
+    // Paths like "/html/page" can be interpreted as absolute by filesystem APIs.
+    // URL segments from the handler use a leading slash, so strip it and join
+    // as a relative segment under `root`.
     if (requestPath[0] == '/') {
         std::string rel(requestPath, 1);
         return r / fs::path(rel);
     }
-#endif
     const fs::path p(requestPath);
     if (p.is_absolute()) {
         return r / p.relative_path();
@@ -133,8 +130,8 @@ std::string Security::escapeSql(const std::string& input) {
                 result += "\\0";
                 break;
             case '\x1a':
-                // Ctrl-Z (SUB) — MySQL on Windows interprets it as EOF, which
-                // can silently cut off the remainder of a query.
+                // Ctrl-Z (SUB) is treated as EOF in some MySQL contexts and can
+                // silently cut off the remainder of a query.
                 result += "\\Z";
                 break;
 

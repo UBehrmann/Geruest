@@ -79,7 +79,7 @@ class Security {
      * | `"`  | `\"`   | Alternative string delimiter (SQLite, older PostgreSQL) |
      * | `\`  | `\\`   | MySQL/MariaDB escape character — prevents `\'` bypass |
      * | NUL  | `\0`   | Truncates C-string queries in older drivers |
-     * | SUB (\\x1a) | `\Z` | MySQL/Windows EOF byte |
+     * | SUB (\\x1a) | `\Z` | MySQL EOF byte in some contexts |
      *
      * **Why `;`, `--`, `#`, and `/ *` are not escaped:**
      * These are SQL syntax only *outside* a string literal.  Once `'` is

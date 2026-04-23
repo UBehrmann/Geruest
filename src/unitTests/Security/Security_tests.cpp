@@ -233,8 +233,7 @@ TEST_F(BuildQueryTest, TooManyParamsThrows) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// isSafePath / safeCombinePath — real on-disk roots (weakly_canonical fails on
-// Windows for non-existent paths like /var/www).
+// isSafePath / safeCombinePath — real on-disk roots.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class PathSecurityTest : public ::testing::Test {
@@ -292,10 +291,6 @@ TEST_F(PathSecurityTest, EncodedTraversalIsBlocked) {
     EXPECT_FALSE(Security::isSafePath(rootNative_, "/html/../../../etc/shadow"));
 }
 
-#ifndef _WIN32
-// Symlink resolution is exercised via weakly_canonical in isSafePath; Windows
-// symlinks are environment-dependent, so these stay POSIX-only.
-
 TEST_F(PathSecurityTest, SymlinkEscapeOutsideRootIsBlocked) {
     namespace fs = std::filesystem;
     const std::string tag =
@@ -339,7 +334,6 @@ TEST_F(PathSecurityTest, SymlinkStayingInsideRootIsAllowed) {
 
     fs::remove_all(base, ec);
 }
-#endif  // !_WIN32
 
 TEST_F(PathSecurityTest, NormalPathCombines) {
     const std::string result = Security::safeCombinePath(rootNative_, "/html/index.html");

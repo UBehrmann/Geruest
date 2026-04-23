@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 
 # Define the project name and version
-project(GeruestLibrary VERSION 0.8.4 LANGUAGES CXX)
+project(GeruestLibrary VERSION 0.8.5 LANGUAGES CXX)
 
 # Configure version header
 configure_file(
@@ -13,23 +13,13 @@ configure_file(
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Windows-specific: Prevent min/max macros that conflict with std::min/std::max
+# Geruest currently supports Linux/Unix targets only.
 if(WIN32)
-    add_compile_definitions(NOMINMAX)
-endif()
-
-# Enable static linking for MinGW
-if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -static-libgcc -static-libstdc++")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++ -static")
+    message(FATAL_ERROR "Windows is no longer supported. Build on Linux/Unix.")
 endif()
 
 # Enable more warnings for all compilers
-if (MSVC)
-    add_compile_options(/W4 /permissive-)
-else()
-    add_compile_options(-Wall -Wextra -Wpedantic -Wconversion -Wshadow)
-endif()
+add_compile_options(-Wall -Wextra -Wpedantic -Wconversion -Wshadow)
 
 # Output static libs to /lib
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
@@ -113,9 +103,6 @@ target_include_directories(Geruest PUBLIC
 
 target_link_libraries(Geruest PUBLIC Threads::Threads)
 target_link_libraries(Geruest PUBLIC Boost::system)
-if(WIN32)
-    target_link_libraries(Geruest PUBLIC ws2_32)
-endif()
 
 # Link CURL library if found (PUBLIC because EmailSender needs it)
 if(GERUEST_HAS_CURL)

@@ -4,14 +4,14 @@ Quick installation and first server setup for Geruest C++ web framework.
 
 ## Requirements
 
-- **C++20** compiler (GCC 10+, Clang 11+, MSVC with C++20)
+- **C++20** compiler (GCC 10+, Clang 11+)
 - **CMake** 3.10 or newer (3.17+ recommended for `find_package` CONFIG patterns)
 - **Boost** 1.75+ with **Boost.System** (Asio uses it unless you build against header-only Boost as in the library’s FetchContent path). Examples:
   - Debian/Ubuntu: `sudo apt-get install libboost-system-dev`
   - Fedora: `sudo dnf install boost-devel`
-  - MSYS2: `pacman -S mingw-w64-x86_64-boost`
-  - vcpkg: `vcpkg install boost-system`
+  - Arch: `sudo pacman -S boost`
 - Optional: **libcurl** (email), **libwebp** (image conversion) — see main README
+- Platform support: **Linux/Unix only** (Windows removed)
 
 ## Installation
 
@@ -21,13 +21,6 @@ git clone https://github.com/yourusername/Geruest.git
 cd Geruest
 chmod +x setup_scripts/linux_setup.sh
 ./setup_scripts/linux_setup.sh
-```
-
-### Windows
-```powershell
-git clone https://github.com/yourusername/Geruest.git
-cd Geruest
-setup_scripts\windows_setup.bat
 ```
 
 ### Manual Build
@@ -41,14 +34,6 @@ mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc)
 sudo make install
-```
-
-**Windows (MSVC):**
-```powershell
-mkdir build && cd build
-cmake .. -A x64 -DCMAKE_BUILD_TYPE=Release
-cmake --build . --config Release
-cmake --install . --config Release
 ```
 
 ## Quick Start
@@ -214,7 +199,5 @@ sudo ./myserver           # Run with sudo for port 80/443
 # OR use capability: sudo setcap 'cap_net_bind_service=+ep' ./myserver
 ```
 
-**Cross-platform builds:**
-- Use `#ifdef _WIN32` for Windows-specific code
-- Always test with both MSVC and GCC/Clang
-- Check socket cleanup: `WSACleanup()` on Windows, `close()` on Unix
+**Platform note:**
+- Geruest is Linux/Unix-only. Windows build and runtime support were removed.
