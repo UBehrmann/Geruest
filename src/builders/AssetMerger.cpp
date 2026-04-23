@@ -12,6 +12,7 @@
 #include <sstream>
 #include <algorithm>
 #include <filesystem>
+#include <unordered_map>
 
 namespace fs = std::filesystem;
 
@@ -270,30 +271,6 @@ std::string AssetMerger::removeJsComments(const std::string& content) {
         pos++;
     }
 
-    // Remove // ... comments (single line)
-    pos = 0;
-    while (pos < result.length()) {
-        if (result[pos] == '"' || result[pos] == '\'' || result[pos] == '`') {
-            skipJsStringOrTemplate(result, pos);
-            continue;
-        }
-        
-        // Look for // comment outside of strings. Do not treat \/ + / (end of regex) as // .
-        if (pos < result.length() - 1 && result[pos] == '/' && result[pos + 1] == '/' &&
-            !isEscapedSlashBefore(result, pos)) {
-            size_t lineEnd = result.find('\n', pos);
-            if (lineEnd == std::string::npos) {
-                result.erase(pos);
-                break;
-            } else {
-                result.erase(pos, lineEnd - pos);
-            }
-            continue;
-        }
-        
-        pos++;
-    }
-
     return result;
 }
 
@@ -439,6 +416,28 @@ std::string AssetMerger::mergeJsFiles(const std::vector<std::string>& jsFiles) {
 
 namespace {
 
+thread_local std::string g_tlExpectedMergedCanonKey;
+thread_local fs::path g_tlExpectedMergedCanonVal;
+thread_local bool g_tlExpectedMergedCanonOk = false;
+
+bool cachedWeaklyCanonicalExpectedOut(const fs::path& expectedMerged, fs::path& out) {
+    std::error_code ec;
+    const std::string key = expectedMerged.string();
+    if (g_tlExpectedMergedCanonOk && g_tlExpectedMergedCanonKey == key) {
+        out = g_tlExpectedMergedCanonVal;
+        return true;
+    }
+    out = fs::weakly_canonical(expectedMerged, ec);
+    if (ec) {
+        g_tlExpectedMergedCanonOk = false;
+        return false;
+    }
+    g_tlExpectedMergedCanonKey = key;
+    g_tlExpectedMergedCanonVal = out;
+    g_tlExpectedMergedCanonOk = true;
+    return true;
+}
+
 std::string readWholeFileForMerge(const std::string& filePath) {
     std::ifstream in(filePath, std::ios::binary | std::ios::ate);
     if (!in) {
@@ -469,16 +468,31 @@ std::string mergeJsFilesResolvingBundleWriteback(AssetMerger& merger,
         expectedMerged = fs::path(serverRoot) / "assets" / "js" / jsSubdir / (pageName + ".js");
     }
 
-    std::error_code ec;
-    const fs::path canonOut = fs::weakly_canonical(expectedMerged, ec);
-    if (ec) {
+    fs::path canonOut;
+    if (!cachedWeaklyCanonicalExpectedOut(expectedMerged, canonOut)) {
         return merger.mergeJsFiles(localJsFiles);
     }
 
+    std::unordered_map<std::string, fs::path> canonPerFile;
+    canonPerFile.reserve(localJsFiles.size());
+    std::error_code ec;
+
     int conflictIndex = -1;
     for (size_t i = 0; i < localJsFiles.size(); ++i) {
-        ec.clear();
-        if (fs::weakly_canonical(localJsFiles[i], ec) == canonOut && !ec) {
+        const std::string& absPath = localJsFiles[i];
+        fs::path canonFile;
+        auto found = canonPerFile.find(absPath);
+        if (found != canonPerFile.end()) {
+            canonFile = found->second;
+        } else {
+            ec.clear();
+            canonFile = fs::weakly_canonical(absPath, ec);
+            if (ec) {
+                continue;
+            }
+            canonPerFile.emplace(absPath, canonFile);
+        }
+        if (canonFile == canonOut) {
             conflictIndex = static_cast<int>(i);
             break;
         }

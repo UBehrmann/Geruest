@@ -105,7 +105,8 @@ class Security {
      *
      * Returns `true` only when `weakly_canonical(root / requestPath)` is rooted
      * under `weakly_canonical(root)`, so `..`, symlinks, and other lexical tricks
-     * cannot escape the jail.
+     * cannot escape the jail. The canonical root is cached per calling thread while
+     * `root` matches the previous call (symlink changes under the root string are rare).
      *
      * @param root        Absolute filesystem root (e.g. serverData.getRoot()).
      * @param requestPath URL-derived path segment (often starts with `/`).

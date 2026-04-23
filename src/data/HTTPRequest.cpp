@@ -82,6 +82,17 @@ constexpr std::size_t kFnvPrime = 1099511628211ULL;
     return block.substr(n + 1);
 }
 
+/** Lowercase + drop ASCII whitespace into `out` (reused across header lines). */
+void appendLowerNoWhitespace(std::string& out, std::string_view input) {
+    out.clear();
+    out.reserve(input.size());
+    for (unsigned char c : input) {
+        if (!std::isspace(c)) {
+            out.push_back(static_cast<char>(std::tolower(c)));
+        }
+    }
+}
+
 }  // namespace
 
 namespace geruest {
@@ -302,6 +313,10 @@ void HTTPRequest::parseHeadersAndBody(std::string_view rawRequest) {
 
 void HTTPRequest::parseHeaders(std::string_view headerSection) {
     std::string_view rest = advancePastFirstLine(headerSection);
+    std::string keyBuf;
+    std::string valueBuf;
+    keyBuf.reserve(48);
+    valueBuf.reserve(96);
 
     while (!rest.empty()) {
         std::size_t lineEnd = rest.find('\n');
@@ -318,9 +333,9 @@ void HTTPRequest::parseHeaders(std::string_view headerSection) {
         if (colonPos == std::string_view::npos) {
             continue;
         }
-        const std::string key = toLower(removeWhitespace(line.substr(0, colonPos)));
-        const std::string value = std::string(stripQuotesSv(trimSv(line.substr(colonPos + 1))));
-        _headers.insert_or_assign(key, value);
+        appendLowerNoWhitespace(keyBuf, line.substr(0, colonPos));
+        valueBuf.assign(stripQuotesSv(trimSv(line.substr(colonPos + 1))));
+        _headers.insert_or_assign(std::move(keyBuf), std::move(valueBuf));
     }
 }
 

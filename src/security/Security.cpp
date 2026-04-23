@@ -187,13 +187,31 @@ bool Security::isSafePath(const std::string& root, const std::string& requestPat
         return false;
     }
     namespace fs = std::filesystem;
-    const fs::path combined = combinedPathForCanonicalCheck(root, requestPath);
     std::error_code ec;
-    const fs::path canonical = fs::weakly_canonical(combined, ec);
-    if (ec) {
-        return false;
+
+    // `weakly_canonical(root)` is stable for a given root string; cache per thread to
+    // avoid syscall + path parsing on every request (combined path still canonicalized).
+    thread_local std::string cachedRoot;
+    thread_local fs::path cachedCanonRoot;
+    thread_local bool haveCachedCanonRoot = false;
+
+    const fs::path* canonicalRootPtr = nullptr;
+    if (haveCachedCanonRoot && cachedRoot == root) {
+        canonicalRootPtr = &cachedCanonRoot;
+    } else {
+        cachedCanonRoot = fs::weakly_canonical(fs::path(root), ec);
+        if (ec) {
+            haveCachedCanonRoot = false;
+            return false;
+        }
+        cachedRoot = root;
+        haveCachedCanonRoot = true;
+        canonicalRootPtr = &cachedCanonRoot;
     }
-    const fs::path canonicalRoot = fs::weakly_canonical(fs::path(root), ec);
+    const fs::path& canonicalRoot = *canonicalRootPtr;
+
+    const fs::path combined = combinedPathForCanonicalCheck(root, requestPath);
+    const fs::path canonical = fs::weakly_canonical(combined, ec);
     if (ec) {
         return false;
     }

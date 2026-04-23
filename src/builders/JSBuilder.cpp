@@ -45,6 +45,8 @@ namespace geruest {
 
 namespace {
 
+namespace fs = std::filesystem;
+
 struct TemplateMergedJsInfo {
     std::string mergedJs;
     std::string htmlTemplatePath;
@@ -52,6 +54,47 @@ struct TemplateMergedJsInfo {
     /** If true, mergedJs is empty and builtFile already came from loadFile (on-disk bundle). */
     bool diskReuse = false;
 };
+
+bool tlWeaklyCanonicalAbsPath(const std::string& absPath, fs::path& out) {
+    thread_local std::string key;
+    thread_local fs::path val;
+    thread_local bool ok = false;
+    std::error_code ec;
+    if (ok && key == absPath) {
+        out = val;
+        return true;
+    }
+    out = fs::weakly_canonical(absPath, ec);
+    if (ec) {
+        ok = false;
+        return false;
+    }
+    key = absPath;
+    val = out;
+    ok = true;
+    return true;
+}
+
+bool tlWeaklyCanonicalExpectedMergedPath(const fs::path& expectedMerged, fs::path& out) {
+    thread_local std::string key;
+    thread_local fs::path val;
+    thread_local bool ok = false;
+    std::error_code ec;
+    const std::string cand = expectedMerged.string();
+    if (ok && key == cand) {
+        out = val;
+        return true;
+    }
+    out = fs::weakly_canonical(expectedMerged, ec);
+    if (ec) {
+        ok = false;
+        return false;
+    }
+    key = cand;
+    val = out;
+    ok = true;
+    return true;
+}
 
 std::string readEntireFile(const std::string& filePath) {
     std::ifstream in(filePath, std::ios::binary | std::ios::ate);
@@ -154,13 +197,12 @@ std::optional<TemplateMergedJsInfo> tryTemplateMergedJs(const std::string& jsAbs
         expectedMerged = fs::path(root) / "assets" / "js" / mergeResult.jsSubdir / (pageStem + ".js");
     }
 
-    std::error_code ec;
-    const fs::path canonJs = fs::weakly_canonical(jsPath, ec);
-    if (ec) {
+    fs::path canonJs;
+    if (!tlWeaklyCanonicalAbsPath(jsAbsPath, canonJs)) {
         return std::nullopt;
     }
-    const fs::path canonExpected = fs::weakly_canonical(expectedMerged, ec);
-    if (ec) {
+    fs::path canonExpected;
+    if (!tlWeaklyCanonicalExpectedMergedPath(expectedMerged, canonExpected)) {
         return std::nullopt;
     }
     if (canonJs != canonExpected) {
@@ -220,19 +262,19 @@ std::optional<TemplateMergedJsInfo> tryReuseOnDiskMergedBundle(const std::string
         expectedMerged = fs::path(root) / "assets" / "js" / disc.jsSubdir / (pageStem + ".js");
     }
 
-    std::error_code ec;
-    const fs::path canonJs = fs::weakly_canonical(jsPath, ec);
-    if (ec) {
+    fs::path canonJs;
+    if (!tlWeaklyCanonicalAbsPath(jsAbsPath, canonJs)) {
         return std::nullopt;
     }
-    const fs::path canonExpected = fs::weakly_canonical(expectedMerged, ec);
-    if (ec) {
+    fs::path canonExpected;
+    if (!tlWeaklyCanonicalExpectedMergedPath(expectedMerged, canonExpected)) {
         return std::nullopt;
     }
     if (canonJs != canonExpected) {
         return std::nullopt;
     }
 
+    std::error_code ec;
     try {
         const auto bundleTime = fs::last_write_time(jsAbsPath, ec);
         if (ec) {
