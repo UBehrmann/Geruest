@@ -202,7 +202,7 @@ void Geruest::stop() {
         acceptor_->close(ec);
     }
     if (_acceptRetryTimer.has_value()) {
-        _acceptRetryTimer->cancel(ec);
+        _acceptRetryTimer->cancel();
     }
     work_guard_.reset();
     io_ctx_.stop();

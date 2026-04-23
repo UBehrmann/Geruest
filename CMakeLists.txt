@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 
 # Define the project name and version
-project(GeruestLibrary VERSION 0.8.2 LANGUAGES CXX)
+project(GeruestLibrary VERSION 0.8.3 LANGUAGES CXX)
 
 # Configure version header
 configure_file(
@@ -37,21 +37,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 # Required packages
 find_package(Threads REQUIRED)
 
-find_package(Boost 1.75 QUIET COMPONENTS system)
-if(NOT Boost_FOUND)
-    include(FetchContent)
-    message(STATUS "Boost not found via find_package; fetching Boost 1.84.0 headers (one-time download)")
-    FetchContent_Declare(
-        boost_headers
-        URL https://archives.boost.io/release/1.84.0/source/boost_1_84_0.tar.bz2
-            URL_HASH SHA256=cc4b893acf645c9d4b698e9a0f08ca8846aa5d6c68275c14c3e7949c24109454
-    )
-    FetchContent_MakeAvailable(boost_headers)
-    set(GERUEST_BOOST_INCLUDE "${boost_headers_SOURCE_DIR}")
-    set(GERUEST_BOOST_HEADER_ONLY ON)
-else()
-    set(GERUEST_BOOST_HEADER_ONLY OFF)
-endif()
+find_package(Boost 1.75 REQUIRED COMPONENTS system)
 
 # Optional: Find CURL for email functionality
 find_package(CURL QUIET)
@@ -126,12 +112,7 @@ target_include_directories(Geruest PUBLIC
 )
 
 target_link_libraries(Geruest PUBLIC Threads::Threads)
-if(GERUEST_BOOST_HEADER_ONLY)
-    target_include_directories(Geruest PUBLIC "${GERUEST_BOOST_INCLUDE}")
-    target_compile_definitions(Geruest PUBLIC BOOST_ERROR_CODE_HEADER_ONLY)
-else()
-    target_link_libraries(Geruest PUBLIC Boost::system)
-endif()
+target_link_libraries(Geruest PUBLIC Boost::system)
 if(WIN32)
     target_link_libraries(Geruest PUBLIC ws2_32)
 endif()
