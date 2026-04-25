@@ -19,10 +19,14 @@ namespace {
 constexpr std::size_t kFnvOffsetBasis = 14695981039346656037ULL;
 constexpr std::size_t kFnvPrime = 1099511628211ULL;
 
+[[nodiscard]] inline unsigned char asciiLower(unsigned char c) noexcept {
+    return (c >= 'A' && c <= 'Z') ? static_cast<unsigned char>(c + ('a' - 'A')) : c;
+}
+
 [[nodiscard]] std::size_t hashLowerFnv1a(std::string_view sv) noexcept {
     std::size_t h = kFnvOffsetBasis;
     for (unsigned char c : sv) {
-        h ^= static_cast<std::size_t>(std::tolower(c));
+        h ^= static_cast<std::size_t>(asciiLower(c));
         h *= kFnvPrime;
     }
     return h;
@@ -33,7 +37,7 @@ constexpr std::size_t kFnvPrime = 1099511628211ULL;
         return false;
     }
     for (std::size_t i = 0; i < a.size(); ++i) {
-        if (std::tolower(static_cast<unsigned char>(a[i])) != std::tolower(static_cast<unsigned char>(b[i]))) {
+        if (asciiLower(static_cast<unsigned char>(a[i])) != asciiLower(static_cast<unsigned char>(b[i]))) {
             return false;
         }
     }
@@ -88,7 +92,7 @@ void appendLowerNoWhitespace(std::string& out, std::string_view input) {
     out.reserve(input.size());
     for (unsigned char c : input) {
         if (!std::isspace(c)) {
-            out.push_back(static_cast<char>(std::tolower(c)));
+            out.push_back(static_cast<char>(asciiLower(c)));
         }
     }
 }
@@ -199,6 +203,14 @@ bool HTTPRequest::hasParam(const std::string& name) const {
 std::string HTTPRequest::getHeader(std::string_view key) const {
     auto it = _headers.find(key);
     return it != _headers.end() ? it->second : "";
+}
+
+std::string_view HTTPRequest::getHeaderView(std::string_view key) const {
+    auto it = _headers.find(key);
+    if (it == _headers.end()) {
+        return {};
+    }
+    return std::string_view(it->second);
 }
 
 bool HTTPRequest::hasHeader(std::string_view key) const { return _headers.find(key) != _headers.end(); }
@@ -313,6 +325,8 @@ void HTTPRequest::parseHeadersAndBody(std::string_view rawRequest) {
 
 void HTTPRequest::parseHeaders(std::string_view headerSection) {
     std::string_view rest = advancePastFirstLine(headerSection);
+    const size_t estimatedHeaders = 1 + std::count(rest.begin(), rest.end(), '\n');
+    _headers.reserve(_headers.size() + estimatedHeaders);
     std::string keyBuf;
     std::string valueBuf;
     keyBuf.reserve(48);
@@ -410,7 +424,7 @@ std::string HTTPRequest::toLower(std::string_view str) {
     std::string result;
     result.reserve(str.size());
     for (unsigned char c : str) {
-        result.push_back(static_cast<char>(std::tolower(c)));
+        result.push_back(static_cast<char>(asciiLower(c)));
     }
     return result;
 }

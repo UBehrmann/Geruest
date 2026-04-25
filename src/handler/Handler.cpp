@@ -14,6 +14,7 @@
 #include <boost/asio/read.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/asio/write.hpp>
+#include <charconv>
 #include <chrono>
 #include <climits>
 #include <cstddef>
@@ -22,7 +23,9 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <atomic>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -48,6 +51,72 @@ namespace {
 
 constexpr size_t kMaxHttpHeaderBytes = 65536;
 constexpr size_t kMaxHttpBodyBytes = 16 * 1024 * 1024;
+constexpr size_t kMaxCachedTextResponseBytes = 512 * 1024;
+constexpr size_t kMaxTotalTextResponseCacheBytes = 32 * 1024 * 1024;
+
+struct TextResponseCacheEntry {
+    std::shared_ptr<const std::string> payload;
+    std::filesystem::file_time_type mtime{};
+    bool hasMtime = false;
+    size_t sizeBytes = 0;
+};
+
+std::mutex gTextResponseCacheMutex;
+std::unordered_map<std::string, TextResponseCacheEntry> gTextResponseCache;
+size_t gTextResponseCacheBytes = 0;
+std::atomic<uint64_t> gSendfileHitCount{0};
+std::atomic<uint64_t> gSendfileFallbackCount{0};
+
+[[nodiscard]] std::string textResponseCacheKey(const std::string& contentType, const std::string& contentPath) {
+    return contentType + "|" + contentPath;
+}
+
+[[nodiscard]] std::shared_ptr<const std::string> lookupTextResponseCache(const std::string& key,
+                                                                          const std::string& contentPath,
+                                                                          bool devMode) {
+    std::lock_guard<std::mutex> lock(gTextResponseCacheMutex);
+    auto it = gTextResponseCache.find(key);
+    if (it == gTextResponseCache.end()) {
+        return {};
+    }
+    if (devMode && it->second.hasMtime) {
+        std::error_code ec;
+        const auto nowMtime = std::filesystem::last_write_time(contentPath, ec);
+        if (ec || nowMtime != it->second.mtime) {
+            gTextResponseCacheBytes -= it->second.sizeBytes;
+            gTextResponseCache.erase(it);
+            return {};
+        }
+    }
+    return it->second.payload;
+}
+
+void storeTextResponseCache(const std::string& key, const std::string& contentPath, const std::string& payload) {
+    if (payload.empty() || payload.size() > kMaxCachedTextResponseBytes) {
+        return;
+    }
+
+    TextResponseCacheEntry entry;
+    entry.payload = std::make_shared<const std::string>(payload);
+    entry.sizeBytes = payload.size();
+    std::error_code ec;
+    entry.mtime = std::filesystem::last_write_time(contentPath, ec);
+    entry.hasMtime = !ec;
+
+    std::lock_guard<std::mutex> lock(gTextResponseCacheMutex);
+    auto existing = gTextResponseCache.find(key);
+    if (existing != gTextResponseCache.end()) {
+        gTextResponseCacheBytes -= existing->second.sizeBytes;
+        gTextResponseCache.erase(existing);
+    }
+    while (gTextResponseCacheBytes + entry.sizeBytes > kMaxTotalTextResponseCacheBytes && !gTextResponseCache.empty()) {
+        auto victim = gTextResponseCache.begin();
+        gTextResponseCacheBytes -= victim->second.sizeBytes;
+        gTextResponseCache.erase(victim);
+    }
+    gTextResponseCacheBytes += entry.sizeBytes;
+    gTextResponseCache.emplace(key, std::move(entry));
+}
 
 // Same delimiter precedence as HTTPRequest::parseHeadersAndBody ("\\r\\n\\r\\n", "\\n\\n", "\\r\\r").
 size_t findHeaderEndPos(const std::string& raw) {
@@ -66,18 +135,88 @@ size_t findHeaderEndPos(const std::string& raw) {
     return std::string::npos;
 }
 
-bool parseContentLengthBytes(const geruest::HTTPRequest& req, size_t* out) {
-    if (!req.hasHeader("content-length")) {
+[[nodiscard]] inline unsigned char asciiLower(unsigned char c) noexcept {
+    return (c >= 'A' && c <= 'Z') ? static_cast<unsigned char>(c + ('a' - 'A')) : c;
+}
+
+[[nodiscard]] bool iequalsAsciiNoSpace(std::string_view a, std::string_view b) {
+    size_t i = 0;
+    size_t j = 0;
+    while (i < a.size() && j < b.size()) {
+        while (i < a.size() && std::isspace(static_cast<unsigned char>(a[i]))) ++i;
+        while (j < b.size() && std::isspace(static_cast<unsigned char>(b[j]))) ++j;
+        if (i >= a.size() || j >= b.size()) break;
+        if (asciiLower(static_cast<unsigned char>(a[i])) != asciiLower(static_cast<unsigned char>(b[j]))) {
+            return false;
+        }
+        ++i;
+        ++j;
+    }
+    while (i < a.size() && std::isspace(static_cast<unsigned char>(a[i]))) ++i;
+    while (j < b.size() && std::isspace(static_cast<unsigned char>(b[j]))) ++j;
+    return i == a.size() && j == b.size();
+}
+
+[[nodiscard]] std::string_view trimSv(std::string_view s) {
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) s.remove_prefix(1);
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.remove_suffix(1);
+    return s;
+}
+
+struct HeaderPreflight {
+    std::string_view expect;
+    std::string_view contentLength;
+};
+
+[[nodiscard]] HeaderPreflight parseHeaderPreflight(std::string_view headerPrefix) {
+    HeaderPreflight out{};
+    const size_t firstNl = headerPrefix.find('\n');
+    if (firstNl == std::string_view::npos) {
+        return out;
+    }
+    std::string_view rest = headerPrefix.substr(firstNl + 1);
+    while (!rest.empty()) {
+        const size_t lineEnd = rest.find('\n');
+        std::string_view line = rest.substr(0, lineEnd);
+        if (lineEnd == std::string_view::npos) {
+            rest = {};
+        } else {
+            rest.remove_prefix(lineEnd + 1);
+        }
+        if (!line.empty() && line.back() == '\r') {
+            line.remove_suffix(1);
+        }
+        const size_t colon = line.find(':');
+        if (colon == std::string_view::npos) {
+            continue;
+        }
+        const std::string_view key = line.substr(0, colon);
+        const std::string_view value = trimSv(line.substr(colon + 1));
+        if (out.expect.empty() && iequalsAsciiNoSpace(key, "expect")) {
+            out.expect = value;
+        } else if (out.contentLength.empty() && iequalsAsciiNoSpace(key, "content-length")) {
+            out.contentLength = value;
+        }
+        if (!out.expect.empty() && !out.contentLength.empty()) {
+            break;
+        }
+    }
+    return out;
+}
+
+bool parseContentLengthBytes(std::string_view cl, size_t* out) {
+    if (cl.empty()) {
         return false;
     }
-    const std::string cl = req.getHeader("content-length");
-    try {
-        unsigned long long v = std::stoull(cl);
-        *out = static_cast<size_t>(v);
-        return true;
-    } catch (...) {
+    unsigned long long v = 0;
+    const char* begin = cl.data();
+    const char* end = cl.data() + cl.size();
+    const std::from_chars_result result = std::from_chars(begin, end, v);
+    if (result.ec != std::errc() || result.ptr != end) {
         return false;
     }
+    *out = static_cast<size_t>(v);
+    return true;
 }
 
 /** Extension -> site-relative root (without html/htm; those use htmlMount in buildPath). */
@@ -321,38 +460,35 @@ boost::asio::awaitable<void> Handler::runAsync() {
 
         bool hasCL = false;
         size_t bodyExpected = 0;
-        {
-            const std::string_view headerPrefix(raw.data(), headerEnd);
-            HTTPRequest headerPhase(HttpHeadersOnlyTag{}, headerPrefix, IP, serverData.getRoot());
+        const std::string_view headerPrefix(raw.data(), headerEnd);
+        const HeaderPreflight preflight = parseHeaderPreflight(headerPrefix);
 
-            // RFC 7231: clients may send Expect: 100-continue and wait (e.g. httpx POST with Content-Length: 0).
-            if (headerPhase.hasHeader("expect") &&
-                httpExpectIs100Continue(headerPhase.getHeader("expect"))) {
-                static const char k100[] = "HTTP/1.1 100 Continue\r\n\r\n";
-                if (!co_await sendSocketAsync(k100, sizeof(k100) - 1)) {
-                    co_return;
-                }
-            }
-
-            if (headerPhase.hasHeader("content-length")) {
-                if (!parseContentLengthBytes(headerPhase, &bodyExpected)) {
-                    HTTPResponse br = responseBadRequest(&headerPhase);
-                    br.serializeTo(responseScratch_);
-                    co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size());
-                    co_return;
-                }
-                hasCL = true;
-            }
-
-            if (hasCL && bodyExpected > kMaxHttpBodyBytes) {
-                HTTPResponse br = responseBadRequest(&headerPhase);
-                br.serializeTo(responseScratch_);
-                co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size());
-                const size_t already = raw.size() > headerEnd ? raw.size() - headerEnd : 0;
-                const size_t remain = bodyExpected > already ? bodyExpected - already : 0;
-                static_cast<void>(co_await discardFromSocketAsync(remain));
+        // RFC 7231: clients may send Expect: 100-continue and wait (e.g. httpx POST with Content-Length: 0).
+        if (!preflight.expect.empty() && httpExpectIs100Continue(preflight.expect)) {
+            static const char k100[] = "HTTP/1.1 100 Continue\r\n\r\n";
+            if (!co_await sendSocketAsync(k100, sizeof(k100) - 1)) {
                 co_return;
             }
+        }
+
+        if (!preflight.contentLength.empty()) {
+            if (!parseContentLengthBytes(preflight.contentLength, &bodyExpected)) {
+                HTTPResponse br = responseBadRequest(nullptr);
+                br.serializeTo(responseScratch_);
+                co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size());
+                co_return;
+            }
+            hasCL = true;
+        }
+
+        if (hasCL && bodyExpected > kMaxHttpBodyBytes) {
+            HTTPResponse br = responseBadRequest(nullptr);
+            br.serializeTo(responseScratch_);
+            co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size());
+            const size_t already = raw.size() > headerEnd ? raw.size() - headerEnd : 0;
+            const size_t remain = bodyExpected > already ? bodyExpected - already : 0;
+            static_cast<void>(co_await discardFromSocketAsync(remain));
+            co_return;
         }
 
         const size_t needTotal = headerEnd + (hasCL ? bodyExpected : 0);
@@ -590,6 +726,15 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
     char bufferToSend[BUFFER_SIZE];
 
     if (contentType == "text/html" || contentType == "text/javascript" || contentType == "text/css") {
+        const std::string cacheKey = textResponseCacheKey(contentType, contentPath);
+        if (const std::shared_ptr<const std::string> cached =
+                lookupTextResponseCache(cacheKey, contentPath, serverData.isDevMode())) {
+            if (!co_await sendSocketAsync(cached->data(), cached->size())) {
+                sendToLoggerError("Failed to send cached file: " + contentPath);
+            }
+            co_return;
+        }
+
         std::unique_ptr<ContentBuilder> contentBuilder;
 
         if (contentType == "text/html") {
@@ -634,6 +779,7 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
         htmlResponse.setBody(contentBuilder->file());
 
         htmlResponse.serializeTo(responseScratch_);
+        storeTextResponseCache(cacheKey, contentPath, responseScratch_);
 
         if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
             sendToLoggerError("Failed to send file: " + contentPath);
@@ -677,9 +823,11 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
             }
 
             if (co_await sendFileBodyZeroCopyAsync(contentPath, fileSize)) {
+                ++gSendfileHitCount;
                 co_return;
             }
 
+            ++gSendfileFallbackCount;
             sendToLoggerError("Zero-copy sendfile failed after header write: " + contentPath);
             co_return;
         }
@@ -836,7 +984,7 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
 
     // Check if specific language is requested
 
-    std::string language = httpRequest->hasHeader("Accept-Language") ? httpRequest->getHeader("Accept-Language") : "";
+    const std::string_view language = httpRequest->getHeaderView("accept-language");
 
     // TODO : Find better way to check for language, can't always add an 'or' statement for each new language
     if (Extension == "jpg" || Extension == "jpeg" || Extension == "png" || Extension == "gif" || Extension == "svg" ||
@@ -850,8 +998,9 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
         // For other image files, use the Referer header to determine the correct relative path
 
         // Try to get the context from the Referer header
-        if (httpRequest->hasHeader("Referer")) {
-            std::string referer = httpRequest->getHeader("Referer");
+        const std::string_view refererSv = httpRequest->getHeaderView("referer");
+        if (!refererSv.empty()) {
+            std::string referer(refererSv);
 
             // Remove everything after the last '/' from referer to get base path
             size_t lastSlashInReferer = referer.find_last_of('/');
@@ -859,12 +1008,21 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
                 std::string refererBase = referer.substr(0, lastSlashInReferer + 1);  // Keep the trailing '/'
 
                 // Build the full request URL for comparison using the Host header
-                std::string host = httpRequest->hasHeader("Host") ? httpRequest->getHeader("Host") : "localhost";
+                std::string host = "localhost";
+                const std::string_view hostSv = httpRequest->getHeaderView("host");
+                if (!hostSv.empty()) {
+                    host.assign(hostSv);
+                }
                 std::string scheme = "http";
-                if (httpRequest->hasHeader("X-Forwarded-Proto")) {
-                    scheme = httpRequest->getHeader("X-Forwarded-Proto");
+                const std::string_view forwardedProto = httpRequest->getHeaderView("x-forwarded-proto");
+                if (!forwardedProto.empty()) {
+                    scheme.assign(forwardedProto);
                     // Defensive: only allow "http" or "https"
-                    std::transform(scheme.begin(), scheme.end(), scheme.begin(), ::tolower);
+                    for (char& ch : scheme) {
+                        if (ch >= 'A' && ch <= 'Z') {
+                            ch = static_cast<char>(ch + ('a' - 'A'));
+                        }
+                    }
                     if (scheme != "http" && scheme != "https") {
                         scheme = "http";
                     }
@@ -903,7 +1061,7 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
 
                 // Try to find a matching language from the Accept-Language header
                 for (const auto& lang : serverData.getAvailableLanguages()) {
-                    if (language.find(lang) != std::string::npos) {
+                    if (language.find(lang) != std::string_view::npos) {
                         preferredLang = lang;
                         break;
                     }
@@ -924,7 +1082,7 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
 
             // Try to find a matching language from the Accept-Language header
             for (const auto& lang : serverData.getAvailableLanguages()) {
-                if (language.find(lang) != std::string::npos) {
+                if (language.find(lang) != std::string_view::npos) {
                     preferredLang = lang;
                     break;
                 }

@@ -78,6 +78,7 @@ class HTTPRequest {
     bool hasParam(const std::string& name) const;
 
     std::string getHeader(std::string_view key) const;
+    std::string_view getHeaderView(std::string_view key) const;
 
     bool hasHeader(std::string_view key) const;
 
@@ -133,7 +134,9 @@ class HTTPRequest {
         return false;
     }
     for (size_t k = 0; k < kLen; ++k) {
-        if (std::tolower(static_cast<unsigned char>(value[i + k])) !=
+        const unsigned char c = static_cast<unsigned char>(value[i + k]);
+        const unsigned char lower = (c >= 'A' && c <= 'Z') ? static_cast<unsigned char>(c + ('a' - 'A')) : c;
+        if (lower !=
             static_cast<unsigned char>(kExpected[k])) {
             return false;
         }
