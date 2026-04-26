@@ -17,10 +17,10 @@ class DatabaseClient {
     virtual ~DatabaseClient() = default;
 
     virtual Backend backend() const = 0;
-    virtual boost::asio::awaitable<QueryResult> queryAsync(const std::string& sql,
-                                                           const std::vector<BindValue>& params) = 0;
-    virtual boost::asio::awaitable<std::uint64_t> executeAsync(const std::string& sql,
-                                                               const std::vector<BindValue>& params) = 0;
+    virtual boost::asio::awaitable<QueryResult> queryAsync(std::string sql,
+                                                           std::vector<BindValue> params) = 0;
+    virtual boost::asio::awaitable<std::uint64_t> executeAsync(std::string sql,
+                                                               std::vector<BindValue> params) = 0;
 };
 
 #if GERUEST_HAS_LIBPQ

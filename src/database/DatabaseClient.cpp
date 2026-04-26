@@ -99,9 +99,9 @@ class SqliteClient final : public DatabaseClient {
 
     Backend backend() const override { return Backend::Sqlite; }
 
-    boost::asio::awaitable<QueryResult> queryAsync(const std::string& sql,
-                                                   const std::vector<BindValue>& params) override {
-        co_return co_await _executor.run([this, sql, params]() {
+    boost::asio::awaitable<QueryResult> queryAsync(std::string sql,
+                                                   std::vector<BindValue> params) override {
+        co_return co_await _executor.run([this, sql = std::move(sql), params = std::move(params)]() {
             sqlite3* conn = _pool.acquire();
             sqlite3_stmt* stmt = nullptr;
             QueryResult result;
@@ -175,9 +175,9 @@ class SqliteClient final : public DatabaseClient {
         });
     }
 
-    boost::asio::awaitable<std::uint64_t> executeAsync(const std::string& sql,
-                                                       const std::vector<BindValue>& params) override {
-        QueryResult result = co_await queryAsync(sql, params);
+    boost::asio::awaitable<std::uint64_t> executeAsync(std::string sql,
+                                                       std::vector<BindValue> params) override {
+        QueryResult result = co_await queryAsync(std::move(sql), std::move(params));
         co_return result.affectedRows;
     }
 
@@ -223,9 +223,9 @@ class PostgresClient final : public DatabaseClient {
 
     Backend backend() const override { return Backend::Postgres; }
 
-    boost::asio::awaitable<QueryResult> queryAsync(const std::string& sql,
-                                                   const std::vector<BindValue>& params) override {
-        co_return co_await _executor.run([this, sql, params]() {
+    boost::asio::awaitable<QueryResult> queryAsync(std::string sql,
+                                                   std::vector<BindValue> params) override {
+        co_return co_await _executor.run([this, sql = std::move(sql), params = std::move(params)]() {
             PGconn* conn = _pool.acquire();
             auto releaseConn = [this, conn]() { _pool.release(conn); };
 
@@ -297,9 +297,9 @@ class PostgresClient final : public DatabaseClient {
         });
     }
 
-    boost::asio::awaitable<std::uint64_t> executeAsync(const std::string& sql,
-                                                       const std::vector<BindValue>& params) override {
-        QueryResult result = co_await queryAsync(sql, params);
+    boost::asio::awaitable<std::uint64_t> executeAsync(std::string sql,
+                                                       std::vector<BindValue> params) override {
+        QueryResult result = co_await queryAsync(std::move(sql), std::move(params));
         co_return result.affectedRows;
     }
 
