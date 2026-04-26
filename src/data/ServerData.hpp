@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <boost/asio/awaitable.hpp>
 #include <chrono>
 #include <cctype>
 #include <cstdint>
@@ -28,6 +29,7 @@
 
 #include "HTTPRequest.hpp"
 #include "HTTPResponse.hpp"
+#include "database/DatabaseClient.hpp"
 #include "../auth/BasicAuth.hpp"
 #include "parser/JSONParser.hpp"
 
@@ -49,7 +51,7 @@ enum class LogLevel {
     Debug = 4
 };
 
-using RouteHandler = std::function<HTTPResponse(const HTTPRequest&)>;
+using RouteHandler = std::function<boost::asio::awaitable<HTTPResponse>(const HTTPRequest&)>;
 
 // class with the server data
 class ServerData {
@@ -88,6 +90,7 @@ class ServerData {
     std::string _notFoundPage;
     BasicAuth _basicAuth;
     std::atomic<LogLevel> _logLevel{LogLevel::Error};  // Thread-safe log level (can be changed at runtime)
+    std::shared_ptr<db::DatabaseClient> _databaseClient;
 
     // ========== Metrics (mutable: incremented via const ServerData& in Handler) ==========
     mutable std::atomic<uint64_t> _totalRequests{0};
@@ -347,7 +350,8 @@ class ServerData {
           _defaultLanguage(other._defaultLanguage),
           _notFoundPage(other._notFoundPage),
           _basicAuth(other._basicAuth),
-          _logLevel(other._logLevel.load(std::memory_order_relaxed)) {}
+          _logLevel(other._logLevel.load(std::memory_order_relaxed)),
+          _databaseClient(other._databaseClient) {}
 
     // Custom copy assignment operator needed because std::atomic is not copyable
     ServerData& operator=(const ServerData& other) {
@@ -379,6 +383,7 @@ class ServerData {
             _notFoundPage = other._notFoundPage;
             _basicAuth = other._basicAuth;
             _logLevel.store(other._logLevel.load(std::memory_order_relaxed), std::memory_order_relaxed);
+            _databaseClient = other._databaseClient;
         }
         return *this;
     }
@@ -696,6 +701,9 @@ class ServerData {
     bool shouldLog(LogLevel level) const {
         return static_cast<int>(level) <= static_cast<int>(_logLevel.load(std::memory_order_relaxed));
     }
+
+    void setDatabaseClient(std::shared_ptr<db::DatabaseClient> client) { _databaseClient = std::move(client); }
+    std::shared_ptr<db::DatabaseClient> getDatabaseClient() const { return _databaseClient; }
 
     /**
      * Set JavaScript obfuscation level

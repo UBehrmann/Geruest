@@ -32,6 +32,7 @@
 #include "data/HTTPRequest.hpp"
 #include "data/HTTPResponse.hpp"
 #include "data/ServerData.hpp"
+#include "database/DatabaseClient.hpp"
 #include "parser/JSONParser.hpp"
 #include "config/ConfigLoader.hpp"
 #if GERUEST_HAS_CURL
@@ -48,6 +49,7 @@
 namespace geruest {
 
 class HttpSession;
+enum class DatabaseBackend { None, Postgres, Sqlite };
 
 class Geruest {
     friend class HttpSession;
@@ -61,6 +63,15 @@ class Geruest {
     void setHostname(const std::string& hostname);
 
     void addRoute(const std::string& path, RouteHandler handler);
+    void setDatabaseBackend(DatabaseBackend backend);
+    void setDatabasePoolSize(size_t size);
+    void setSqliteExecutorThreadCount(size_t count);
+#if GERUEST_HAS_LIBPQ
+    void configurePostgres(const db::PostgresConfig& config);
+#endif
+#if GERUEST_HAS_SQLITE
+    void configureSqlite(const db::SqliteConfig& config);
+#endif
 
     /**
      * @brief Add a redirect from one route to another route or URL.
@@ -588,6 +599,14 @@ class Geruest {
     // Thread pool configuration
     size_t _workerThreadCount = std::thread::hardware_concurrency() * 2;
     size_t _maxQueueSize = 500;
+    DatabaseBackend _databaseBackend = DatabaseBackend::None;
+    db::CommonConfig _dbCommonConfig;
+#if GERUEST_HAS_LIBPQ
+    db::PostgresConfig _postgresConfig;
+#endif
+#if GERUEST_HAS_SQLITE
+    db::SqliteConfig _sqliteConfig;
+#endif
 
     // Configuration flags to track values set explicitly via code
     // Values set via code take precedence over .env and environment variables
@@ -604,6 +623,15 @@ class Geruest {
         bool textResponseCacheMaxEntryBytesSet = false;
         bool textResponseCacheMaxTotalBytesSet = false;
         bool logLevelSet = false;
+        bool databaseBackendSet = false;
+        bool databasePoolSizeSet = false;
+        bool sqliteExecutorThreadsSet = false;
+#if GERUEST_HAS_LIBPQ
+        bool postgresConfigSet = false;
+#endif
+#if GERUEST_HAS_SQLITE
+        bool sqliteConfigSet = false;
+#endif
         
 #if GERUEST_HAS_CURL
         // Email configuration flags
@@ -642,6 +670,7 @@ class Geruest {
     void statusPersistenceLoop();
 
     void workerRunLoop();
+    void initializeDatabaseFromConfig();
 };
 
 }  // namespace geruest

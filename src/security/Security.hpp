@@ -9,9 +9,9 @@
  *        handlers do not have to reimplement sanitisation themselves.
  *
  * ## SQL injection
- * The framework carries no database driver, so the correct defence is always
- * to use the parameterised-query API of your chosen DB library (libpq, SQLite,
- * etc.).  `escapeSql()` is provided only as a last-resort fallback for legacy
+ * Use the framework database layer parameter binding (`geruest::db` query/execute
+ * APIs) or the parameterised-query API of your DB library. `escapeSql()` is
+ * provided only as a last-resort fallback for legacy
  * situations where a prepared-statement API is not available.
  *
  * ## Output encoding

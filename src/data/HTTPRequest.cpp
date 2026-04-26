@@ -125,22 +125,30 @@ std::string urlDecode(std::string_view str) {
     return result;
 }
 
-HTTPRequest::HTTPRequest(std::string rawRequest, std::string clientIP, std::string serverRootPath)
+HTTPRequest::HTTPRequest(std::string rawRequest, std::string clientIP, std::string serverRootPath,
+                         std::shared_ptr<db::DatabaseClient> databaseClient)
     : ip(std::move(clientIP)),
       serverRoot(std::move(serverRootPath)),
-      _backing(std::make_shared<const std::string>(std::move(rawRequest))) {
+      _backing(std::make_shared<const std::string>(std::move(rawRequest))),
+      _databaseClient(std::move(databaseClient)) {
     parseFromWire(std::string_view(_backing->data(), _backing->size()));
 }
 
 HTTPRequest::HTTPRequest(std::shared_ptr<const std::string> backing, std::string clientIP,
-                         std::string serverRootPath)
-    : ip(std::move(clientIP)), serverRoot(std::move(serverRootPath)), _backing(std::move(backing)) {
+                         std::string serverRootPath, std::shared_ptr<db::DatabaseClient> databaseClient)
+    : ip(std::move(clientIP)),
+      serverRoot(std::move(serverRootPath)),
+      _backing(std::move(backing)),
+      _databaseClient(std::move(databaseClient)) {
     parseFromWire(std::string_view(_backing->data(), _backing->size()));
 }
 
 HTTPRequest::HTTPRequest(HttpHeadersOnlyTag /*tag*/, std::string_view headerBytesPrefix, std::string clientIP,
-                        std::string serverRootPath)
-    : ip(std::move(clientIP)), serverRoot(std::move(serverRootPath)), _headersOnly(true) {
+                        std::string serverRootPath, std::shared_ptr<db::DatabaseClient> databaseClient)
+    : ip(std::move(clientIP)),
+      serverRoot(std::move(serverRootPath)),
+      _databaseClient(std::move(databaseClient)),
+      _headersOnly(true) {
     parseFromWire(headerBytesPrefix);
 }
 
@@ -214,6 +222,8 @@ std::string_view HTTPRequest::getHeaderView(std::string_view key) const {
 }
 
 bool HTTPRequest::hasHeader(std::string_view key) const { return _headers.find(key) != _headers.end(); }
+
+std::shared_ptr<db::DatabaseClient> HTTPRequest::database() const { return _databaseClient; }
 
 void HTTPRequest::parseFromWire(std::string_view raw) {
     const std::string_view requestLine = firstLine(raw);

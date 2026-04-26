@@ -24,6 +24,19 @@ MAX_QUEUE_SIZE=500
 MAX_REQUESTS_PER_CONNECTION=1000
 LOG_LEVEL=error
 
+# Database
+DATABASE_BACKEND=none
+DATABASE_POOL_MAX=4
+SQLITE_PATH=./geruest.db
+SQLITE_BUSY_TIMEOUT_MS=5000
+SQLITE_DB_EXECUTOR_THREADS=1
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=app
+POSTGRES_USER=app
+POSTGRES_PASSWORD=secret
+POSTGRES_SSLMODE=prefer
+
 # Feature Flags
 DEV_MODE=false
 MERGE_ASSETS=true
@@ -73,6 +86,17 @@ geruest::ConfigLoader::clear();
 ```
 
 ## Common Patterns
+
+### Database backend selection
+
+`DATABASE_BACKEND` selects runtime backend when both are compiled: `postgres`, `sqlite`, or `none`.
+Selection precedence is:
+
+1. explicit code setter (`setDatabaseBackend(...)`)
+2. environment /.env `DATABASE_BACKEND`
+3. default `none`
+
+If selected backend is not compiled in (`GERUEST_HAS_LIBPQ=0` or `GERUEST_HAS_SQLITE=0`), startup fails fast.
 
 ### Server Configuration
 

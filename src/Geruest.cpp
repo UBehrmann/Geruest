@@ -90,6 +90,43 @@ void Geruest::addRoute(const std::string& path, RouteHandler routeHandler) {
     serverData.addRoute(path, std::move(routeHandler));
 }
 
+void Geruest::setDatabaseBackend(DatabaseBackend backend) {
+    _databaseBackend = backend;
+    _configFlags.databaseBackendSet = true;
+}
+
+void Geruest::setDatabasePoolSize(size_t size) {
+    if (size == 0) {
+        sendToLoggerError("Database pool size must be at least 1");
+        return;
+    }
+    _dbCommonConfig.poolSize = size;
+    _configFlags.databasePoolSizeSet = true;
+}
+
+void Geruest::setSqliteExecutorThreadCount(size_t count) {
+    if (count == 0) {
+        sendToLoggerError("SQLite executor thread count must be at least 1");
+        return;
+    }
+    _dbCommonConfig.sqliteExecutorThreads = count;
+    _configFlags.sqliteExecutorThreadsSet = true;
+}
+
+#if GERUEST_HAS_LIBPQ
+void Geruest::configurePostgres(const db::PostgresConfig& config) {
+    _postgresConfig = config;
+    _configFlags.postgresConfigSet = true;
+}
+#endif
+
+#if GERUEST_HAS_SQLITE
+void Geruest::configureSqlite(const db::SqliteConfig& config) {
+    _sqliteConfig = config;
+    _configFlags.sqliteConfigSet = true;
+}
+#endif
+
 void Geruest::addRedirect(const std::string& from, const std::string& to, int status) {
     if (serverData.addRedirect(from, to, status)) {
         sendToLogger("Added redirect: " + from + " -> " + to + " (" + std::to_string(status) + ")");

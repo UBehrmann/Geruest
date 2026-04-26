@@ -42,6 +42,35 @@ endif()
 
 find_package(Boost 1.75 REQUIRED COMPONENTS system)
 
+option(GERUEST_ENABLE_POSTGRESQL "Enable PostgreSQL backend support in tests" OFF)
+option(GERUEST_ENABLE_SQLITE "Enable SQLite backend support in tests" OFF)
+
+set(GERUEST_HAS_LIBPQ FALSE)
+if(GERUEST_ENABLE_POSTGRESQL)
+    find_package(PostgreSQL QUIET)
+    if(PostgreSQL_FOUND)
+        set(GERUEST_HAS_LIBPQ TRUE)
+        add_compile_definitions(GERUEST_HAS_LIBPQ=1)
+    else()
+        add_compile_definitions(GERUEST_HAS_LIBPQ=0)
+    endif()
+else()
+    add_compile_definitions(GERUEST_HAS_LIBPQ=0)
+endif()
+
+set(GERUEST_HAS_SQLITE FALSE)
+if(GERUEST_ENABLE_SQLITE)
+    find_package(SQLite3 QUIET)
+    if(SQLite3_FOUND)
+        set(GERUEST_HAS_SQLITE TRUE)
+        add_compile_definitions(GERUEST_HAS_SQLITE=1)
+    else()
+        add_compile_definitions(GERUEST_HAS_SQLITE=0)
+    endif()
+else()
+    add_compile_definitions(GERUEST_HAS_SQLITE=0)
+endif()
+
 # Linux/Unix settings
 set(PLATFORM_LIBS pthread Boost::system)
 
@@ -76,6 +105,13 @@ set(GERUEST_SOURCES
 # Conditionally add EmailSender if CURL is available
 if(GERUEST_HAS_CURL)
     list(APPEND GERUEST_SOURCES ../email/EmailSender.cpp)
+endif()
+
+if(GERUEST_HAS_LIBPQ OR GERUEST_HAS_SQLITE)
+    list(APPEND GERUEST_SOURCES
+        ../database/DatabaseClient.cpp
+        ../database/DbExecutor.cpp
+    )
 endif()
 
 # Create individual test executables
@@ -177,6 +213,24 @@ target_link_libraries(GeruestLifecycle_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 if(GERUEST_HAS_CURL)
     target_link_libraries(GeruestLifecycle_Tests CURL::libcurl)
 endif()
+if(GERUEST_HAS_SQLITE)
+    target_link_libraries(GeruestLifecycle_Tests SQLite::SQLite3)
+endif()
+if(GERUEST_HAS_LIBPQ)
+    target_link_libraries(GeruestLifecycle_Tests PostgreSQL::PostgreSQL)
+endif()
+
+if(GERUEST_HAS_SQLITE)
+    add_executable(DatabaseSqlite_Tests
+        Database/DatabaseSqlite_tests.cpp
+        ../database/DatabaseClient.cpp
+        ../database/DbExecutor.cpp
+    )
+    target_link_libraries(DatabaseSqlite_Tests ${PLATFORM_LIBS} GTest::gtest_main SQLite::SQLite3)
+    if(GERUEST_HAS_LIBPQ)
+        target_link_libraries(DatabaseSqlite_Tests PostgreSQL::PostgreSQL)
+    endif()
+endif()
 
 # Add tests to CTest using Google Test discovery
 include(GoogleTest)
@@ -192,6 +246,9 @@ gtest_discover_tests(AssetMerger_Tests)
 gtest_discover_tests(Security_Tests)
 gtest_discover_tests(ServerDataMetricsPersistence_Tests)
 gtest_discover_tests(GeruestLifecycle_Tests)
+if(GERUEST_HAS_SQLITE)
+    gtest_discover_tests(DatabaseSqlite_Tests)
+endif()
 
 # Custom target to run all tests
 add_custom_target(run_tests
@@ -199,6 +256,10 @@ add_custom_target(run_tests
     DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests ServerDataMetricsPersistence_Tests GeruestLifecycle_Tests
     COMMENT "Running all unit tests via CTest"
 )
+
+if(GERUEST_HAS_SQLITE)
+    add_dependencies(run_tests DatabaseSqlite_Tests)
+endif()
 
 # Copy test data files to build directory
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/JSONParser/

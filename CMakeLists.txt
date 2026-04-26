@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 
 # Define the project name and version
-project(GeruestLibrary VERSION 0.8.10 LANGUAGES CXX)
+project(GeruestLibrary VERSION 0.9.0 LANGUAGES CXX)
 
 # Configure version header
 configure_file(
@@ -29,6 +29,9 @@ find_package(Threads REQUIRED)
 
 find_package(Boost 1.75 REQUIRED COMPONENTS system)
 
+option(GERUEST_ENABLE_POSTGRESQL "Enable PostgreSQL backend support" OFF)
+option(GERUEST_ENABLE_SQLITE "Enable SQLite backend support" OFF)
+
 # Optional: Find CURL for email functionality
 find_package(CURL QUIET)
 if(CURL_FOUND)
@@ -38,6 +41,32 @@ else()
     message(STATUS "CURL library not found - Email functionality disabled")
     message(STATUS "To enable email functionality, install libcurl4-openssl-dev (apt) or curl (vcpkg)")
     set(GERUEST_HAS_CURL FALSE)
+endif()
+
+# Optional: Find PostgreSQL (libpq) for database backend
+set(GERUEST_HAS_LIBPQ FALSE)
+if(GERUEST_ENABLE_POSTGRESQL)
+    find_package(PostgreSQL QUIET)
+    if(PostgreSQL_FOUND)
+        message(STATUS "PostgreSQL library found - PostgreSQL backend enabled")
+        set(GERUEST_HAS_LIBPQ TRUE)
+    else()
+        message(STATUS "PostgreSQL requested but not found - PostgreSQL backend disabled")
+        message(STATUS "To enable PostgreSQL backend, install libpq-dev (apt)")
+    endif()
+endif()
+
+# Optional: Find SQLite for database backend
+set(GERUEST_HAS_SQLITE FALSE)
+if(GERUEST_ENABLE_SQLITE)
+    find_package(SQLite3 QUIET)
+    if(SQLite3_FOUND)
+        message(STATUS "SQLite library found - SQLite backend enabled")
+        set(GERUEST_HAS_SQLITE TRUE)
+    else()
+        message(STATUS "SQLite requested but not found - SQLite backend disabled")
+        message(STATUS "To enable SQLite backend, install libsqlite3-dev (apt)")
+    endif()
 endif()
 
 # Optional: Find libwebp for WebP image conversion
@@ -94,6 +123,13 @@ add_library(Geruest STATIC
     src/security/Security.cpp
 )
 
+if(GERUEST_HAS_LIBPQ OR GERUEST_HAS_SQLITE)
+    target_sources(Geruest PRIVATE
+        src/database/DatabaseClient.cpp
+        src/database/DbExecutor.cpp
+    )
+endif()
+
 # Public headers
 target_include_directories(Geruest PUBLIC
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
@@ -110,6 +146,20 @@ if(GERUEST_HAS_CURL)
     target_compile_definitions(Geruest PUBLIC GERUEST_HAS_CURL=1)
 else()
     target_compile_definitions(Geruest PUBLIC GERUEST_HAS_CURL=0)
+endif()
+
+if(GERUEST_HAS_LIBPQ)
+    target_link_libraries(Geruest PUBLIC PostgreSQL::PostgreSQL)
+    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_LIBPQ=1)
+else()
+    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_LIBPQ=0)
+endif()
+
+if(GERUEST_HAS_SQLITE)
+    target_link_libraries(Geruest PUBLIC SQLite::SQLite3)
+    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_SQLITE=1)
+else()
+    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_SQLITE=0)
 endif()
 
 # Link WebP library if found (PRIVATE to avoid leaking to consumers)

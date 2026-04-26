@@ -20,6 +20,8 @@
 #include <utility>
 #include <vector>
 
+#include "database/DatabaseClient.hpp"
+
 namespace geruest {
 
 std::string urlDecode(std::string_view str);
@@ -54,14 +56,16 @@ using HeaderFieldMap = std::unordered_map<std::string, std::string, HeaderMapHas
 
 class HTTPRequest {
    public:
-    HTTPRequest(std::string rawRequest, std::string clientIP, std::string serverRootPath);
+    HTTPRequest(std::string rawRequest, std::string clientIP, std::string serverRootPath,
+                std::shared_ptr<db::DatabaseClient> databaseClient = nullptr);
 
     /** Full message bytes owned by `backing` (typically one per request from Handler). */
-    HTTPRequest(std::shared_ptr<const std::string> backing, std::string clientIP, std::string serverRootPath);
+    HTTPRequest(std::shared_ptr<const std::string> backing, std::string clientIP, std::string serverRootPath,
+                std::shared_ptr<db::DatabaseClient> databaseClient = nullptr);
 
     /** Prefix through end of headers (see Handler `headerEnd`); no body; synchronous parse only. */
     HTTPRequest(HttpHeadersOnlyTag, std::string_view headerBytesPrefix, std::string clientIP,
-                std::string serverRootPath);
+                std::string serverRootPath, std::shared_ptr<db::DatabaseClient> databaseClient = nullptr);
 
     const std::string& getMethod() const;
     const std::string& getPathString() const;
@@ -81,6 +85,7 @@ class HTTPRequest {
     std::string_view getHeaderView(std::string_view key) const;
 
     bool hasHeader(std::string_view key) const;
+    std::shared_ptr<db::DatabaseClient> database() const;
 
    private:
     std::string ip;
@@ -100,6 +105,7 @@ class HTTPRequest {
     std::unordered_map<std::string, std::string> _jsonParams;
     HeaderFieldMap _headers;
     std::unordered_map<std::string, std::string> _cookies;
+    std::shared_ptr<db::DatabaseClient> _databaseClient;
 
     bool _headersOnly = false;
 

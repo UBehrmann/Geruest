@@ -516,7 +516,7 @@ boost::asio::awaitable<void> Handler::runAsync() {
         }
         raw.clear();
 
-        HTTPRequest hTTPRequest(std::move(messageBacking), IP, serverData.getRoot());
+        HTTPRequest hTTPRequest(std::move(messageBacking), IP, serverData.getRoot(), serverData.getDatabaseClient());
         requestStream = std::istringstream();
 
         serverData.recordRequest();
@@ -571,7 +571,7 @@ boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
         // co_await is not allowed inside catch clauses; build the body first, send once.
         const char* failLog = nullptr;
         try {
-            HTTPResponse response = (*routeHandler)(*request);
+            HTTPResponse response = co_await (*routeHandler)(*request);
 
             const std::string& _st = response.getStatus();
             if (!_st.empty()) {
