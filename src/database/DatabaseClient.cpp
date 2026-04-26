@@ -91,6 +91,7 @@ class SqliteClient final : public DatabaseClient {
     }
 
     ~SqliteClient() override {
+        _executor.join();
         for (sqlite3* conn : _allConnections) {
             sqlite3_close(conn);
         }
@@ -214,6 +215,7 @@ class PostgresClient final : public DatabaseClient {
     }
 
     ~PostgresClient() override {
+        _executor.join();
         for (PGconn* conn : _allConnections) {
             PQfinish(conn);
         }

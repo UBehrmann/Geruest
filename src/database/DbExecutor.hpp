@@ -18,12 +18,14 @@ class DbExecutor {
    public:
     explicit DbExecutor(std::size_t threadCount);
     ~DbExecutor();
+    void join();
 
     template <typename Fn>
     auto run(Fn&& fn) -> boost::asio::awaitable<typename std::invoke_result_t<Fn>>;
 
    private:
     boost::asio::thread_pool _pool;
+    bool _joined = false;
 };
 
 template <typename Fn>
