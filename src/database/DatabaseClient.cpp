@@ -102,7 +102,9 @@ class SqliteClient final : public std::enable_shared_from_this<SqliteClient>, pu
     boost::asio::awaitable<QueryResult> queryAsync(std::string sql,
                                                    std::vector<BindValue> params) override {
         std::shared_ptr<SqliteClient> self = shared_from_this();
-        co_return co_await _executor.run([self = std::move(self), sql = std::move(sql), params = std::move(params)]() {
+        auto sqlPtr = std::make_shared<std::string>(std::move(sql));
+        auto paramsPtr = std::make_shared<std::vector<BindValue>>(std::move(params));
+        co_return co_await _executor.run([self = std::move(self), sqlPtr = std::move(sqlPtr), paramsPtr = std::move(paramsPtr)]() {
             sqlite3* conn = self->_pool.acquire();
             sqlite3_stmt* stmt = nullptr;
             QueryResult result;
@@ -114,15 +116,15 @@ class SqliteClient final : public std::enable_shared_from_this<SqliteClient>, pu
                 }
             };
 
-            if (sqlite3_prepare_v2(conn, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+            if (sqlite3_prepare_v2(conn, sqlPtr->c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
                 const std::string err = sqlite3_errmsg(conn);
                 releaseConn();
                 throw std::runtime_error("sqlite prepare failed: " + err);
             }
 
-            for (std::size_t i = 0; i < params.size(); ++i) {
+            for (std::size_t i = 0; i < paramsPtr->size(); ++i) {
                 const int index = static_cast<int>(i + 1);
-                const auto& value = params[i];
+                const auto& value = (*paramsPtr)[i];
                 int rc = SQLITE_OK;
                 if (std::holds_alternative<std::nullptr_t>(value)) {
                     rc = sqlite3_bind_null(stmt, index);
@@ -227,7 +229,9 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
     boost::asio::awaitable<QueryResult> queryAsync(std::string sql,
                                                    std::vector<BindValue> params) override {
         std::shared_ptr<PostgresClient> self = shared_from_this();
-        co_return co_await _executor.run([self = std::move(self), sql = std::move(sql), params = std::move(params)]() {
+        auto sqlPtr = std::make_shared<std::string>(std::move(sql));
+        auto paramsPtr = std::make_shared<std::vector<BindValue>>(std::move(params));
+        co_return co_await _executor.run([self = std::move(self), sqlPtr = std::move(sqlPtr), paramsPtr = std::move(paramsPtr)]() {
             PGconn* conn = self->_pool.acquire();
             auto releaseConn = [self, conn]() { self->_pool.release(conn); };
 
@@ -236,13 +240,13 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
             std::vector<int> lengths;
             std::vector<int> formats;
             std::vector<Oid> types;
-            paramStorage.reserve(params.size());
-            values.reserve(params.size());
-            lengths.assign(params.size(), 0);
-            formats.assign(params.size(), 0);
-            types.assign(params.size(), 0);
+            paramStorage.reserve(paramsPtr->size());
+            values.reserve(paramsPtr->size());
+            lengths.assign(paramsPtr->size(), 0);
+            formats.assign(paramsPtr->size(), 0);
+            types.assign(paramsPtr->size(), 0);
 
-            for (const auto& p : params) {
+            for (const auto& p : *paramsPtr) {
                 if (std::holds_alternative<std::nullptr_t>(p)) {
                     paramStorage.emplace_back();
                     values.push_back(nullptr);
@@ -252,7 +256,7 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
                 }
             }
 
-            PGresult* res = PQexecParams(conn, sql.c_str(), static_cast<int>(values.size()), types.data(),
+            PGresult* res = PQexecParams(conn, sqlPtr->c_str(), static_cast<int>(values.size()), types.data(),
                                          values.data(), lengths.data(), formats.data(), 0);
             if (res == nullptr) {
                 const std::string err = PQerrorMessage(conn);
