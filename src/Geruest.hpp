@@ -243,6 +243,9 @@ class Geruest {
      * - WORKER_THREADS (size_t): Number of worker threads (default: CPU cores * 2)
      * - MAX_QUEUE_SIZE (size_t): Maximum concurrent client sessions (default: 500)
      * - MAX_REQUESTS_PER_CONNECTION (size_t): Keep-alive request cap per connection (default: 1000, 0 = unlimited)
+     * - TEXT_RESPONSE_CACHE_MAX_ENTRY_BYTES (size_t): Max serialized size per cached html/js/css response (default: 524288)
+     * - TEXT_RESPONSE_CACHE_MAX_TOTAL_BYTES (size_t): Max total bytes across all cached text responses (default: 33554432)
+     *   Set either to 0 to disable caching new entries (existing entries may remain until eviction/restart).
      * - LOG_LEVEL (string): Log level: "none", "error", "warning", "info", "debug" (default: "error")
      * - OBFUSCATE_PRESERVE (string): Comma-separated identifiers to never rename
      * - OBFUSCATE_EXTERNS (string): Comma-separated global names (host-provided)
@@ -343,6 +346,18 @@ class Geruest {
      * @note Must be called before init() or start()
      */
     void setMaxRequestsPerConnection(size_t count);
+
+    /**
+     * @brief Max size in bytes of one cached serialized text response (html/js/css). Default 524288 (512 KiB).
+     * @param bytes 0 disables caching new entries.
+     */
+    void setTextResponseCacheMaxEntryBytes(size_t bytes);
+
+    /**
+     * @brief Max total bytes for all cached text responses. Default 33554432 (32 MiB).
+     * @param bytes 0 disables caching new entries.
+     */
+    void setTextResponseCacheMaxTotalBytes(size_t bytes);
 
     // ========== Basic Authentication Methods ==========
     
@@ -586,6 +601,8 @@ class Geruest {
         bool workerThreadsSet = false;
         bool maxQueueSizeSet = false;
         bool maxRequestsPerConnectionSet = false;
+        bool textResponseCacheMaxEntryBytesSet = false;
+        bool textResponseCacheMaxTotalBytesSet = false;
         bool logLevelSet = false;
         
 #if GERUEST_HAS_CURL

@@ -70,6 +70,10 @@ class ServerData {
     bool _webpConversion = false;   // Automatic PNG/JPG to WebP conversion
     float _webpQuality = 75.0f;     // WebP encoding quality (0-100, default 75%)
     size_t _maxRequestsPerConnection = 1000;  // Keep-alive request cap (0 = unlimited)
+    /** Serialized text response (html/js/css) cache: max one entry size (0 = do not cache). */
+    size_t _textResponseCacheMaxEntryBytes = 512 * 1024;
+    /** Serialized text response cache: max sum of payload bytes across entries (0 = do not cache). */
+    size_t _textResponseCacheMaxTotalBytes = 32 * 1024 * 1024;
     unsigned int _obfuscationLevel = 0;  // JS obfuscation level (0=disabled, 1-3=increasing complexity)
     int _obfuscationCacheExpiryDays = 7;  // Days to keep obfuscated files cached
     std::vector<std::string> _obfuscationExclusions;  // Files excluded from obfuscation and merging
@@ -328,6 +332,8 @@ class ServerData {
           _webpConversion(other._webpConversion),
           _webpQuality(other._webpQuality),
           _maxRequestsPerConnection(other._maxRequestsPerConnection),
+          _textResponseCacheMaxEntryBytes(other._textResponseCacheMaxEntryBytes),
+          _textResponseCacheMaxTotalBytes(other._textResponseCacheMaxTotalBytes),
           _obfuscationLevel(other._obfuscationLevel),
           _obfuscationCacheExpiryDays(other._obfuscationCacheExpiryDays),
           _obfuscationExclusions(other._obfuscationExclusions),
@@ -357,6 +363,8 @@ class ServerData {
             _webpConversion = other._webpConversion;
             _webpQuality = other._webpQuality;
             _maxRequestsPerConnection = other._maxRequestsPerConnection;
+            _textResponseCacheMaxEntryBytes = other._textResponseCacheMaxEntryBytes;
+            _textResponseCacheMaxTotalBytes = other._textResponseCacheMaxTotalBytes;
             _obfuscationLevel = other._obfuscationLevel;
             _obfuscationCacheExpiryDays = other._obfuscationCacheExpiryDays;
             _obfuscationExclusions = other._obfuscationExclusions;
@@ -561,6 +569,20 @@ class ServerData {
      * @return 0 for unlimited, otherwise configured cap.
      */
     size_t getMaxRequestsPerConnection() const { return _maxRequestsPerConnection; }
+
+    /**
+     * Max size in bytes of a single cached serialized text response (headers + body).
+     * Set to 0 to disable storing entries (cache effectively off for new inserts).
+     */
+    void setTextResponseCacheMaxEntryBytes(size_t bytes) { _textResponseCacheMaxEntryBytes = bytes; }
+    size_t getTextResponseCacheMaxEntryBytes() const { return _textResponseCacheMaxEntryBytes; }
+
+    /**
+     * Max combined payload bytes for the text response cache across all keys.
+     * Set to 0 to disable storing entries (cache effectively off for new inserts).
+     */
+    void setTextResponseCacheMaxTotalBytes(size_t bytes) { _textResponseCacheMaxTotalBytes = bytes; }
+    size_t getTextResponseCacheMaxTotalBytes() const { return _textResponseCacheMaxTotalBytes; }
 
     /**
      * Enable development mode

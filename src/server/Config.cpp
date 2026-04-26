@@ -114,6 +114,26 @@ void Geruest::loadConfig(const std::string& envFilePath) {
             }
         }
     }
+
+    // TEXT_RESPONSE_CACHE_MAX_ENTRY_BYTES (0 = do not cache new entries)
+    if (!_configFlags.textResponseCacheMaxEntryBytesSet) {
+        const size_t currentValue = serverData.getTextResponseCacheMaxEntryBytes();
+        const size_t configValue = ConfigLoader::getSizeT("TEXT_RESPONSE_CACHE_MAX_ENTRY_BYTES", currentValue);
+        if (configValue != currentValue) {
+            serverData.setTextResponseCacheMaxEntryBytes(configValue);
+            sendToLogger("TEXT_RESPONSE_CACHE_MAX_ENTRY_BYTES loaded from config: " + std::to_string(configValue));
+        }
+    }
+
+    // TEXT_RESPONSE_CACHE_MAX_TOTAL_BYTES (0 = do not cache new entries)
+    if (!_configFlags.textResponseCacheMaxTotalBytesSet) {
+        const size_t currentValue = serverData.getTextResponseCacheMaxTotalBytes();
+        const size_t configValue = ConfigLoader::getSizeT("TEXT_RESPONSE_CACHE_MAX_TOTAL_BYTES", currentValue);
+        if (configValue != currentValue) {
+            serverData.setTextResponseCacheMaxTotalBytes(configValue);
+            sendToLogger("TEXT_RESPONSE_CACHE_MAX_TOTAL_BYTES loaded from config: " + std::to_string(configValue));
+        }
+    }
     
     // LOG_LEVEL
     if (!_configFlags.logLevelSet) {

@@ -281,6 +281,26 @@ void Geruest::setMaxRequestsPerConnection(size_t count) {
     }
 }
 
+void Geruest::setTextResponseCacheMaxEntryBytes(size_t bytes) {
+    if (running.load(std::memory_order_relaxed) || _workersRunning.load(std::memory_order_relaxed)) {
+        sendToLoggerError("Cannot change text response cache limits while server is running");
+        return;
+    }
+    serverData.setTextResponseCacheMaxEntryBytes(bytes);
+    _configFlags.textResponseCacheMaxEntryBytesSet = true;
+    sendToLogger("TEXT_RESPONSE_CACHE_MAX_ENTRY_BYTES set to: " + std::to_string(bytes));
+}
+
+void Geruest::setTextResponseCacheMaxTotalBytes(size_t bytes) {
+    if (running.load(std::memory_order_relaxed) || _workersRunning.load(std::memory_order_relaxed)) {
+        sendToLoggerError("Cannot change text response cache limits while server is running");
+        return;
+    }
+    serverData.setTextResponseCacheMaxTotalBytes(bytes);
+    _configFlags.textResponseCacheMaxTotalBytesSet = true;
+    sendToLogger("TEXT_RESPONSE_CACHE_MAX_TOTAL_BYTES set to: " + std::to_string(bytes));
+}
+
 // ========== Basic Authentication ==========
 
 void Geruest::setBasicAuth(bool enabled) {

@@ -1,10 +1,83 @@
 #include "JSONParser.hpp"
-#include <iostream>
 #include <cctype>
+#include <charconv>
+#include <iostream>
 #include <stdexcept>
 #include "security/Security.hpp"
 
 namespace geruest {
+
+namespace {
+
+[[nodiscard]] bool isJsonNumberLiteral(const std::string& s) {
+    // RFC 8259 number grammar:
+    // -?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?
+    if (s.empty()) return false;
+
+    size_t i = 0;
+    const size_t n = s.size();
+
+    if (s[i] == '-') {
+        ++i;
+        if (i >= n) return false;
+    }
+
+    if (s[i] == '0') {
+        ++i;
+        if (i < n && std::isdigit(static_cast<unsigned char>(s[i]))) {
+            return false;
+        }
+    } else if (std::isdigit(static_cast<unsigned char>(s[i]))) {
+        if (s[i] < '1' || s[i] > '9') return false;
+        ++i;
+        while (i < n && std::isdigit(static_cast<unsigned char>(s[i]))) ++i;
+    } else {
+        return false;
+    }
+
+    if (i < n && s[i] == '.') {
+        ++i;
+        if (i >= n) return false;
+        if (!std::isdigit(static_cast<unsigned char>(s[i]))) return false;
+        while (i < n && std::isdigit(static_cast<unsigned char>(s[i]))) ++i;
+    }
+
+    if (i < n && (s[i] == 'e' || s[i] == 'E')) {
+        ++i;
+        if (i >= n) return false;
+        if (s[i] == '+' || s[i] == '-') {
+            ++i;
+            if (i >= n) return false;
+        }
+        if (!std::isdigit(static_cast<unsigned char>(s[i]))) return false;
+        while (i < n && std::isdigit(static_cast<unsigned char>(s[i]))) ++i;
+    }
+
+    return i == n;
+}
+
+[[nodiscard]] size_t escapedJsonSize(const std::string& input) {
+    size_t out = 0;
+    for (unsigned char c : input) {
+        switch (c) {
+            case '"':
+            case '\\':
+            case '\b':
+            case '\f':
+            case '\n':
+            case '\r':
+            case '\t':
+                out += 2;
+                break;
+            default:
+                out += (c < 0x20U) ? 6 : 1;
+                break;
+        }
+    }
+    return out;
+}
+
+}  // namespace
 
 JSONParser::JSONParser(const std::string &input) : _ownedStorage(input), _view(_ownedStorage), jp(0) {
     parseJSON();
@@ -726,7 +799,13 @@ void JSONParser::setDouble(const std::string &key, double value) {
 }
 
 void JSONParser::setLong(const std::string &key, long value) {
-    data[key] = std::to_string(value);
+    char buffer[32];
+    auto conv = std::to_chars(buffer, buffer + sizeof(buffer), value);
+    if (conv.ec == std::errc()) {
+        data[key].assign(buffer, static_cast<size_t>(conv.ptr - buffer));
+    } else {
+        data[key] = std::to_string(value);
+    }
     if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
         keys.push_back(key);
     }
@@ -754,12 +833,24 @@ void JSONParser::setJSON(const std::string &key, const JSONParser &value) {
 }
 
 void JSONParser::setStringArray(const std::string &key, const std::vector<std::string> &value) {
-    std::string arrayStr = "[";
-    for (size_t i = 0; i < value.size(); ++i) {
-        if (i > 0) arrayStr += ",";
-        arrayStr += "\"" + Security::escapeJson(value[i]) + "\"";
+    size_t estimatedSize = 2;  // []
+    if (!value.empty()) {
+        estimatedSize += value.size() - 1;  // commas
     }
-    arrayStr += "]";
+    for (const std::string& item : value) {
+        estimatedSize += 2 + escapedJsonSize(item);  // quotes + escaped content
+    }
+
+    std::string arrayStr;
+    arrayStr.reserve(estimatedSize);
+    arrayStr.push_back('[');
+    for (size_t i = 0; i < value.size(); ++i) {
+        if (i > 0) arrayStr.push_back(',');
+        arrayStr.push_back('"');
+        arrayStr += Security::escapeJson(value[i]);
+        arrayStr.push_back('"');
+    }
+    arrayStr.push_back(']');
     data[key] = arrayStr;
     if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
         keys.push_back(key);
@@ -904,78 +995,50 @@ std::string JSONParser::toString() const {
     if (data.empty() && !arrayData.empty()) {
         return arrayToString();
     }
-    
-    std::string result = "{";
+
+    size_t estimatedSize = 2;  // {}
+    for (const auto& key : keys) {
+        auto it = data.find(key);
+        if (it == data.end()) {
+            continue;
+        }
+        const std::string& value = it->second;
+        estimatedSize += key.size() + 4;  // "key":
+
+        if (!value.empty() && (value[0] == '{' || value[0] == '[')) {
+            estimatedSize += value.size();
+        } else if (value == "true" || value == "false" || value == "null" || isJsonNumberLiteral(value)) {
+            estimatedSize += value.size();
+        } else {
+            estimatedSize += escapedJsonSize(value) + 2;  // quoted string
+        }
+    }
+
+    std::string result;
+    result.reserve(estimatedSize);
+    result.push_back('{');
     bool first = true;
-    
+
     for (const auto& key : keys) {
         auto it = data.find(key);
         if (it != data.end()) {
             if (!first) {
-                result += ",";
+                result.push_back(',');
             }
             first = false;
-            
-            result += "\"" + key + "\":";
-            
+
+            result.push_back('"');
+            result += key;
+            result += "\":";
+
             const std::string& value = it->second;
-            
+
             if (!value.empty() && (value[0] == '{' || value[0] == '[')) {
                 result += value;
             } else if (value == "true" || value == "false" || value == "null") {
                 result += value;
             } else {
-                auto isJsonNumber = [](const std::string& s) -> bool {
-                    // RFC 8259 number grammar:
-                    // -?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?
-                    if (s.empty()) return false;
-
-                    size_t i = 0;
-                    const size_t n = s.size();
-
-                    if (s[i] == '-') {
-                        ++i;
-                        if (i >= n) return false;  // lone '-'
-                    }
-
-                    // int part
-                    if (s[i] == '0') {
-                        ++i;
-                        if (i < n && std::isdigit(static_cast<unsigned char>(s[i]))) {
-                            return false;  // leading zero
-                        }
-                    } else if (std::isdigit(static_cast<unsigned char>(s[i]))) {
-                        if (s[i] < '1' || s[i] > '9') return false;
-                        ++i;
-                        while (i < n && std::isdigit(static_cast<unsigned char>(s[i]))) ++i;
-                    } else {
-                        return false;
-                    }
-
-                    // frac part
-                    if (i < n && s[i] == '.') {
-                        ++i;
-                        if (i >= n) return false;  // trailing '.'
-                        if (!std::isdigit(static_cast<unsigned char>(s[i]))) return false;
-                        while (i < n && std::isdigit(static_cast<unsigned char>(s[i]))) ++i;
-                    }
-
-                    // exp part
-                    if (i < n && (s[i] == 'e' || s[i] == 'E')) {
-                        ++i;
-                        if (i >= n) return false;
-                        if (s[i] == '+' || s[i] == '-') {
-                            ++i;
-                            if (i >= n) return false;
-                        }
-                        if (!std::isdigit(static_cast<unsigned char>(s[i]))) return false;
-                        while (i < n && std::isdigit(static_cast<unsigned char>(s[i]))) ++i;
-                    }
-
-                    return i == n;
-                };
-
-                if (isJsonNumber(value)) {
+                if (isJsonNumberLiteral(value)) {
                     result += value;
                 } else {
                     result += stringToString(value);
@@ -984,17 +1047,31 @@ std::string JSONParser::toString() const {
         }
     }
     
-    result += "}";
+    result.push_back('}');
     return result;
 }
 
 std::string JSONParser::arrayToString() const {
-    std::string result = "[";
-    for (size_t i = 0; i < arrayData.size(); ++i) {
-        if (i > 0) result += ",";
-        result += arrayData[i].toString();
+    std::vector<std::string> serializedItems;
+    serializedItems.reserve(arrayData.size());
+
+    size_t estimatedSize = 2;  // []
+    if (!arrayData.empty()) {
+        estimatedSize += arrayData.size() - 1;  // commas
     }
-    result += "]";
+    for (const JSONParser& item : arrayData) {
+        serializedItems.push_back(item.toString());
+        estimatedSize += serializedItems.back().size();
+    }
+
+    std::string result;
+    result.reserve(estimatedSize);
+    result.push_back('[');
+    for (size_t i = 0; i < serializedItems.size(); ++i) {
+        if (i > 0) result.push_back(',');
+        result += serializedItems[i];
+    }
+    result.push_back(']');
     return result;
 }
 
