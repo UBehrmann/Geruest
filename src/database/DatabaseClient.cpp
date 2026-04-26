@@ -69,7 +69,7 @@ class SimplePool {
 }  // namespace
 
 #if GERUEST_HAS_SQLITE
-class SqliteClient final : public DatabaseClient {
+class SqliteClient final : public std::enable_shared_from_this<SqliteClient>, public DatabaseClient {
    public:
     SqliteClient(const SqliteConfig& config, const CommonConfig& common)
         : _executor(std::max<std::size_t>(common.sqliteExecutorThreads, 1)) {
@@ -101,12 +101,13 @@ class SqliteClient final : public DatabaseClient {
 
     boost::asio::awaitable<QueryResult> queryAsync(std::string sql,
                                                    std::vector<BindValue> params) override {
-        co_return co_await _executor.run([this, sql = std::move(sql), params = std::move(params)]() {
-            sqlite3* conn = _pool.acquire();
+        std::shared_ptr<SqliteClient> self = shared_from_this();
+        co_return co_await _executor.run([self = std::move(self), sql = std::move(sql), params = std::move(params)]() {
+            sqlite3* conn = self->_pool.acquire();
             sqlite3_stmt* stmt = nullptr;
             QueryResult result;
 
-            auto releaseConn = [this, conn]() { _pool.release(conn); };
+            auto releaseConn = [self, conn]() { self->_pool.release(conn); };
             auto finalizeStmt = [&stmt]() {
                 if (stmt != nullptr) {
                     sqlite3_finalize(stmt);
@@ -189,7 +190,7 @@ class SqliteClient final : public DatabaseClient {
 #endif
 
 #if GERUEST_HAS_LIBPQ
-class PostgresClient final : public DatabaseClient {
+class PostgresClient final : public std::enable_shared_from_this<PostgresClient>, public DatabaseClient {
    public:
     PostgresClient(const PostgresConfig& config, const CommonConfig& common)
         : _executor(std::max<std::size_t>(common.poolSize, 1)) {
@@ -225,9 +226,10 @@ class PostgresClient final : public DatabaseClient {
 
     boost::asio::awaitable<QueryResult> queryAsync(std::string sql,
                                                    std::vector<BindValue> params) override {
-        co_return co_await _executor.run([this, sql = std::move(sql), params = std::move(params)]() {
-            PGconn* conn = _pool.acquire();
-            auto releaseConn = [this, conn]() { _pool.release(conn); };
+        std::shared_ptr<PostgresClient> self = shared_from_this();
+        co_return co_await _executor.run([self = std::move(self), sql = std::move(sql), params = std::move(params)]() {
+            PGconn* conn = self->_pool.acquire();
+            auto releaseConn = [self, conn]() { self->_pool.release(conn); };
 
             std::vector<std::string> paramStorage;
             std::vector<const char*> values;
