@@ -15,6 +15,7 @@ Welcome to the Geruest documentation! This guide will help you get started with 
 - [**Features Overview**](FEATURES.md) - Complete feature documentation with examples
 - [**Redirects and 404**](REDIRECTS_AND_404.md) - Redirect maps, wildcard redirects, and custom 404 pages
 - [**Data Classes**](DATA_CLASSES.md) - HTTPRequest, HTTPResponse, JSONParser API reference
+- [**Database Usage**](DATABASE.md) - Async DB setup and route usage (PostgreSQL/SQLite)
 
 ### Template System
 
