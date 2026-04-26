@@ -52,7 +52,8 @@ enum class LogLevel {
 };
 
 using RouteHandler = std::function<HTTPResponse(const HTTPRequest&)>;
-using AsyncRouteHandler = std::function<boost::asio::awaitable<HTTPResponse>(const HTTPRequest&)>;
+using AsyncResponse = boost::asio::awaitable<HTTPResponse>;
+using AsyncRouteHandler = std::function<AsyncResponse(const HTTPRequest&)>;
 
 // class with the server data
 class ServerData {
