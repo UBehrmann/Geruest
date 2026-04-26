@@ -38,6 +38,11 @@ sudo make install
 
 ## Quick Start
 
+Route choice:
+
+- `addRoute(...)`: sync handler (`HTTPResponse` return). Use for static/simple API endpoints without `co_await`.
+- `addRouteAsync(...)`: coroutine handler (`geruest::AsyncResponse` return). Use for DB or other awaitable operations.
+
 **Minimal Server (main.cpp):**
 ```cpp
 #include <Geruest.hpp>

@@ -565,13 +565,13 @@ boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
         co_return;
     }
 
-    // Priority rule 3+4: normal routes (exact route, then wildcard route)
+    // Priority rule 3+4: normal sync routes (exact route, then wildcard route)
     auto routeHandler = serverData.findMatchingRoute(request->getPathString());
     if (routeHandler) {
         // co_await is not allowed inside catch clauses; build the body first, send once.
         const char* failLog = nullptr;
         try {
-            HTTPResponse response = co_await (*routeHandler)(*request);
+            HTTPResponse response = (*routeHandler)(*request);
 
             const std::string& _st = response.getStatus();
             if (!_st.empty()) {
@@ -608,17 +608,60 @@ boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
         }
 
         co_return;
-
-    } else {
-        std::string path = request->getPathString();
-
-        // Here html logic should be added
-        std::string extension = getExtension(path);
-        std::string content_type = getContentType(extension);
-        std::string contentPath = buildPath(path, extension, request);
-
-        co_await sendFileAsync(content_type, contentPath, request);
     }
+
+    // Priority rule 5+6: async routes (exact route, then wildcard route)
+    auto asyncRouteHandler = serverData.findMatchingAsyncRoute(request->getPathString());
+    if (asyncRouteHandler) {
+        const char* failLog = nullptr;
+        try {
+            HTTPResponse response = co_await (*asyncRouteHandler)(*request);
+
+            const std::string& _st = response.getStatus();
+            if (!_st.empty()) {
+                if (_st[0] == '4') {
+                    serverData.record4xx();
+                } else if (_st[0] == '5') {
+                    serverData.record5xx();
+                }
+            }
+
+            response.serializeTo(responseScratch_);
+            failLog = "Failed to send async route response for: ";
+        } catch (const method_not_allowed& e) {
+            HTTPResponse response = responseMethodNotAllowed(request, e.allowMethods());
+            serverData.record4xx();
+            response.serializeTo(responseScratch_);
+            failLog = "Failed to send 405 for: ";
+        } catch (const std::exception& e) {
+            sendToLoggerError(std::string("Exception in async route handler: ") + e.what());
+            HTTPResponse response = responseInternalServerError(request);
+            serverData.record5xx();
+            response.serializeTo(responseScratch_);
+            failLog = "Failed to send 500 for: ";
+        } catch (...) {
+            sendToLoggerError("Unknown exception in async route handler");
+            HTTPResponse response = responseInternalServerError(request);
+            serverData.record5xx();
+            response.serializeTo(responseScratch_);
+            failLog = "Failed to send 500 for: ";
+        }
+
+        if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
+            sendToLoggerError(std::string(failLog) + request->getPathString());
+        }
+
+        co_return;
+    }
+
+    std::string path = request->getPathString();
+
+    // Here html logic should be added
+    std::string extension = getExtension(path);
+    std::string content_type = getContentType(extension);
+    std::string contentPath = buildPath(path, extension, request);
+
+    co_await sendFileAsync(content_type, contentPath, request);
     co_return;
 }
 

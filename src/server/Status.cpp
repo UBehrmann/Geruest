@@ -228,7 +228,7 @@ void Geruest::enableStatus(const std::string& token) {
     _statusToken  = token;
     _statusActive = true;
 
-    serverData.addRoute("/status", [this, token](const HTTPRequest& req) -> boost::asio::awaitable<HTTPResponse> {
+    serverData.addRoute("/status", [this, token](const HTTPRequest& req) -> HTTPResponse {
         if (!serverData.isDevMode()) {
             const std::string authHeader  = req.getHeader("authorization");
             const std::string queryToken  = req.getParam("token");
@@ -240,7 +240,7 @@ void Geruest::enableStatus(const std::string& token) {
                 resp.setHeader("WWW-Authenticate", "Bearer realm=\"status\"");
                 resp.setHeader("Content-Type", "application/json");
                 resp.setBody(R"({"error":"Unauthorized"})");
-                co_return resp;
+                return resp;
             }
         }
 
@@ -376,7 +376,7 @@ void Geruest::enableStatus(const std::string& token) {
         resp.setHeader("Content-Type",  "application/json");
         resp.setHeader("Cache-Control", "no-store");
         resp.setBody(root.toString());
-        co_return resp;
+        return resp;
     });
 
     sendToLogger("Status endpoint activated at /status (token-protected)");

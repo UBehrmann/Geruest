@@ -90,6 +90,10 @@ void Geruest::addRoute(const std::string& path, RouteHandler routeHandler) {
     serverData.addRoute(path, std::move(routeHandler));
 }
 
+void Geruest::addRouteAsync(const std::string& path, AsyncRouteHandler routeHandler) {
+    serverData.addRouteAsync(path, std::move(routeHandler));
+}
+
 void Geruest::setDatabaseBackend(DatabaseBackend backend) {
     _databaseBackend = backend;
     _configFlags.databaseBackendSet = true;

@@ -51,7 +51,8 @@ enum class LogLevel {
     Debug = 4
 };
 
-using RouteHandler = std::function<boost::asio::awaitable<HTTPResponse>(const HTTPRequest&)>;
+using RouteHandler = std::function<HTTPResponse(const HTTPRequest&)>;
+using AsyncRouteHandler = std::function<boost::asio::awaitable<HTTPResponse>(const HTTPRequest&)>;
 
 // class with the server data
 class ServerData {
@@ -63,6 +64,8 @@ class ServerData {
 
     std::unordered_map<std::string, RouteHandler> _routes;
     std::unordered_map<std::string, RouteHandler> _wildcardRoutes;
+    std::unordered_map<std::string, AsyncRouteHandler> _asyncRoutes;
+    std::unordered_map<std::string, AsyncRouteHandler> _asyncWildcardRoutes;
     std::unordered_map<std::string, RedirectRule> _redirects;
     std::unordered_map<std::string, RedirectRule> _wildcardRedirects;
     std::string _root;
@@ -326,6 +329,8 @@ class ServerData {
     ServerData(const ServerData& other)
         : _routes(other._routes),
           _wildcardRoutes(other._wildcardRoutes),
+          _asyncRoutes(other._asyncRoutes),
+          _asyncWildcardRoutes(other._asyncWildcardRoutes),
           _redirects(other._redirects),
           _wildcardRedirects(other._wildcardRedirects),
           _root(other._root),
@@ -358,6 +363,8 @@ class ServerData {
         if (this != &other) {
             _routes = other._routes;
             _wildcardRoutes = other._wildcardRoutes;
+            _asyncRoutes = other._asyncRoutes;
+            _asyncWildcardRoutes = other._asyncWildcardRoutes;
             _redirects = other._redirects;
             _wildcardRedirects = other._wildcardRedirects;
             _root = other._root;
@@ -413,6 +420,14 @@ class ServerData {
             _wildcardRoutes[path] = std::move(routeHandler);
         } else {
             _routes[path] = std::move(routeHandler);
+        }
+    }
+
+    void addRouteAsync(const std::string& path, AsyncRouteHandler routeHandler) {
+        if (path.find('*') != std::string::npos) {
+            _asyncWildcardRoutes[path] = std::move(routeHandler);
+        } else {
+            _asyncRoutes[path] = std::move(routeHandler);
         }
     }
 
@@ -494,6 +509,19 @@ class ServerData {
             }
         }
 
+        return std::nullopt;
+    }
+
+    std::optional<AsyncRouteHandler> findMatchingAsyncRoute(const std::string& path) const {
+        auto exactMatch = _asyncRoutes.find(path);
+        if (exactMatch != _asyncRoutes.end()) {
+            return exactMatch->second;
+        }
+        for (const auto& route : _asyncWildcardRoutes) {
+            if (matchesWildcardPattern(route.first, path)) {
+                return route.second;
+            }
+        }
         return std::nullopt;
     }
 

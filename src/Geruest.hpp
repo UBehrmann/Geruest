@@ -63,6 +63,7 @@ class Geruest {
     void setHostname(const std::string& hostname);
 
     void addRoute(const std::string& path, RouteHandler handler);
+    void addRouteAsync(const std::string& path, AsyncRouteHandler handler);
     void setDatabaseBackend(DatabaseBackend backend);
     void setDatabasePoolSize(size_t size);
     void setSqliteExecutorThreadCount(size_t count);

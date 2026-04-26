@@ -184,6 +184,7 @@ server.addRoute("/download/*", [&](const HTTPRequest& req) {
     }
 
     // open and serve filePath ...
+    return responseOK();
 });
 ```
 

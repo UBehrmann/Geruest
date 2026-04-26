@@ -4,7 +4,7 @@
 
 | Feature | Description | Key Method/Header |
 |---------|-------------|-------------------|
-| **Routing** | Exact paths, wildcards (`/api/*`, `/users/*/profile`) | `addRoute()` |
+| **Routing** | Sync (`addRoute`) and async (`addRouteAsync`) handlers with exact/wildcard paths | `addRoute()`, `addRouteAsync()` |
 | **Static Files** | Auto-serve files from root directories | `addRoot()` |
 | **Templates** | Component injection `{file}`, translations `[key]` | `ContentBuilder` |
 | **Asset Merging** | Combine CSS/JS files from file maps | `AssetMerger` |
@@ -29,6 +29,8 @@ The HTTP server is built on **Boost.Asio**:
 
 ## Routing
 
+Use `addRoute` for sync handlers and `addRouteAsync` when you need `co_await` (DB/network/waitable work).
+
 ```cpp
 // Exact match (O(1) lookup)
 server.addRoute("/api/users", [](const HTTPRequest& req) {
@@ -38,8 +40,27 @@ server.addRoute("/api/users", [](const HTTPRequest& req) {
 });
 
 // Wildcards (O(n) pattern matching)
+geruest::RouteHandler routeHandler = [](const HTTPRequest& req) {
+    (void)req;
+    return responseOK();
+};
+geruest::RouteHandler apiHandler = [](const HTTPRequest& req) {
+    (void)req;
+    return responseOK();
+};
 server.addRoute("/users/*/profile", routeHandler);  // /users/123/profile
 server.addRoute("/api/*", apiHandler);              // /api/anything
+
+// Async route for DB calls
+server.addRouteAsync("/api/users/db", [](const HTTPRequest& req) -> geruest::AsyncResponse {
+    auto db = req.database();
+    if (!db) {
+        co_return responseInternalServerError();
+    }
+    auto rows = co_await db->queryAsync("SELECT id FROM users", {});
+    (void)rows;
+    co_return responseOK();
+});
 ```
 
 ## Static File Serving
@@ -225,6 +246,7 @@ server.addRedirects({
 server.addRoute("/api/*", [](const HTTPRequest& req) {
     sendToLoggerAPI(req.getMethod() + " " + req.getPath());
     // ... handle request ...
+    return responseOK();
 });
 ```
 
