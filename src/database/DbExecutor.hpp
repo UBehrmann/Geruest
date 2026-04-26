@@ -2,15 +2,18 @@
 #define GERUEST_DB_EXECUTOR_HPP
 
 #include <boost/asio/awaitable.hpp>
+#include <boost/asio/post.hpp>
+#include <boost/asio/redirect_error.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include <boost/asio/thread_pool.hpp>
+#include <boost/asio/this_coro.hpp>
 #include <boost/asio/use_awaitable.hpp>
 
-#include <chrono>
-#include <future>
 #include <memory>
+#include <optional>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 namespace geruest::db {
 
@@ -31,35 +34,41 @@ class DbExecutor {
 template <typename Fn>
 auto DbExecutor::run(Fn&& fn) -> boost::asio::awaitable<typename std::invoke_result_t<Fn>> {
     using ReturnType = typename std::invoke_result_t<Fn>;
+    using ResultStorage = std::conditional_t<std::is_void_v<ReturnType>, std::monostate, ReturnType>;
+    auto ex = co_await boost::asio::this_coro::executor;
+    auto error = std::make_shared<std::exception_ptr>();
+    auto result = std::make_shared<std::optional<ResultStorage>>();
 
-    auto promise = std::make_shared<std::promise<ReturnType>>();
-    auto future = promise->get_future();
+    auto done = std::make_shared<boost::asio::steady_timer>(ex);
+    done->expires_at((boost::asio::steady_timer::time_point::max)());
 
-    boost::asio::post(_pool, [promise, task = std::forward<Fn>(fn)]() mutable {
+    boost::asio::post(_pool, [ex, task = std::forward<Fn>(fn), error, result, done]() mutable {
         try {
             if constexpr (std::is_void_v<ReturnType>) {
                 task();
-                promise->set_value();
             } else {
-                promise->set_value(task());
+                result->emplace(task());
             }
         } catch (...) {
-            promise->set_exception(std::current_exception());
+            *error = std::current_exception();
         }
+
+        boost::asio::post(ex, [done]() mutable {
+            done->cancel();
+        });
     });
 
-    auto ex = co_await boost::asio::this_coro::executor;
-    boost::asio::steady_timer timer(ex);
-    while (future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-        timer.expires_after(std::chrono::milliseconds(1));
-        co_await timer.async_wait(boost::asio::use_awaitable);
+    boost::system::error_code waitEc;
+    co_await done->async_wait(boost::asio::redirect_error(boost::asio::use_awaitable, waitEc));
+
+    if (*error) {
+        std::rethrow_exception(*error);
     }
 
     if constexpr (std::is_void_v<ReturnType>) {
-        future.get();
         co_return;
     } else {
-        co_return future.get();
+        co_return std::move(**result);
     }
 }
 
