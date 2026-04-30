@@ -233,7 +233,22 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
         auto paramsPtr = std::make_shared<std::vector<BindValue>>(std::move(params));
         co_return co_await _executor.run([self = std::move(self), sqlPtr = std::move(sqlPtr), paramsPtr = std::move(paramsPtr)]() {
             PGconn* conn = self->_pool.acquire();
-            auto releaseConn = [self, conn]() { self->_pool.release(conn); };
+
+            auto resetOrReconnect = [self](PGconn* c) {
+                if (PQstatus(c) != CONNECTION_OK) {
+                    PQreset(c);
+                }
+                self->_pool.release(c);
+            };
+
+            if (PQstatus(conn) != CONNECTION_OK) {
+                PQreset(conn);
+                if (PQstatus(conn) != CONNECTION_OK) {
+                    const std::string err = PQerrorMessage(conn);
+                    self->_pool.release(conn);
+                    throw std::runtime_error("postgres connection lost: " + err);
+                }
+            }
 
             std::vector<std::string> paramStorage;
             std::vector<const char*> values;
@@ -260,7 +275,7 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
                                          values.data(), lengths.data(), formats.data(), 0);
             if (res == nullptr) {
                 const std::string err = PQerrorMessage(conn);
-                releaseConn();
+                resetOrReconnect(conn);
                 throw std::runtime_error("postgres query failed: " + err);
             }
 
@@ -268,7 +283,7 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
             if (status != PGRES_TUPLES_OK && status != PGRES_COMMAND_OK) {
                 const std::string err = PQresultErrorMessage(res);
                 PQclear(res);
-                releaseConn();
+                resetOrReconnect(conn);
                 throw std::runtime_error("postgres query failed: " + err);
             }
 
@@ -298,7 +313,7 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
                 out.affectedRows = static_cast<std::uint64_t>(std::strtoull(cmdTuples, nullptr, 10));
             }
             PQclear(res);
-            releaseConn();
+            self->_pool.release(conn);
             return out;
         });
     }
