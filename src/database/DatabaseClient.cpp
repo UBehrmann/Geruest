@@ -195,22 +195,37 @@ class SqliteClient final : public std::enable_shared_from_this<SqliteClient>, pu
 class PostgresClient final : public std::enable_shared_from_this<PostgresClient>, public DatabaseClient {
    public:
     PostgresClient(const PostgresConfig& config, const CommonConfig& common)
-        : _executor(std::max<std::size_t>(common.poolSize, 1)) {
+        : _executor(std::max<std::size_t>(common.poolSize, 1))
+        , _statementTimeoutMs(config.statementTimeoutMs) {
         const std::size_t poolSize = std::max<std::size_t>(common.poolSize, 1);
-        for (std::size_t i = 0; i < poolSize; ++i) {
-            std::ostringstream conninfo;
-            conninfo << "host=" << config.host
-                     << " port=" << config.port
-                     << " dbname=" << config.database
-                     << " user=" << config.user
-                     << " password=" << config.password
-                     << " sslmode=" << config.sslmode;
+        std::ostringstream conninfo;
+        conninfo << "host=" << config.host
+                 << " port=" << config.port
+                 << " dbname=" << config.database
+                 << " user=" << config.user
+                 << " password=" << config.password
+                 << " sslmode=" << config.sslmode
+                 << " connect_timeout=" << config.connectTimeoutSeconds;
+        if (config.tcpKeepalives) {
+            conninfo << " keepalives=1"
+                     << " keepalives_idle=" << config.keepalivesIdleSeconds
+                     << " keepalives_interval=" << config.keepalivesIntervalSeconds
+                     << " keepalives_count=" << config.keepalivesCount;
+        }
+        const std::string connStr = conninfo.str();
 
-            PGconn* conn = PQconnectdb(conninfo.str().c_str());
+        for (std::size_t i = 0; i < poolSize; ++i) {
+            PGconn* conn = PQconnectdb(connStr.c_str());
             if (PQstatus(conn) != CONNECTION_OK) {
                 const std::string err = PQerrorMessage(conn);
                 PQfinish(conn);
                 throw std::runtime_error("Failed to connect postgres: " + err);
+            }
+            if (config.statementTimeoutMs > 0) {
+                const std::string setStmt =
+                    "SET statement_timeout = " + std::to_string(config.statementTimeoutMs);
+                PGresult* res = PQexec(conn, setStmt.c_str());
+                PQclear(res);
             }
             _pool.add(conn);
             _allConnections.push_back(conn);
@@ -237,6 +252,12 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
             auto resetOrReconnect = [self](PGconn* c) {
                 if (PQstatus(c) != CONNECTION_OK) {
                     PQreset(c);
+                    if (PQstatus(c) == CONNECTION_OK && self->_statementTimeoutMs > 0) {
+                        const std::string stmt =
+                            "SET statement_timeout = " + std::to_string(self->_statementTimeoutMs);
+                        PGresult* r = PQexec(c, stmt.c_str());
+                        PQclear(r);
+                    }
                 }
                 self->_pool.release(c);
             };
@@ -247,6 +268,12 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
                     const std::string err = PQerrorMessage(conn);
                     self->_pool.release(conn);
                     throw std::runtime_error("postgres connection lost: " + err);
+                }
+                if (self->_statementTimeoutMs > 0) {
+                    const std::string stmt =
+                        "SET statement_timeout = " + std::to_string(self->_statementTimeoutMs);
+                    PGresult* r = PQexec(conn, stmt.c_str());
+                    PQclear(r);
                 }
             }
 
@@ -326,6 +353,7 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
 
    private:
     DbExecutor _executor;
+    int _statementTimeoutMs;
     SimplePool<PGconn*> _pool;
     std::vector<PGconn*> _allConnections;
 };

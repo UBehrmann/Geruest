@@ -313,6 +313,10 @@ void Geruest::loadConfig(const std::string& envFilePath) {
         _postgresConfig.user = ConfigLoader::get("POSTGRES_USER", _postgresConfig.user);
         _postgresConfig.password = ConfigLoader::get("POSTGRES_PASSWORD", _postgresConfig.password);
         _postgresConfig.sslmode = ConfigLoader::get("POSTGRES_SSLMODE", _postgresConfig.sslmode);
+        _postgresConfig.connectTimeoutSeconds =
+            ConfigLoader::getInt("POSTGRES_CONNECT_TIMEOUT", _postgresConfig.connectTimeoutSeconds);
+        _postgresConfig.statementTimeoutMs =
+            ConfigLoader::getInt("POSTGRES_STATEMENT_TIMEOUT_MS", _postgresConfig.statementTimeoutMs);
     }
 #endif
 

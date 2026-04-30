@@ -31,6 +31,12 @@ struct PostgresConfig {
     std::string user;
     std::string password;
     std::string sslmode = "prefer";
+    int connectTimeoutSeconds = 5;
+    int statementTimeoutMs = 30000;
+    bool tcpKeepalives = true;
+    int keepalivesIdleSeconds = 60;
+    int keepalivesIntervalSeconds = 10;
+    int keepalivesCount = 3;
 };
 #endif
 
