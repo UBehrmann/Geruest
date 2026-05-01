@@ -226,6 +226,10 @@ if(GERUEST_HAS_SQLITE)
         ../database/DatabaseClient.cpp
         ../database/DbExecutor.cpp
     )
+    # Work around GCC 13 internal compiler error in coroutine lowering for this test TU.
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 13 AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 14)
+        set_source_files_properties(Database/DatabaseSqlite_tests.cpp PROPERTIES COMPILE_OPTIONS "-O0")
+    endif()
     target_link_libraries(DatabaseSqlite_Tests ${PLATFORM_LIBS} GTest::gtest_main SQLite::SQLite3)
     if(GERUEST_HAS_LIBPQ)
         target_link_libraries(DatabaseSqlite_Tests PostgreSQL::PostgreSQL)
