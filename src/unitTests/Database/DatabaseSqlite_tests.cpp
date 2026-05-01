@@ -26,9 +26,13 @@ boost::asio::awaitable<void> createUsersTable(const std::shared_ptr<geruest::db:
     co_return;
 }
 
-boost::asio::awaitable<void> insertUser(const std::shared_ptr<geruest::db::DatabaseClient>& client,
-                                        std::string name) {
-    co_await client->executeAsync("INSERT INTO users(name) VALUES(?)", {std::move(name)});
+boost::asio::awaitable<void> insertAlice(const std::shared_ptr<geruest::db::DatabaseClient>& client) {
+    co_await client->executeAsync("INSERT INTO users(name) VALUES('alice')", {});
+    co_return;
+}
+
+boost::asio::awaitable<void> insertBob(const std::shared_ptr<geruest::db::DatabaseClient>& client) {
+    co_await client->executeAsync("INSERT INTO users(name) VALUES('bob')", {});
     co_return;
 }
 
@@ -60,8 +64,8 @@ TEST(DatabaseSqlite, QueryAndConcurrentInsert) {
     setupFuture.get();
 
     io.restart();
-    auto f1 = boost::asio::co_spawn(io, insertUser(client, "alice"), boost::asio::use_future);
-    auto f2 = boost::asio::co_spawn(io, insertUser(client, "bob"), boost::asio::use_future);
+    auto f1 = boost::asio::co_spawn(io, insertAlice(client), boost::asio::use_future);
+    auto f2 = boost::asio::co_spawn(io, insertBob(client), boost::asio::use_future);
     io.run();
     f1.get();
     f2.get();
