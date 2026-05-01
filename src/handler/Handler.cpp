@@ -655,6 +655,9 @@ boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
     }
 
     std::string path = request->getPathString();
+    if (path.rfind("/api/", 0) == 0) {
+        sendToLoggerError("No API route matched. path=" + path + " request_line=" + request->getRawRequestLine());
+    }
 
     // Here html logic should be added
     std::string extension = getExtension(path);
