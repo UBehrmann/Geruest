@@ -101,10 +101,10 @@ class SqliteClient final : public std::enable_shared_from_this<SqliteClient>, pu
 
     boost::asio::awaitable<QueryResult> queryAsync(std::string sql,
                                                    std::vector<BindValue> params) override {
-        std::shared_ptr<SqliteClient> self = shared_from_this();
+        auto self = shared_from_this();
         auto sqlPtr = std::make_shared<std::string>(std::move(sql));
         auto paramsPtr = std::make_shared<std::vector<BindValue>>(std::move(params));
-        co_return co_await _executor.run([self = std::move(self), sqlPtr = std::move(sqlPtr), paramsPtr = std::move(paramsPtr)]() {
+        return _executor.run([self = std::move(self), sqlPtr = std::move(sqlPtr), paramsPtr = std::move(paramsPtr)]() {
             sqlite3* conn = self->_pool.acquire();
             sqlite3_stmt* stmt = nullptr;
             QueryResult result;
@@ -243,10 +243,10 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
 
     boost::asio::awaitable<QueryResult> queryAsync(std::string sql,
                                                    std::vector<BindValue> params) override {
-        std::shared_ptr<PostgresClient> self = shared_from_this();
+        auto self = shared_from_this();
         auto sqlPtr = std::make_shared<std::string>(std::move(sql));
         auto paramsPtr = std::make_shared<std::vector<BindValue>>(std::move(params));
-        co_return co_await _executor.run([self = std::move(self), sqlPtr = std::move(sqlPtr), paramsPtr = std::move(paramsPtr)]() {
+        return _executor.run([self = std::move(self), sqlPtr = std::move(sqlPtr), paramsPtr = std::move(paramsPtr)]() {
             PGconn* conn = self->_pool.acquire();
 
             auto resetOrReconnect = [self](PGconn* c) {
