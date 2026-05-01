@@ -11,9 +11,7 @@ cd Geruest && mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Debug && make -j$(nproc) && sudo make install
 ```
 
-**Windows (MSVC):** `cmake .. -A x64 && cmake --build . --config Release`  
-**Windows (MinGW):** `cmake .. -G "MinGW Makefiles" && cmake --build .`  
-**Visual Studio:** File → Open → CMake → Build (Ctrl+Shift+B)
+Geruest targets Linux/Unix only.
 
 ## Docker
 
@@ -112,20 +110,13 @@ server {
 }
 ```
 
-**Windows Service (NSSM):**
-```powershell
-nssm install AppName "C:\path\to\myapp.exe"
-nssm set AppName AppDirectory "C:\path\to"
-nssm start AppName
-```
-
 ## Configuration
 
 ```cpp
 server.setPort(8080);                         // Default: 8080
 server.setHostname("0.0.0.0");                // Listen all interfaces
-server.setWorkerThreadCount(16);              // Default: cores × 2
-server.setMaxQueueSize(1000);                 // Default: 500
+server.setWorkerThreadCount(16);              // Default: cores × 2 (io_context worker threads)
+server.setMaxQueueSize(1000);                 // Default: 500 (max concurrent client sessions)
 server.setAvailableLanguages({"en", "de"});   // First is default
 server.setMergeAssets(true);
 server.addRoot("/path/to/website");
@@ -135,10 +126,9 @@ const char* port = std::getenv("PORT");
 server.setPort(port ? std::atoi(port) : 8080);
 ```
 
-**Threading Profiles:** General (cores×2, queue 500) | High-traffic (32, 2000) | Low-resource (4, 100)
+**Threading profiles:** General (cores×2, max 500 sessions) | High-traffic (32 threads, 2000 sessions) | Low-resource (4 threads, 100 sessions)
 
 ## Platform Notes
 
 **Linux:** Ports <1024 need root. Increase limits: `ulimit -n 65535`. TCP tuning: `/etc/sysctl.d/99-app.conf`
-**Windows:** Allow port in firewall. `Ctrl+C` graceful shutdown.
-**macOS:** Similar to Linux.
+**Unix-like systems:** Similar to Linux guidance above.

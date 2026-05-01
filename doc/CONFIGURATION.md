@@ -18,8 +18,24 @@ Priority-based configuration with `.env` files and programmatic overrides.
 PORT=8080
 HOSTNAME=0.0.0.0
 WORKER_THREADS=16
+# Max simultaneous TCP/HTTP sessions (not a pre-accept backlog queue)
 MAX_QUEUE_SIZE=500
+# Keep-alive request cap per connection (0 = unlimited)
+MAX_REQUESTS_PER_CONNECTION=1000
 LOG_LEVEL=error
+
+# Database
+DATABASE_BACKEND=none
+DATABASE_POOL_MAX=4
+SQLITE_PATH=./geruest.db
+SQLITE_BUSY_TIMEOUT_MS=5000
+SQLITE_DB_EXECUTOR_THREADS=1
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=app
+POSTGRES_USER=app
+POSTGRES_PASSWORD=secret
+POSTGRES_SSLMODE=prefer
 
 # Feature Flags
 DEV_MODE=false
@@ -59,7 +75,8 @@ int port = geruest::ConfigLoader::getInt("PORT", 8080);
 float webpQuality = geruest::ConfigLoader::getFloat("WEBP_QUALITY", 75.0);
 bool devMode = geruest::ConfigLoader::getBool("DEV_MODE", false);
 std::string host = geruest::ConfigLoader::get("HOSTNAME", "localhost");
-size_t queueSize = geruest::ConfigLoader::getSizeT("MAX_QUEUE_SIZE", 500);
+size_t maxConcurrentSessions = geruest::ConfigLoader::getSizeT("MAX_QUEUE_SIZE", 500);
+size_t maxRequestsPerConnection = geruest::ConfigLoader::getSizeT("MAX_REQUESTS_PER_CONNECTION", 1000);
 
 // Check existence
 bool hasKey = geruest::ConfigLoader::has("SMTP_SERVER");
@@ -70,19 +87,38 @@ geruest::ConfigLoader::clear();
 
 ## Common Patterns
 
+### Database backend selection
+
+`DATABASE_BACKEND` selects runtime backend when both are compiled: `postgres`, `sqlite`, or `none`.
+Selection precedence is:
+
+1. explicit code setter (`setDatabaseBackend(...)`)
+2. environment /.env `DATABASE_BACKEND`
+3. default `none`
+
+If selected backend is not compiled in (`GERUEST_HAS_LIBPQ=0` or `GERUEST_HAS_SQLITE=0`), startup fails fast.
+
 ### Server Configuration
+
+**`WORKER_THREADS`** controls how many threads (in addition to the thread that called `start()`) run **`boost::asio::io_context::run()`** for async I/O. **`MAX_QUEUE_SIZE`** is the **maximum number of concurrent client TCP sessions** the process will serve; extra connections are closed and appear in `/status` as `queue.rejections_total`. The JSON field `queue.current_size` is the current active session count. **`MAX_REQUESTS_PER_CONNECTION`** controls how many HTTP requests one keep-alive connection can serve before it is closed (`0` means unlimited, default `1000`).
 
 ```cpp
 using namespace geruest;
 
+Geruest server;
+
 int port = ConfigLoader::getInt("PORT", 8080);
 std::string host = ConfigLoader::get("HOSTNAME", "0.0.0.0");
 size_t workers = ConfigLoader::getSizeT("WORKER_THREADS", 16);
+size_t maxSessions = ConfigLoader::getSizeT("MAX_QUEUE_SIZE", 500);
+size_t maxRequestsPerConnection = ConfigLoader::getSizeT("MAX_REQUESTS_PER_CONNECTION", 1000);
 
 // Option 1: Manual configuration
 server.setPort(port);
 server.setHostname(host);
 server.setWorkerThreadCount(workers);
+server.setMaxQueueSize(maxSessions);
+server.setMaxRequestsPerConnection(maxRequestsPerConnection);
 
 // Option 2: Auto-load from .env (only loads unset values)
 // This reads all Geruest-specific keys automatically

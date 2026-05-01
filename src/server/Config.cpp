@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <stdexcept>
 
 namespace geruest {
 
@@ -97,7 +98,41 @@ void Geruest::loadConfig(const std::string& envFilePath) {
         size_t configQueueSize = ConfigLoader::getSizeT("MAX_QUEUE_SIZE", _maxQueueSize);
         if (configQueueSize > 0 && configQueueSize != _maxQueueSize) {
             _maxQueueSize = configQueueSize;
-            sendToLogger("MAX_QUEUE_SIZE loaded from config: " + std::to_string(_maxQueueSize));
+            sendToLogger("MAX_QUEUE_SIZE (max concurrent sessions) loaded from config: " + std::to_string(_maxQueueSize));
+        }
+    }
+
+    // MAX_REQUESTS_PER_CONNECTION (0 = unlimited)
+    if (!_configFlags.maxRequestsPerConnectionSet) {
+        const size_t currentValue = serverData.getMaxRequestsPerConnection();
+        const size_t configValue = ConfigLoader::getSizeT("MAX_REQUESTS_PER_CONNECTION", currentValue);
+        if (configValue != currentValue) {
+            serverData.setMaxRequestsPerConnection(configValue);
+            if (configValue == 0) {
+                sendToLogger("MAX_REQUESTS_PER_CONNECTION loaded from config: unlimited");
+            } else {
+                sendToLogger("MAX_REQUESTS_PER_CONNECTION loaded from config: " + std::to_string(configValue));
+            }
+        }
+    }
+
+    // TEXT_RESPONSE_CACHE_MAX_ENTRY_BYTES (0 = do not cache new entries)
+    if (!_configFlags.textResponseCacheMaxEntryBytesSet) {
+        const size_t currentValue = serverData.getTextResponseCacheMaxEntryBytes();
+        const size_t configValue = ConfigLoader::getSizeT("TEXT_RESPONSE_CACHE_MAX_ENTRY_BYTES", currentValue);
+        if (configValue != currentValue) {
+            serverData.setTextResponseCacheMaxEntryBytes(configValue);
+            sendToLogger("TEXT_RESPONSE_CACHE_MAX_ENTRY_BYTES loaded from config: " + std::to_string(configValue));
+        }
+    }
+
+    // TEXT_RESPONSE_CACHE_MAX_TOTAL_BYTES (0 = do not cache new entries)
+    if (!_configFlags.textResponseCacheMaxTotalBytesSet) {
+        const size_t currentValue = serverData.getTextResponseCacheMaxTotalBytes();
+        const size_t configValue = ConfigLoader::getSizeT("TEXT_RESPONSE_CACHE_MAX_TOTAL_BYTES", currentValue);
+        if (configValue != currentValue) {
+            serverData.setTextResponseCacheMaxTotalBytes(configValue);
+            sendToLogger("TEXT_RESPONSE_CACHE_MAX_TOTAL_BYTES loaded from config: " + std::to_string(configValue));
         }
     }
     
@@ -249,7 +284,97 @@ void Geruest::loadConfig(const std::string& envFilePath) {
         }
     }
 
+    if (!_configFlags.databaseBackendSet) {
+        std::string backend = ConfigLoader::get("DATABASE_BACKEND", "none");
+        std::transform(backend.begin(), backend.end(), backend.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (backend == "postgres") {
+            _databaseBackend = DatabaseBackend::Postgres;
+        } else if (backend == "sqlite") {
+            _databaseBackend = DatabaseBackend::Sqlite;
+        } else {
+            _databaseBackend = DatabaseBackend::None;
+        }
+    }
+
+    if (!_configFlags.databasePoolSizeSet) {
+        _dbCommonConfig.poolSize = ConfigLoader::getSizeT("DATABASE_POOL_MAX", _dbCommonConfig.poolSize);
+    }
+    if (!_configFlags.sqliteExecutorThreadsSet) {
+        _dbCommonConfig.sqliteExecutorThreads =
+            ConfigLoader::getSizeT("SQLITE_DB_EXECUTOR_THREADS", _dbCommonConfig.sqliteExecutorThreads);
+    }
+
+#if GERUEST_HAS_LIBPQ
+    if (!_configFlags.postgresConfigSet) {
+        _postgresConfig.host = ConfigLoader::get("POSTGRES_HOST", _postgresConfig.host);
+        _postgresConfig.port = ConfigLoader::getInt("POSTGRES_PORT", _postgresConfig.port);
+        _postgresConfig.database = ConfigLoader::get("POSTGRES_DB", _postgresConfig.database);
+        _postgresConfig.user = ConfigLoader::get("POSTGRES_USER", _postgresConfig.user);
+        _postgresConfig.password = ConfigLoader::get("POSTGRES_PASSWORD", _postgresConfig.password);
+        _postgresConfig.sslmode = ConfigLoader::get("POSTGRES_SSLMODE", _postgresConfig.sslmode);
+        _postgresConfig.connectTimeoutSeconds =
+            ConfigLoader::getInt("POSTGRES_CONNECT_TIMEOUT", _postgresConfig.connectTimeoutSeconds);
+        _postgresConfig.statementTimeoutMs =
+            ConfigLoader::getInt("POSTGRES_STATEMENT_TIMEOUT_MS", _postgresConfig.statementTimeoutMs);
+        const int pipeBatch = ConfigLoader::getInt("POSTGRES_PIPELINE_MAX_BATCH", static_cast<int>(_postgresConfig.maxPipelineBatch));
+        if (pipeBatch < 1) {
+            _postgresConfig.maxPipelineBatch = 1;
+        } else if (pipeBatch > 256) {
+            _postgresConfig.maxPipelineBatch = 256;
+        } else {
+            _postgresConfig.maxPipelineBatch = static_cast<unsigned>(pipeBatch);
+        }
+    }
+#endif
+
+#if GERUEST_HAS_SQLITE
+    if (!_configFlags.sqliteConfigSet) {
+        _sqliteConfig.path = ConfigLoader::get("SQLITE_PATH", _sqliteConfig.path);
+        _sqliteConfig.busyTimeoutMs = ConfigLoader::getInt("SQLITE_BUSY_TIMEOUT_MS", _sqliteConfig.busyTimeoutMs);
+    }
+#endif
+
+    initializeDatabaseFromConfig();
+
     sendToLogger("Configuration loading complete");
+}
+
+void Geruest::initializeDatabaseFromConfig() {
+    serverData.setDatabaseClient(nullptr);
+
+    if (_databaseBackend == DatabaseBackend::None) {
+        return;
+    }
+
+    if (_databaseBackend == DatabaseBackend::Postgres) {
+#if GERUEST_HAS_LIBPQ
+        if (_postgresConfig.database.empty() || _postgresConfig.user.empty()) {
+            sendToLoggerError("PostgreSQL selected but configuration incomplete (POSTGRES_DB/POSTGRES_USER)");
+            return;
+        }
+        serverData.setDatabaseClient(db::createPostgresClient(_postgresConfig, _dbCommonConfig));
+        sendToLogger("PostgreSQL backend initialized with pool size " + std::to_string(_dbCommonConfig.poolSize));
+        return;
+#else
+        throw std::runtime_error("DATABASE_BACKEND=postgres selected but Geruest was built without PostgreSQL support");
+#endif
+    }
+
+    if (_databaseBackend == DatabaseBackend::Sqlite) {
+#if GERUEST_HAS_SQLITE
+        if (_sqliteConfig.path.empty()) {
+            sendToLoggerError("SQLite selected but SQLITE_PATH is empty");
+            return;
+        }
+        serverData.setDatabaseClient(db::createSqliteClient(_sqliteConfig, _dbCommonConfig));
+        sendToLogger("SQLite backend initialized with pool size " + std::to_string(_dbCommonConfig.poolSize)
+                     + " and executor threads " + std::to_string(_dbCommonConfig.sqliteExecutorThreads));
+        return;
+#else
+        throw std::runtime_error("DATABASE_BACKEND=sqlite selected but Geruest was built without SQLite support");
+#endif
+    }
 }
 
 }  // namespace geruest

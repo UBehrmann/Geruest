@@ -15,11 +15,6 @@
 #include "Geruest.hpp"
 #include "builders/WebPConverter.hpp"
 
-#ifdef _WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#endif
-
 #include <fstream>
 #include <filesystem>
 #include <iostream>
@@ -42,14 +37,6 @@ Geruest::Geruest() {
 
     std::cout << "Geruest Framework v" << getVersion() << std::endl;
 
-#ifdef _WIN32
-    WSADATA wsaData;
-    int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
-    if (result != 0) {
-        sendToLoggerError("WSAStartup failed: " + std::to_string(result));
-        exit(EXIT_FAILURE);
-    }
-#endif
 }
 
 Geruest::~Geruest() {
@@ -59,12 +46,6 @@ Geruest::~Geruest() {
     }
     stopWorkers();
 
-#ifdef _WIN32
-    if (server_fd != INVALID_SOCKET) closesocket(server_fd);
-    WSACleanup();
-#else
-    if (server_fd >= 0) close(server_fd);
-#endif
     sendToLogger("Server closed.");
 }
 
@@ -108,6 +89,47 @@ void Geruest::setStatusPersistencePath(std::string path) { _statusPersistencePat
 void Geruest::addRoute(const std::string& path, RouteHandler routeHandler) {
     serverData.addRoute(path, std::move(routeHandler));
 }
+
+void Geruest::addRouteAsync(const std::string& path, AsyncRouteHandler routeHandler) {
+    serverData.addRouteAsync(path, std::move(routeHandler));
+}
+
+void Geruest::setDatabaseBackend(DatabaseBackend backend) {
+    _databaseBackend = backend;
+    _configFlags.databaseBackendSet = true;
+}
+
+void Geruest::setDatabasePoolSize(size_t size) {
+    if (size == 0) {
+        sendToLoggerError("Database pool size must be at least 1");
+        return;
+    }
+    _dbCommonConfig.poolSize = size;
+    _configFlags.databasePoolSizeSet = true;
+}
+
+void Geruest::setSqliteExecutorThreadCount(size_t count) {
+    if (count == 0) {
+        sendToLoggerError("SQLite executor thread count must be at least 1");
+        return;
+    }
+    _dbCommonConfig.sqliteExecutorThreads = count;
+    _configFlags.sqliteExecutorThreadsSet = true;
+}
+
+#if GERUEST_HAS_LIBPQ
+void Geruest::configurePostgres(const db::PostgresConfig& config) {
+    _postgresConfig = config;
+    _configFlags.postgresConfigSet = true;
+}
+#endif
+
+#if GERUEST_HAS_SQLITE
+void Geruest::configureSqlite(const db::SqliteConfig& config) {
+    _sqliteConfig = config;
+    _configFlags.sqliteConfigSet = true;
+}
+#endif
 
 void Geruest::addRedirect(const std::string& from, const std::string& to, int status) {
     if (serverData.addRedirect(from, to, status)) {
@@ -283,7 +305,41 @@ void Geruest::setMaxQueueSize(size_t size) {
     if (size == 0) { sendToLoggerError("Queue size must be at least 1, setting to 1"); _maxQueueSize = 1; _configFlags.maxQueueSizeSet = true; return; }
     _maxQueueSize = size;
     _configFlags.maxQueueSizeSet = true;
-    sendToLogger("Maximum queue size set to: " + std::to_string(_maxQueueSize));
+    sendToLogger("Maximum concurrent sessions set to: " + std::to_string(_maxQueueSize));
+}
+
+void Geruest::setMaxRequestsPerConnection(size_t count) {
+    if (running.load(std::memory_order_relaxed) || _workersRunning.load(std::memory_order_relaxed)) {
+        sendToLoggerError("Cannot change max requests per connection while server is running");
+        return;
+    }
+    serverData.setMaxRequestsPerConnection(count);
+    _configFlags.maxRequestsPerConnectionSet = true;
+    if (count == 0) {
+        sendToLogger("Max requests per connection set to unlimited");
+    } else {
+        sendToLogger("Max requests per connection set to: " + std::to_string(count));
+    }
+}
+
+void Geruest::setTextResponseCacheMaxEntryBytes(size_t bytes) {
+    if (running.load(std::memory_order_relaxed) || _workersRunning.load(std::memory_order_relaxed)) {
+        sendToLoggerError("Cannot change text response cache limits while server is running");
+        return;
+    }
+    serverData.setTextResponseCacheMaxEntryBytes(bytes);
+    _configFlags.textResponseCacheMaxEntryBytesSet = true;
+    sendToLogger("TEXT_RESPONSE_CACHE_MAX_ENTRY_BYTES set to: " + std::to_string(bytes));
+}
+
+void Geruest::setTextResponseCacheMaxTotalBytes(size_t bytes) {
+    if (running.load(std::memory_order_relaxed) || _workersRunning.load(std::memory_order_relaxed)) {
+        sendToLoggerError("Cannot change text response cache limits while server is running");
+        return;
+    }
+    serverData.setTextResponseCacheMaxTotalBytes(bytes);
+    _configFlags.textResponseCacheMaxTotalBytesSet = true;
+    sendToLogger("TEXT_RESPONSE_CACHE_MAX_TOTAL_BYTES set to: " + std::to_string(bytes));
 }
 
 // ========== Basic Authentication ==========

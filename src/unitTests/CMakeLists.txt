@@ -1,13 +1,8 @@
 cmake_minimum_required(VERSION 3.28)
 project(Geruest_Unit_Tests VERSION 0.6.2)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-# Windows-specific: Prevent min/max macros that conflict with std::min/std::max
-if(WIN32)
-    add_compile_definitions(NOMINMAX)
-endif()
 
 # Configure version header (same as main project)
 configure_file(
@@ -23,7 +18,6 @@ FetchContent_Declare(
   URL https://github.com/google/googletest/archive/refs/tags/v1.15.2.zip
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
-# For Windows: Prevent overriding the parent project's compiler/linker settings
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
@@ -46,14 +40,39 @@ else()
     add_compile_definitions(GERUEST_HAS_CURL=0)
 endif()
 
-# Platform-specific settings
-if(WIN32)
-    # Windows-specific libraries
-    set(PLATFORM_LIBS ws2_32)
+find_package(Boost 1.75 REQUIRED COMPONENTS system)
+
+option(GERUEST_ENABLE_POSTGRESQL "Enable PostgreSQL backend support in tests" OFF)
+option(GERUEST_ENABLE_SQLITE "Enable SQLite backend support in tests" OFF)
+
+set(GERUEST_HAS_LIBPQ FALSE)
+if(GERUEST_ENABLE_POSTGRESQL)
+    find_package(PostgreSQL QUIET)
+    if(PostgreSQL_FOUND)
+        set(GERUEST_HAS_LIBPQ TRUE)
+        add_compile_definitions(GERUEST_HAS_LIBPQ=1)
+    else()
+        add_compile_definitions(GERUEST_HAS_LIBPQ=0)
+    endif()
 else()
-    # Linux-specific libraries
-    set(PLATFORM_LIBS pthread)
+    add_compile_definitions(GERUEST_HAS_LIBPQ=0)
 endif()
+
+set(GERUEST_HAS_SQLITE FALSE)
+if(GERUEST_ENABLE_SQLITE)
+    find_package(SQLite3 QUIET)
+    if(SQLite3_FOUND)
+        set(GERUEST_HAS_SQLITE TRUE)
+        add_compile_definitions(GERUEST_HAS_SQLITE=1)
+    else()
+        add_compile_definitions(GERUEST_HAS_SQLITE=0)
+    endif()
+else()
+    add_compile_definitions(GERUEST_HAS_SQLITE=0)
+endif()
+
+# Linux/Unix settings
+set(PLATFORM_LIBS pthread Boost::system)
 
 # Collect all source files from the main Geruest library
 set(GERUEST_SOURCES
@@ -61,6 +80,7 @@ set(GERUEST_SOURCES
     ../server/Config.cpp
     ../server/Socket.cpp
     ../server/Workers.cpp
+    ../server/HttpSession.cpp
     ../server/Status.cpp
     ../auth/BasicAuth.cpp
     ../config/ConfigLoader.cpp
@@ -85,6 +105,13 @@ set(GERUEST_SOURCES
 # Conditionally add EmailSender if CURL is available
 if(GERUEST_HAS_CURL)
     list(APPEND GERUEST_SOURCES ../email/EmailSender.cpp)
+endif()
+
+if(GERUEST_HAS_LIBPQ OR GERUEST_HAS_SQLITE)
+    list(APPEND GERUEST_SOURCES
+        ../database/DatabaseClient.cpp
+        ../database/DbExecutor.cpp
+    )
 endif()
 
 # Create individual test executables
@@ -186,6 +213,44 @@ target_link_libraries(GeruestLifecycle_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 if(GERUEST_HAS_CURL)
     target_link_libraries(GeruestLifecycle_Tests CURL::libcurl)
 endif()
+if(GERUEST_HAS_SQLITE)
+    target_link_libraries(GeruestLifecycle_Tests SQLite::SQLite3)
+endif()
+if(GERUEST_HAS_LIBPQ)
+    target_link_libraries(GeruestLifecycle_Tests PostgreSQL::PostgreSQL)
+endif()
+
+if(GERUEST_HAS_SQLITE)
+    add_executable(DatabaseSqlite_Tests
+        Database/DatabaseSqlite_tests.cpp
+        ../database/DatabaseClient.cpp
+        ../database/DbExecutor.cpp
+    )
+    # Work around GCC 13 internal compiler error in coroutine lowering for this test TU.
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 13 AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 14)
+        set_source_files_properties(Database/DatabaseSqlite_tests.cpp PROPERTIES COMPILE_OPTIONS "-O0")
+    endif()
+    target_link_libraries(DatabaseSqlite_Tests ${PLATFORM_LIBS} GTest::gtest_main SQLite::SQLite3)
+    if(GERUEST_HAS_LIBPQ)
+        target_link_libraries(DatabaseSqlite_Tests PostgreSQL::PostgreSQL)
+    endif()
+endif()
+
+if(GERUEST_HAS_LIBPQ)
+    add_executable(DatabasePostgres_Tests
+        Database/DatabasePostgres_tests.cpp
+        ../database/DatabaseClient.cpp
+        ../database/DbExecutor.cpp
+    )
+    # Work around GCC 13 internal compiler error in coroutine lowering for this test TU.
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 13 AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 14)
+        set_source_files_properties(Database/DatabasePostgres_tests.cpp PROPERTIES COMPILE_OPTIONS "-O0")
+    endif()
+    target_link_libraries(DatabasePostgres_Tests ${PLATFORM_LIBS} GTest::gtest_main PostgreSQL::PostgreSQL)
+    if(GERUEST_HAS_SQLITE)
+        target_link_libraries(DatabasePostgres_Tests SQLite::SQLite3)
+    endif()
+endif()
 
 # Add tests to CTest using Google Test discovery
 include(GoogleTest)
@@ -201,13 +266,48 @@ gtest_discover_tests(AssetMerger_Tests)
 gtest_discover_tests(Security_Tests)
 gtest_discover_tests(ServerDataMetricsPersistence_Tests)
 gtest_discover_tests(GeruestLifecycle_Tests)
+if(GERUEST_HAS_SQLITE)
+    gtest_discover_tests(DatabaseSqlite_Tests)
+endif()
+if(GERUEST_HAS_LIBPQ)
+    gtest_discover_tests(DatabasePostgres_Tests)
+endif()
 
 # Custom target to run all tests
-add_custom_target(run_tests
-    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-    DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests ServerDataMetricsPersistence_Tests GeruestLifecycle_Tests
-    COMMENT "Running all unit tests via CTest"
-)
+if(GERUEST_HAS_LIBPQ)
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/run_tests_pg.sh" [=[#!/usr/bin/env bash
+set -e
+docker rm -f geruest_test_pg 2>/dev/null || true
+docker run -d --name geruest_test_pg \
+  -e POSTGRES_USER=geruest -e POSTGRES_PASSWORD=geruest -e POSTGRES_DB=geruest_test \
+  -p 5432:5432 postgres:16
+echo 'Waiting for PostgreSQL...'
+for i in $(seq 1 30); do
+  docker exec geruest_test_pg pg_isready -U geruest -q 2>/dev/null && break || sleep 1
+done
+export POSTGRES_HOST=localhost POSTGRES_PORT=5432
+export POSTGRES_DB=geruest_test POSTGRES_USER=geruest POSTGRES_PASSWORD=geruest
+rc=0
+"$1" --output-on-failure --verbose || rc=$?
+docker rm -f geruest_test_pg
+exit $rc
+]=])
+    add_custom_target(run_tests
+        COMMAND bash "${CMAKE_CURRENT_BINARY_DIR}/run_tests_pg.sh" "${CMAKE_CTEST_COMMAND}"
+        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests ServerDataMetricsPersistence_Tests GeruestLifecycle_Tests DatabasePostgres_Tests
+        COMMENT "Running all unit tests via CTest (with PostgreSQL container)"
+    )
+else()
+    add_custom_target(run_tests
+        COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
+        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests ServerDataMetricsPersistence_Tests GeruestLifecycle_Tests
+        COMMENT "Running all unit tests via CTest"
+    )
+endif()
+
+if(GERUEST_HAS_SQLITE)
+    add_dependencies(run_tests DatabaseSqlite_Tests)
+endif()
 
 # Copy test data files to build directory
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/JSONParser/

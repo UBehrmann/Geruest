@@ -10,24 +10,20 @@
 #ifndef GERUEST_GERUEST_HPP
 #define GERUEST_GERUEST_HPP
 
-#ifdef _WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#ifdef _MSC_VER
-#pragma comment(lib, "ws2_32.lib")
-#endif
-#else
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>  // For close
-#endif
+
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/steady_timer.hpp>
 
 #include <atomic>
-#include <condition_variable>
+#include <chrono>
 #include <cstring>  // For memset
 #include <functional>
-#include <mutex>
-#include <queue>
+#include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -36,7 +32,7 @@
 #include "data/HTTPRequest.hpp"
 #include "data/HTTPResponse.hpp"
 #include "data/ServerData.hpp"
-#include "handler/Handler.hpp"
+#include "database/DatabaseClient.hpp"
 #include "parser/JSONParser.hpp"
 #include "config/ConfigLoader.hpp"
 #if GERUEST_HAS_CURL
@@ -52,7 +48,12 @@
 
 namespace geruest {
 
+class HttpSession;
+enum class DatabaseBackend { None, Postgres, Sqlite };
+
 class Geruest {
+    friend class HttpSession;
+
    public:
     Geruest();
     ~Geruest();
@@ -62,6 +63,16 @@ class Geruest {
     void setHostname(const std::string& hostname);
 
     void addRoute(const std::string& path, RouteHandler handler);
+    void addRouteAsync(const std::string& path, AsyncRouteHandler handler);
+    void setDatabaseBackend(DatabaseBackend backend);
+    void setDatabasePoolSize(size_t size);
+    void setSqliteExecutorThreadCount(size_t count);
+#if GERUEST_HAS_LIBPQ
+    void configurePostgres(const db::PostgresConfig& config);
+#endif
+#if GERUEST_HAS_SQLITE
+    void configureSqlite(const db::SqliteConfig& config);
+#endif
 
     /**
      * @brief Add a redirect from one route to another route or URL.
@@ -242,7 +253,11 @@ class Geruest {
      * - DEV_MODE (bool): Enable development mode (default: false)
      * - MERGE_ASSETS (bool): Enable asset merging (default: false)
      * - WORKER_THREADS (size_t): Number of worker threads (default: CPU cores * 2)
-     * - MAX_QUEUE_SIZE (size_t): Maximum connection queue size (default: 500)
+     * - MAX_QUEUE_SIZE (size_t): Maximum concurrent client sessions (default: 500)
+     * - MAX_REQUESTS_PER_CONNECTION (size_t): Keep-alive request cap per connection (default: 1000, 0 = unlimited)
+     * - TEXT_RESPONSE_CACHE_MAX_ENTRY_BYTES (size_t): Max serialized size per cached html/js/css response (default: 524288)
+     * - TEXT_RESPONSE_CACHE_MAX_TOTAL_BYTES (size_t): Max total bytes across all cached text responses (default: 33554432)
+     *   Set either to 0 to disable caching new entries (existing entries may remain until eviction/restart).
      * - LOG_LEVEL (string): Log level: "none", "error", "warning", "info", "debug" (default: "error")
      * - OBFUSCATE_PRESERVE (string): Comma-separated identifiers to never rename
      * - OBFUSCATE_EXTERNS (string): Comma-separated global names (host-provided)
@@ -330,11 +345,31 @@ class Geruest {
     void setWorkerThreadCount(size_t count);
 
     /**
-     * @brief Sets the maximum size of the connection queue.
-     * @param size Maximum number of pending connections (default: 500)
+     * @brief Sets the maximum number of concurrent client connections (connection slots).
+     * @param size Cap on simultaneous sessions being served (default: 500). Additional
+     *        TCP accepts are closed immediately and counted as queue rejections in /status.
      * @note Must be called before init() or start()
      */
     void setMaxQueueSize(size_t size);
+
+    /**
+     * @brief Sets maximum requests handled per keep-alive connection.
+     * @param count Request cap per connection (default: 1000). Set to 0 for unlimited.
+     * @note Must be called before init() or start()
+     */
+    void setMaxRequestsPerConnection(size_t count);
+
+    /**
+     * @brief Max size in bytes of one cached serialized text response (html/js/css). Default 524288 (512 KiB).
+     * @param bytes 0 disables caching new entries.
+     */
+    void setTextResponseCacheMaxEntryBytes(size_t bytes);
+
+    /**
+     * @brief Max total bytes for all cached text responses. Default 33554432 (32 MiB).
+     * @param bytes 0 disables caching new entries.
+     */
+    void setTextResponseCacheMaxTotalBytes(size_t bytes);
 
     // ========== Basic Authentication Methods ==========
     
@@ -509,13 +544,15 @@ class Geruest {
      * - uptime_hours_total: cumulative uptime in hours across restarts (persisted)
      * - requests.total / last_hour / avg_per_hour / active
      * - errors.total / client_4xx / server_5xx / internal (+ last_hour/avg_per_hour breakdown)
-     * - queue.current_size / max_size / rejections_total / avg_fill_percent_hour / avg_fill_percent_per_hour
+     * - queue.current_size (active sessions) / max_size / rejections_total / avg_fill_percent_hour / avg_fill_percent_per_hour
+     * - queue.overload_http_responses (count of accepted sockets replied with 503 due to session cap)
+     * - io.accept_errors_total / accept_emfile_total / file_open_failures_total
      * - latency_ms.p50 / p95 / p99 (milliseconds, last 60 seconds)
      * - system.memory.total_mb / used_mb / free_mb / percent_used (host memory)
      * - system.cpu.count (logical CPU cores)
-     * - system.cpu.load_1m / load_5m / load_15m (system-wide, all cores combined; Linux only, 0 on Windows)
+     * - system.cpu.load_1m / load_5m / load_15m (system-wide, all cores combined)
      *     Normalize by count to get per-core utilization: load_1m / count * 100 ≈ CPU %
-     * - system.disk.total_gb / used_gb / free_gb / percent_used (root "/" on Linux, "C:\" on Windows)
+     * - system.disk.total_gb / used_gb / free_gb / percent_used (root "/")
      * - system.cgroup_memory.limit_mb / used_mb / free_mb / percent_used
      *     (only present when a cgroup memory limit is detected, e.g. inside Docker)
      * - system.cgroup_cpu.allocated_cores / usage_percent
@@ -539,13 +576,12 @@ class Geruest {
     const std::string& getStatusPersistencePath() const { return _statusPersistencePath; }
 
    private:
-#ifdef _WIN32
-    SOCKET server_fd = INVALID_SOCKET;  // Socket descriptor for the server
-#else
-    int server_fd = -1;  // Socket descriptor for the server
-#endif
+    boost::asio::io_context                         io_ctx_;
+    std::optional<boost::asio::ip::tcp::acceptor> acceptor_;
+    std::optional<boost::asio::executor_work_guard<boost::asio::io_context::executor_type>> work_guard_;
+    std::optional<boost::asio::steady_timer> _acceptRetryTimer;
 
-    struct sockaddr_in address{};
+    std::atomic<size_t> _activeSessions{0};
 
     std::atomic<bool> running{false};
 
@@ -564,6 +600,14 @@ class Geruest {
     // Thread pool configuration
     size_t _workerThreadCount = std::thread::hardware_concurrency() * 2;
     size_t _maxQueueSize = 500;
+    DatabaseBackend _databaseBackend = DatabaseBackend::None;
+    db::CommonConfig _dbCommonConfig;
+#if GERUEST_HAS_LIBPQ
+    db::PostgresConfig _postgresConfig;
+#endif
+#if GERUEST_HAS_SQLITE
+    db::SqliteConfig _sqliteConfig;
+#endif
 
     // Configuration flags to track values set explicitly via code
     // Values set via code take precedence over .env and environment variables
@@ -576,7 +620,19 @@ class Geruest {
         bool mergeAssetsSet = false;
         bool workerThreadsSet = false;
         bool maxQueueSizeSet = false;
+        bool maxRequestsPerConnectionSet = false;
+        bool textResponseCacheMaxEntryBytesSet = false;
+        bool textResponseCacheMaxTotalBytesSet = false;
         bool logLevelSet = false;
+        bool databaseBackendSet = false;
+        bool databasePoolSizeSet = false;
+        bool sqliteExecutorThreadsSet = false;
+#if GERUEST_HAS_LIBPQ
+        bool postgresConfigSet = false;
+#endif
+#if GERUEST_HAS_SQLITE
+        bool sqliteConfigSet = false;
+#endif
         
 #if GERUEST_HAS_CURL
         // Email configuration flags
@@ -588,47 +644,34 @@ class Geruest {
 #endif
     } _configFlags;
 
-    // Thread pool components
+    // Thread pool: each thread runs io_ctx_.run()
     std::vector<std::thread> _workerThreads;
-    std::queue<std::pair<
-#ifdef _WIN32
-        SOCKET,
-#else
-        int,
-#endif
-        std::string>>
-        _connectionQueue;
-    std::mutex _queueMutex;
-    std::condition_variable _queueCV;
     std::atomic<bool> _workersRunning{false};
-    std::atomic<size_t> _queueSize{0};  // mirror of _connectionQueue.size() for lock-free status reporting
 
     void sendToLogger(const std::string& message) const;
 
     void sendToLoggerError(const std::string& message) const;
 
-    /**
-     * @brief Worker thread function that processes connections from the queue.
-     */
-    void workerThread();
+    void doAccept();
+    void scheduleAcceptRetry(std::chrono::milliseconds delay);
+
+    /** Decrement active session count and refresh queue fill metrics (Option A). */
+    void releaseSessionSlot();
 
     /**
-     * @brief Starts the worker thread pool.
+     * @brief Starts io_context worker threads and posts the accept loop.
      */
     void startWorkers();
 
     /**
-     * @brief Stops the worker thread pool and waits for all threads to finish.
+     * @brief Stops acceptor and io_context and joins worker threads.
      */
     void stopWorkers();
 
     void statusPersistenceLoop();
 
-#ifdef _WIN32
-    void giveToHandler(SOCKET new_socket, std::string& IP);
-#else
-    void giveToHandler(int new_socket, std::string& IP);
-#endif
+    void workerRunLoop();
+    void initializeDatabaseFromConfig();
 };
 
 }  // namespace geruest

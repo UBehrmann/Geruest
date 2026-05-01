@@ -2,6 +2,17 @@
 
 Quick installation and first server setup for Geruest C++ web framework.
 
+## Requirements
+
+- **C++20** compiler (GCC 10+, Clang 11+)
+- **CMake** 3.10 or newer (3.17+ recommended for `find_package` CONFIG patterns)
+- **Boost** 1.75+ with **Boost.System** (Asio uses it unless you build against header-only Boost as in the library’s FetchContent path). Examples:
+  - Debian/Ubuntu: `sudo apt-get install libboost-system-dev`
+  - Fedora: `sudo dnf install boost-devel`
+  - Arch: `sudo pacman -S boost`
+- Optional: **libcurl** (email), **libwebp** (image conversion) — see main README
+- Platform support: **Linux/Unix only** (Windows removed)
+
 ## Installation
 
 ### Linux
@@ -12,32 +23,25 @@ chmod +x setup_scripts/linux_setup.sh
 ./setup_scripts/linux_setup.sh
 ```
 
-### Windows
-```powershell
-git clone https://github.com/yourusername/Geruest.git
-cd Geruest
-setup_scripts\windows_setup.bat
-```
-
 ### Manual Build
 
 **Linux/Unix:**
 ```bash
+# Install Boost (Debian/Ubuntu example) if not already present
+sudo apt-get install -y libboost-system-dev
+
 mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc)
 sudo make install
 ```
 
-**Windows (MSVC):**
-```powershell
-mkdir build && cd build
-cmake .. -A x64 -DCMAKE_BUILD_TYPE=Release
-cmake --build . --config Release
-cmake --install . --config Release
-```
-
 ## Quick Start
+
+Route choice:
+
+- `addRoute(...)`: sync handler (`HTTPResponse` return). Use for static/simple API endpoints without `co_await`.
+- `addRouteAsync(...)`: coroutine handler (`geruest::AsyncResponse` return). Use for DB or other awaitable operations.
 
 **Minimal Server (main.cpp):**
 ```cpp
@@ -66,11 +70,13 @@ int main() {
 ```cmake
 cmake_minimum_required(VERSION 3.17)
 project(MyServer)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 
+find_package(Boost 1.75 REQUIRED COMPONENTS system)
+find_package(Threads REQUIRED)
 find_package(Geruest REQUIRED)
 add_executable(myserver main.cpp)
-target_link_libraries(myserver PRIVATE Geruest::Geruest)
+target_link_libraries(myserver PRIVATE Geruest::Geruest Boost::system Threads::Threads)
 ```
 
 **Build & Run:**
@@ -198,7 +204,5 @@ sudo ./myserver           # Run with sudo for port 80/443
 # OR use capability: sudo setcap 'cap_net_bind_service=+ep' ./myserver
 ```
 
-**Cross-platform builds:**
-- Use `#ifdef _WIN32` for Windows-specific code
-- Always test with both MSVC and GCC/Clang
-- Check socket cleanup: `WSACleanup()` on Windows, `close()` on Unix
+**Platform note:**
+- Geruest is Linux/Unix-only. Windows build and runtime support were removed.

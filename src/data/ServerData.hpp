@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <boost/asio/awaitable.hpp>
 #include <chrono>
 #include <cctype>
 #include <cstdint>
@@ -28,6 +29,7 @@
 
 #include "HTTPRequest.hpp"
 #include "HTTPResponse.hpp"
+#include "database/DatabaseClient.hpp"
 #include "../auth/BasicAuth.hpp"
 #include "parser/JSONParser.hpp"
 
@@ -50,6 +52,8 @@ enum class LogLevel {
 };
 
 using RouteHandler = std::function<HTTPResponse(const HTTPRequest&)>;
+using AsyncResponse = boost::asio::awaitable<HTTPResponse>;
+using AsyncRouteHandler = std::function<AsyncResponse(const HTTPRequest&)>;
 
 // class with the server data
 class ServerData {
@@ -61,6 +65,8 @@ class ServerData {
 
     std::unordered_map<std::string, RouteHandler> _routes;
     std::unordered_map<std::string, RouteHandler> _wildcardRoutes;
+    std::unordered_map<std::string, AsyncRouteHandler> _asyncRoutes;
+    std::unordered_map<std::string, AsyncRouteHandler> _asyncWildcardRoutes;
     std::unordered_map<std::string, RedirectRule> _redirects;
     std::unordered_map<std::string, RedirectRule> _wildcardRedirects;
     std::string _root;
@@ -69,6 +75,11 @@ class ServerData {
     bool _devMode = false;          // Development mode (no file caching, verbose logging)
     bool _webpConversion = false;   // Automatic PNG/JPG to WebP conversion
     float _webpQuality = 75.0f;     // WebP encoding quality (0-100, default 75%)
+    size_t _maxRequestsPerConnection = 1000;  // Keep-alive request cap (0 = unlimited)
+    /** Serialized text response (html/js/css) cache: max one entry size (0 = do not cache). */
+    size_t _textResponseCacheMaxEntryBytes = 512 * 1024;
+    /** Serialized text response cache: max sum of payload bytes across entries (0 = do not cache). */
+    size_t _textResponseCacheMaxTotalBytes = 32 * 1024 * 1024;
     unsigned int _obfuscationLevel = 0;  // JS obfuscation level (0=disabled, 1-3=increasing complexity)
     int _obfuscationCacheExpiryDays = 7;  // Days to keep obfuscated files cached
     std::vector<std::string> _obfuscationExclusions;  // Files excluded from obfuscation and merging
@@ -83,6 +94,7 @@ class ServerData {
     std::string _notFoundPage;
     BasicAuth _basicAuth;
     std::atomic<LogLevel> _logLevel{LogLevel::Error};  // Thread-safe log level (can be changed at runtime)
+    std::shared_ptr<db::DatabaseClient> _databaseClient;
 
     // ========== Metrics (mutable: incremented via const ServerData& in Handler) ==========
     mutable std::atomic<uint64_t> _totalRequests{0};
@@ -90,6 +102,10 @@ class ServerData {
     mutable std::atomic<uint64_t> _total5xx{0};
     mutable std::atomic<uint64_t> _totalInternalErrors{0};
     mutable std::atomic<uint64_t> _queueRejections{0};
+    mutable std::atomic<uint64_t> _acceptErrorsTotal{0};
+    mutable std::atomic<uint64_t> _acceptEmfileTotal{0};
+    mutable std::atomic<uint64_t> _fileOpenFailures{0};
+    mutable std::atomic<uint64_t> _overloadHttpResponses{0};
     mutable std::atomic<int64_t>  _activeHandlers{0};
     std::chrono::steady_clock::time_point _startTime{std::chrono::steady_clock::now()};
 
@@ -314,6 +330,8 @@ class ServerData {
     ServerData(const ServerData& other)
         : _routes(other._routes),
           _wildcardRoutes(other._wildcardRoutes),
+          _asyncRoutes(other._asyncRoutes),
+          _asyncWildcardRoutes(other._asyncWildcardRoutes),
           _redirects(other._redirects),
           _wildcardRedirects(other._wildcardRedirects),
           _root(other._root),
@@ -322,6 +340,9 @@ class ServerData {
           _devMode(other._devMode),
           _webpConversion(other._webpConversion),
           _webpQuality(other._webpQuality),
+          _maxRequestsPerConnection(other._maxRequestsPerConnection),
+          _textResponseCacheMaxEntryBytes(other._textResponseCacheMaxEntryBytes),
+          _textResponseCacheMaxTotalBytes(other._textResponseCacheMaxTotalBytes),
           _obfuscationLevel(other._obfuscationLevel),
           _obfuscationCacheExpiryDays(other._obfuscationCacheExpiryDays),
           _obfuscationExclusions(other._obfuscationExclusions),
@@ -335,13 +356,16 @@ class ServerData {
           _defaultLanguage(other._defaultLanguage),
           _notFoundPage(other._notFoundPage),
           _basicAuth(other._basicAuth),
-          _logLevel(other._logLevel.load(std::memory_order_relaxed)) {}
+          _logLevel(other._logLevel.load(std::memory_order_relaxed)),
+          _databaseClient(other._databaseClient) {}
 
     // Custom copy assignment operator needed because std::atomic is not copyable
     ServerData& operator=(const ServerData& other) {
         if (this != &other) {
             _routes = other._routes;
             _wildcardRoutes = other._wildcardRoutes;
+            _asyncRoutes = other._asyncRoutes;
+            _asyncWildcardRoutes = other._asyncWildcardRoutes;
             _redirects = other._redirects;
             _wildcardRedirects = other._wildcardRedirects;
             _root = other._root;
@@ -350,6 +374,9 @@ class ServerData {
             _devMode = other._devMode;
             _webpConversion = other._webpConversion;
             _webpQuality = other._webpQuality;
+            _maxRequestsPerConnection = other._maxRequestsPerConnection;
+            _textResponseCacheMaxEntryBytes = other._textResponseCacheMaxEntryBytes;
+            _textResponseCacheMaxTotalBytes = other._textResponseCacheMaxTotalBytes;
             _obfuscationLevel = other._obfuscationLevel;
             _obfuscationCacheExpiryDays = other._obfuscationCacheExpiryDays;
             _obfuscationExclusions = other._obfuscationExclusions;
@@ -364,6 +391,7 @@ class ServerData {
             _notFoundPage = other._notFoundPage;
             _basicAuth = other._basicAuth;
             _logLevel.store(other._logLevel.load(std::memory_order_relaxed), std::memory_order_relaxed);
+            _databaseClient = other._databaseClient;
         }
         return *this;
     }
@@ -393,6 +421,14 @@ class ServerData {
             _wildcardRoutes[path] = std::move(routeHandler);
         } else {
             _routes[path] = std::move(routeHandler);
+        }
+    }
+
+    void addRouteAsync(const std::string& path, AsyncRouteHandler routeHandler) {
+        if (path.find('*') != std::string::npos) {
+            _asyncWildcardRoutes[path] = std::move(routeHandler);
+        } else {
+            _asyncRoutes[path] = std::move(routeHandler);
         }
     }
 
@@ -477,6 +513,19 @@ class ServerData {
         return std::nullopt;
     }
 
+    std::optional<AsyncRouteHandler> findMatchingAsyncRoute(const std::string& path) const {
+        auto exactMatch = _asyncRoutes.find(path);
+        if (exactMatch != _asyncRoutes.end()) {
+            return exactMatch->second;
+        }
+        for (const auto& route : _asyncWildcardRoutes) {
+            if (matchesWildcardPattern(route.first, path)) {
+                return route.second;
+            }
+        }
+        return std::nullopt;
+    }
+
     const std::string& getRoot() const { return _root; }
     void setRoot(const std::string& newRoot) { _root = newRoot; }
 
@@ -542,6 +591,32 @@ class ServerData {
      * @return Current quality setting (0-100)
      */
     float getWebPQuality() const { return _webpQuality; }
+
+    /**
+     * Set maximum number of HTTP requests handled per keep-alive connection.
+     * @param value 0 means unlimited, otherwise exact request cap per connection.
+     */
+    void setMaxRequestsPerConnection(size_t value) { _maxRequestsPerConnection = value; }
+
+    /**
+     * Get maximum number of requests per keep-alive connection.
+     * @return 0 for unlimited, otherwise configured cap.
+     */
+    size_t getMaxRequestsPerConnection() const { return _maxRequestsPerConnection; }
+
+    /**
+     * Max size in bytes of a single cached serialized text response (headers + body).
+     * Set to 0 to disable storing entries (cache effectively off for new inserts).
+     */
+    void setTextResponseCacheMaxEntryBytes(size_t bytes) { _textResponseCacheMaxEntryBytes = bytes; }
+    size_t getTextResponseCacheMaxEntryBytes() const { return _textResponseCacheMaxEntryBytes; }
+
+    /**
+     * Max combined payload bytes for the text response cache across all keys.
+     * Set to 0 to disable storing entries (cache effectively off for new inserts).
+     */
+    void setTextResponseCacheMaxTotalBytes(size_t bytes) { _textResponseCacheMaxTotalBytes = bytes; }
+    size_t getTextResponseCacheMaxTotalBytes() const { return _textResponseCacheMaxTotalBytes; }
 
     /**
      * Enable development mode
@@ -655,6 +730,9 @@ class ServerData {
     bool shouldLog(LogLevel level) const {
         return static_cast<int>(level) <= static_cast<int>(_logLevel.load(std::memory_order_relaxed));
     }
+
+    void setDatabaseClient(std::shared_ptr<db::DatabaseClient> client) { _databaseClient = std::move(client); }
+    std::shared_ptr<db::DatabaseClient> getDatabaseClient() const { return _databaseClient; }
 
     /**
      * Set JavaScript obfuscation level
@@ -818,6 +896,22 @@ class ServerData {
         _queueRejections.fetch_add(1, std::memory_order_relaxed);
     }
 
+    void recordAcceptError() const {
+        _acceptErrorsTotal.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void recordAcceptEmfile() const {
+        _acceptEmfileTotal.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void recordFileOpenFailure() const {
+        _fileOpenFailures.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void recordOverloadHttpResponse() const {
+        _overloadHttpResponses.fetch_add(1, std::memory_order_relaxed);
+    }
+
     void recordQueueFill(float fillPct) const {
         const auto ep = _nowEpochs();
         std::lock_guard<std::mutex> lock(_metricsMutex);
@@ -856,6 +950,10 @@ class ServerData {
     uint64_t getTotal5xx() const { return _total5xx.load(std::memory_order_relaxed); }
     uint64_t getTotalInternalErrors() const { return _totalInternalErrors.load(std::memory_order_relaxed); }
     uint64_t getQueueRejections() const { return _queueRejections.load(std::memory_order_relaxed); }
+    uint64_t getAcceptErrorsTotal() const { return _acceptErrorsTotal.load(std::memory_order_relaxed); }
+    uint64_t getAcceptEmfileTotal() const { return _acceptEmfileTotal.load(std::memory_order_relaxed); }
+    uint64_t getFileOpenFailures() const { return _fileOpenFailures.load(std::memory_order_relaxed); }
+    uint64_t getOverloadHttpResponses() const { return _overloadHttpResponses.load(std::memory_order_relaxed); }
     int64_t  getActiveHandlers() const { return _activeHandlers.load(std::memory_order_relaxed); }
 
     struct WindowMetrics {

@@ -5,8 +5,9 @@ This example demonstrates how to use the Geruest web framework to create a simpl
 ## Prerequisites
 
 - CMake 3.10 or higher
-- C++17 compatible compiler (GCC on Linux, MinGW on Windows)
-- Geruest library installed
+- C++20 compatible compiler (GCC on Linux, MinGW on Windows)
+- **Boost** (development package with Boost.System, e.g. `libboost-system-dev`)
+- Geruest library built from this tree (the example CMake builds the static library from `../src`)
 
 ## Build Instructions
 

@@ -48,6 +48,15 @@ struct MergeResult {
     bool hasJs;                     // True if any JS files were found
 };
 
+/** Local JS merge inputs from HTML (same rules as processHtml); no merge I/O. */
+struct JsMergeDiscovery {
+    bool hasJs = false;
+    std::vector<std::string> jsHrefs;
+    std::vector<std::string> localJsAbsolutePaths;
+    std::string jsSubdir;
+    std::vector<AssetReference> allJsRefs;
+};
+
 class AssetMerger {
 public:
     /**
@@ -66,6 +75,12 @@ public:
      * @return MergeResult containing modified HTML and merged assets
      */
     MergeResult processHtml(const std::string& htmlContent, const std::string& pageName);
+
+    /**
+     * Discover local script hrefs and paths for JS merging (same filtering as processHtml).
+     * Does not read file bodies or write merged output.
+     */
+    JsMergeDiscovery discoverJsMergeInputs(const std::string& htmlContent);
 
     /**
      * Extract all CSS <link> references from HTML

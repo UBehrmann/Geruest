@@ -54,21 +54,17 @@ Geruest (German for "scaffold") is a lightweight C++ web framework designed to s
 
 ## Requirements
 
-- C++17 or later
-- CMake 3.10+
-- Threads
-- A compatible C++ compiler (e.g., GCC, Clang, MSVC)
+- **C++20** or later (coroutines with Boost.Asio)
+- **CMake** 3.10+
+- **Boost** (Asio + Boost.System): install `libboost-system-dev` (Debian/Ubuntu/Fedora). If CMake cannot find Boost, configure your system package path.
+- **Threads** (pthread)
+- A compatible C++ compiler (GCC 10+, Clang 11+)
 
 ## Quick Start
 
 **One-command installation:**
 
-### Windows (PowerShell)
-```powershell
-git clone https://github.com/UBehrmann/Geruest.git; cd Geruest; mkdir build; cd build; cmake .. -A x64 -DCMAKE_BUILD_TYPE=Release; cmake --build . --config Release; cmake --install . --config Release
-```
-
-### Linux/macOS (Bash)
+### Linux/Unix (Bash)
 ```bash
 git clone https://github.com/UBehrmann/Geruest.git && cd Geruest && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build . && sudo cmake --install .
 ```
@@ -185,15 +181,10 @@ git clone https://github.com/UBehrmann/Geruest.git
 cd Geruest
 ```
 
-**Build instructions for your platform:**
+**Build instructions:**
 - [Linux Installation](doc/GETTING_STARTED.md#linux)
-- [Windows (MSVC) Installation](doc/GETTING_STARTED.md#windows-msvc)
-- [Windows (MinGW) Installation](doc/GETTING_STARTED.md#windows-mingw)
 
-We build the library for both Linux and Windows:
-- `.a` file for Linux
-- `.a` file for Windows using MinGW  
-- `.lib` file for Windows using MSVC 
+Geruest now targets Linux/Unix only. Windows support has been removed.
 
 ### Using Geruest in Your Project
 
@@ -202,14 +193,15 @@ We build the library for both Linux and Windows:
 ```cmake
 cmake_minimum_required(VERSION 3.10)
 project(MyWebsiteApp)
+set(CMAKE_CXX_STANDARD 20)
+
+find_package(Boost 1.75 REQUIRED COMPONENTS system)
+find_package(Threads REQUIRED)
 
 add_executable(MyWebsiteApp main.cpp)
 
-# Link to your library
-target_link_libraries(MyWebsiteApp
-    PRIVATE
-    Geruest
-)
+# Geruest is built with Boost.Asio; consumers should link Boost.System (matches installed Geruest)
+target_link_libraries(MyWebsiteApp PRIVATE Geruest Boost::system Threads::Threads)
 
 # Include the library headers
 target_include_directories(MyWebsiteApp
@@ -217,7 +209,7 @@ target_include_directories(MyWebsiteApp
     /path/to/Geruest/src
 )
 
-# Add the library binary directory (where the .lib/.a is)
+# Add the library binary directory (where the static library is)
 link_directories(/path/to/Geruest/build)
 ```
 

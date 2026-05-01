@@ -28,10 +28,10 @@ unitTests/
 
 ### Prerequisites
 - CMake 3.28 or higher
-- C++17 compatible compiler (MSVC, MinGW, GCC, Clang)
+- C++20 compatible compiler (GCC, Clang)
+- **Boost** (system component) for the server lifecycle tests
 - Platform-specific dependencies:
-  - Windows: `ws2_32` library
-  - Linux: `pthread` library
+  - Linux/Unix: `pthread` library
 
 ### Build Commands
 
@@ -39,12 +39,6 @@ unitTests/
 ```bash
 # Create and enter build directory
 mkdir build && cd build
-
-# Configure (Windows MSVC)
-cmake .. -A x64 -DCMAKE_BUILD_TYPE=Release
-
-# Configure (Windows MinGW)
-cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
 
 # Configure (Linux)
 cmake .. -DCMAKE_BUILD_TYPE=Release
@@ -262,8 +256,8 @@ int main() {
 ### Common Issues
 1. **Include Path Errors**: Ensure relative paths are correct (`../component/header.hpp`)
 2. **Linking Errors**: Verify all required source files are included in CMakeLists.txt
-3. **Platform-Specific Issues**: Check that platform libraries (ws2_32, pthread) are linked
-4. **File Path Issues**: Use proper path separators for your platform
+3. **Platform-Specific Issues**: Check that `pthread` is linked
+4. **File Path Issues**: Use canonical Unix-style paths
 
 ### Debug Mode
 Build tests in debug mode for more detailed error information:

@@ -4,7 +4,7 @@
 
 | Feature | Description | Key Method/Header |
 |---------|-------------|-------------------|
-| **Routing** | Exact paths, wildcards (`/api/*`, `/users/*/profile`) | `addRoute()` |
+| **Routing** | Sync (`addRoute`) and async (`addRouteAsync`) handlers with exact/wildcard paths | `addRoute()`, `addRouteAsync()` |
 | **Static Files** | Auto-serve files from root directories | `addRoot()` |
 | **Templates** | Component injection `{file}`, translations `[key]` | `ContentBuilder` |
 | **Asset Merging** | Combine CSS/JS files from file maps | `AssetMerger` |
@@ -16,8 +16,20 @@
 | **JSON Parsing** | String-based JSON handling | `JSONParser` |
 | **WebP Conversion** | Auto-convert images to WebP | `WebPConverter` |
 | **Configuration** | `.env` and environment config | `ConfigLoader` |
+| **Async HTTP I/O** | Boost.Asio, C++20 coroutines in the handler | `Geruest::start()` / internal `HttpSession` |
+
+## Server I/O and thread pool
+
+The HTTP server is built on **Boost.Asio**:
+
+- A shared **`boost::asio::io_context`** drives the event loop.
+- **`WORKER_THREADS`** (or `setWorkerThreadCount`) is the number of threads calling `io_context::run()` (default: hardware concurrency × 2). The thread that calls `start()` also runs the `io_context` until `stop()`.
+- New connections are accepted with **`async_accept`**. Each client gets an **`HttpSession`** (`shared_ptr`, `co_spawn` on a **per-connection strand**) that runs **`Handler::runAsync()`** — non-blocking reads/writes with **`co_await`** on the TCP socket.
+- **`MAX_QUEUE_SIZE`** / `setMaxQueueSize` sets the **maximum number of concurrent client sessions** (in-flight HTTP connections), not a backlog queue of pending file descriptors. When the limit is reached, new TCP accepts are **closed immediately** and counted as **queue rejections** in `/status`.
 
 ## Routing
+
+Use `addRoute` for sync handlers and `addRouteAsync` when you need `co_await` (DB/network/waitable work).
 
 ```cpp
 // Exact match (O(1) lookup)
@@ -28,8 +40,27 @@ server.addRoute("/api/users", [](const HTTPRequest& req) {
 });
 
 // Wildcards (O(n) pattern matching)
+geruest::RouteHandler routeHandler = [](const HTTPRequest& req) {
+    (void)req;
+    return responseOK();
+};
+geruest::RouteHandler apiHandler = [](const HTTPRequest& req) {
+    (void)req;
+    return responseOK();
+};
 server.addRoute("/users/*/profile", routeHandler);  // /users/123/profile
 server.addRoute("/api/*", apiHandler);              // /api/anything
+
+// Async route for DB calls
+server.addRouteAsync("/api/users/db", [](const HTTPRequest& req) -> geruest::AsyncResponse {
+    auto db = req.database();
+    if (!db) {
+        co_return responseInternalServerError();
+    }
+    auto rows = co_await db->queryAsync("SELECT id FROM users", {});
+    (void)rows;
+    co_return responseOK();
+});
 ```
 
 ## Static File Serving
@@ -215,6 +246,7 @@ server.addRedirects({
 server.addRoute("/api/*", [](const HTTPRequest& req) {
     sendToLoggerAPI(req.getMethod() + " " + req.getPath());
     // ... handle request ...
+    return responseOK();
 });
 ```
 
@@ -224,4 +256,4 @@ server.addRoute("/api/*", [](const HTTPRequest& req) {
 - **Static Files**: Bypass routing entirely for better performance
 - **Asset Merging**: Reduces HTTP requests dramatically
 - **WebP**: Smaller image sizes, faster loading
-- **Threading**: One thread per connection, handles concurrency automatically
+- **Threading**: Tune `setWorkerThreadCount` / `WORKER_THREADS` for your CPU; tune `setMaxQueueSize` / `MAX_QUEUE_SIZE` for maximum simultaneous clients

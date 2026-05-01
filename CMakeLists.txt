@@ -1,7 +1,7 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.11)
 
 # Define the project name and version
-project(GeruestLibrary VERSION 0.7.34 LANGUAGES CXX)
+project(GeruestLibrary VERSION 0.9.26 LANGUAGES CXX)
 
 # Configure version header
 configure_file(
@@ -9,33 +9,28 @@ configure_file(
     "${PROJECT_BINARY_DIR}/include/geruest/Version.hpp"
 )
 
-# Set C++ standard
-set(CMAKE_CXX_STANDARD 17)
+# C++20 required for Boost.Asio coroutines (co_await). Boost >= 1.75 recommended.
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Windows-specific: Prevent min/max macros that conflict with std::min/std::max
+# Geruest currently supports Linux/Unix targets only.
 if(WIN32)
-    add_compile_definitions(NOMINMAX)
-endif()
-
-# Enable static linking for MinGW
-if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -static-libgcc -static-libstdc++")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++ -static")
+    message(FATAL_ERROR "Windows is no longer supported. Build on Linux/Unix.")
 endif()
 
 # Enable more warnings for all compilers
-if (MSVC)
-    add_compile_options(/W4 /permissive-)
-else()
-    add_compile_options(-Wall -Wextra -Wpedantic -Wconversion -Wshadow)
-endif()
+add_compile_options(-Wall -Wextra -Wpedantic -Wconversion -Wshadow)
 
 # Output static libs to /lib
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 # Required packages
 find_package(Threads REQUIRED)
+
+find_package(Boost 1.75 REQUIRED COMPONENTS system)
+
+option(GERUEST_ENABLE_POSTGRESQL "Enable PostgreSQL backend support" OFF)
+option(GERUEST_ENABLE_SQLITE "Enable SQLite backend support" OFF)
 
 # Optional: Find CURL for email functionality
 find_package(CURL QUIET)
@@ -46,6 +41,32 @@ else()
     message(STATUS "CURL library not found - Email functionality disabled")
     message(STATUS "To enable email functionality, install libcurl4-openssl-dev (apt) or curl (vcpkg)")
     set(GERUEST_HAS_CURL FALSE)
+endif()
+
+# Optional: Find PostgreSQL (libpq) for database backend
+set(GERUEST_HAS_LIBPQ FALSE)
+if(GERUEST_ENABLE_POSTGRESQL)
+    find_package(PostgreSQL QUIET)
+    if(PostgreSQL_FOUND)
+        message(STATUS "PostgreSQL library found - PostgreSQL backend enabled")
+        set(GERUEST_HAS_LIBPQ TRUE)
+    else()
+        message(STATUS "PostgreSQL requested but not found - PostgreSQL backend disabled")
+        message(STATUS "To enable PostgreSQL backend, install libpq-dev (apt)")
+    endif()
+endif()
+
+# Optional: Find SQLite for database backend
+set(GERUEST_HAS_SQLITE FALSE)
+if(GERUEST_ENABLE_SQLITE)
+    find_package(SQLite3 QUIET)
+    if(SQLite3_FOUND)
+        message(STATUS "SQLite library found - SQLite backend enabled")
+        set(GERUEST_HAS_SQLITE TRUE)
+    else()
+        message(STATUS "SQLite requested but not found - SQLite backend disabled")
+        message(STATUS "To enable SQLite backend, install libsqlite3-dev (apt)")
+    endif()
 endif()
 
 # Optional: Find libwebp for WebP image conversion
@@ -79,6 +100,7 @@ add_library(Geruest STATIC
     src/server/Config.cpp
     src/server/Socket.cpp
     src/server/Workers.cpp
+    src/server/HttpSession.cpp
     src/server/Status.cpp
     src/auth/BasicAuth.cpp
     src/builders/AssetMerger.cpp
@@ -101,6 +123,13 @@ add_library(Geruest STATIC
     src/security/Security.cpp
 )
 
+if(GERUEST_HAS_LIBPQ OR GERUEST_HAS_SQLITE)
+    target_sources(Geruest PRIVATE
+        src/database/DatabaseClient.cpp
+        src/database/DbExecutor.cpp
+    )
+endif()
+
 # Public headers
 target_include_directories(Geruest PUBLIC
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
@@ -109,9 +138,7 @@ target_include_directories(Geruest PUBLIC
 )
 
 target_link_libraries(Geruest PUBLIC Threads::Threads)
-if(WIN32)
-    target_link_libraries(Geruest PUBLIC ws2_32)
-endif()
+target_link_libraries(Geruest PUBLIC Boost::system)
 
 # Link CURL library if found (PUBLIC because EmailSender needs it)
 if(GERUEST_HAS_CURL)
@@ -119,6 +146,20 @@ if(GERUEST_HAS_CURL)
     target_compile_definitions(Geruest PUBLIC GERUEST_HAS_CURL=1)
 else()
     target_compile_definitions(Geruest PUBLIC GERUEST_HAS_CURL=0)
+endif()
+
+if(GERUEST_HAS_LIBPQ)
+    target_link_libraries(Geruest PUBLIC PostgreSQL::PostgreSQL)
+    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_LIBPQ=1)
+else()
+    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_LIBPQ=0)
+endif()
+
+if(GERUEST_HAS_SQLITE)
+    target_link_libraries(Geruest PUBLIC SQLite::SQLite3)
+    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_SQLITE=1)
+else()
+    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_SQLITE=0)
 endif()
 
 # Link WebP library if found (PRIVATE to avoid leaking to consumers)

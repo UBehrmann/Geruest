@@ -49,11 +49,7 @@ void appendIsoUtcNow(JSONParser& root) {
     std::time_t now_t = std::time(nullptr);
     char timeBuf[32] = {};
     struct tm utcTm{};
-#ifdef _WIN32
-    gmtime_s(&utcTm, &now_t);
-#else
     gmtime_r(&now_t, &utcTm);
-#endif
     std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%dT%H:%M:%SZ", &utcTm);
     root.setString("saved_at", timeBuf);
 }
@@ -66,6 +62,10 @@ void ServerData::clearAllMetrics_() {
     _total5xx.store(0, std::memory_order_relaxed);
     _totalInternalErrors.store(0, std::memory_order_relaxed);
     _queueRejections.store(0, std::memory_order_relaxed);
+    _acceptErrorsTotal.store(0, std::memory_order_relaxed);
+    _acceptEmfileTotal.store(0, std::memory_order_relaxed);
+    _fileOpenFailures.store(0, std::memory_order_relaxed);
+    _overloadHttpResponses.store(0, std::memory_order_relaxed);
     _activeHandlers.store(0, std::memory_order_relaxed);
     std::lock_guard<std::mutex> lock(_metricsMutex);
     _minBuckets.fill({});

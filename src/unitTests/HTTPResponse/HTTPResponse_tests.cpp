@@ -134,3 +134,28 @@ TEST(HTTPResponseTest, MethodNotAllowedExceptionType) {
         EXPECT_NE(std::string(e.what()).find("405"), std::string::npos);
     }
 }
+
+TEST(HTTPResponseTest, SerializeToMatchesToString) {
+    HTTPResponse response("200 OK");
+    response.setHeader("Content-Type", "application/json");
+    response.setHeader("Server", "Test/1");
+    response.setBody("{\"x\":1}");
+    response.addHeader("Set-Cookie", "a=1");
+    response.addHeader("Set-Cookie", "b=2");
+
+    const std::string expected = response.toString();
+    std::string       scratch;
+    response.serializeTo(scratch);
+    EXPECT_EQ(scratch, expected);
+}
+
+TEST(HTTPResponseTest, SetHeaderRemovesAllSameKey) {
+    HTTPResponse response("200 OK");
+    response.addHeader("X-Test", "first");
+    response.addHeader("X-Test", "second");
+    response.setHeader("X-Test", "third");
+    std::string s = response.toString();
+    EXPECT_EQ(s.find("X-Test: first"), std::string::npos);
+    EXPECT_EQ(s.find("X-Test: second"), std::string::npos);
+    EXPECT_NE(s.find("X-Test: third"), std::string::npos);
+}

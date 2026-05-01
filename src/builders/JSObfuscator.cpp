@@ -19,10 +19,8 @@
 #include <sstream>
 #include <stdexcept>
 
-#if !defined(_WIN32)
 #include <sys/wait.h>
 #include <unistd.h>
-#endif
 
 namespace geruest {
 
@@ -829,10 +827,6 @@ std::string JSObfuscator::mangleNames(const std::string& code) {
 }
 
 bool JSObfuscator::tryValidateWithAcorn(const std::string& js) const {
-#if defined(_WIN32)
-    (void)js;
-    return true;
-#else
     static const char kSnippet[] =
         "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{"
         "try{require('acorn').parse(d,{ecmaVersion:2022,allowReturnOutsideFunction:true});"
@@ -868,7 +862,6 @@ bool JSObfuscator::tryValidateWithAcorn(const std::string& js) const {
         return false;
     }
     return WIFEXITED(st) && WEXITSTATUS(st) == 0;
-#endif
 }
 
 std::string JSObfuscator::encodeStrings(const std::string& code) {

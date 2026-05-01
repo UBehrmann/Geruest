@@ -42,6 +42,9 @@
 
 cmake-build-debug
 
+# CTest artifacts
+Testing/
+
 # All the build directories
 build*
 !builders

@@ -9,9 +9,9 @@
  *        handlers do not have to reimplement sanitisation themselves.
  *
  * ## SQL injection
- * The framework carries no database driver, so the correct defence is always
- * to use the parameterised-query API of your chosen DB library (libpq, SQLite,
- * etc.).  `escapeSql()` is provided only as a last-resort fallback for legacy
+ * Use the framework database layer parameter binding (`geruest::db` query/execute
+ * APIs) or the parameterised-query API of your DB library. `escapeSql()` is
+ * provided only as a last-resort fallback for legacy
  * situations where a prepared-statement API is not available.
  *
  * ## Output encoding
@@ -79,7 +79,7 @@ class Security {
      * | `"`  | `\"`   | Alternative string delimiter (SQLite, older PostgreSQL) |
      * | `\`  | `\\`   | MySQL/MariaDB escape character — prevents `\'` bypass |
      * | NUL  | `\0`   | Truncates C-string queries in older drivers |
-     * | SUB (\\x1a) | `\Z` | MySQL/Windows EOF byte |
+     * | SUB (\\x1a) | `\Z` | MySQL EOF byte in some contexts |
      *
      * **Why `;`, `--`, `#`, and `/ *` are not escaped:**
      * These are SQL syntax only *outside* a string literal.  Once `'` is
@@ -105,7 +105,8 @@ class Security {
      *
      * Returns `true` only when `weakly_canonical(root / requestPath)` is rooted
      * under `weakly_canonical(root)`, so `..`, symlinks, and other lexical tricks
-     * cannot escape the jail.
+     * cannot escape the jail. The canonical root is cached per calling thread while
+     * `root` matches the previous call (symlink changes under the root string are rare).
      *
      * @param root        Absolute filesystem root (e.g. serverData.getRoot()).
      * @param requestPath URL-derived path segment (often starts with `/`).

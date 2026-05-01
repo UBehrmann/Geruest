@@ -38,17 +38,10 @@ protected:
         ConfigLoader::clear();
         
         // Unset any test environment variables
-        #ifdef _WIN32
-        _putenv("TEST_VAR=");
-        _putenv("TEST_INT=");
-        _putenv("TEST_BOOL=");
-        _putenv("TEST_FLOAT=");
-        #else
         unsetenv("TEST_VAR");
         unsetenv("TEST_INT");
         unsetenv("TEST_BOOL");
         unsetenv("TEST_FLOAT");
-        #endif
     }
     
     void createEnvFile(const std::string& content) {
@@ -58,11 +51,7 @@ protected:
     }
     
     void setEnvVar(const std::string& key, const std::string& value) {
-        #ifdef _WIN32
-        _putenv((key + "=" + value).c_str());
-        #else
         setenv(key.c_str(), value.c_str(), 1);
-        #endif
     }
 };
 
