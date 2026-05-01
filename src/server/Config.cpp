@@ -317,6 +317,14 @@ void Geruest::loadConfig(const std::string& envFilePath) {
             ConfigLoader::getInt("POSTGRES_CONNECT_TIMEOUT", _postgresConfig.connectTimeoutSeconds);
         _postgresConfig.statementTimeoutMs =
             ConfigLoader::getInt("POSTGRES_STATEMENT_TIMEOUT_MS", _postgresConfig.statementTimeoutMs);
+        const int pipeBatch = ConfigLoader::getInt("POSTGRES_PIPELINE_MAX_BATCH", static_cast<int>(_postgresConfig.maxPipelineBatch));
+        if (pipeBatch < 1) {
+            _postgresConfig.maxPipelineBatch = 1;
+        } else if (pipeBatch > 256) {
+            _postgresConfig.maxPipelineBatch = 256;
+        } else {
+            _postgresConfig.maxPipelineBatch = static_cast<unsigned>(pipeBatch);
+        }
     }
 #endif
 

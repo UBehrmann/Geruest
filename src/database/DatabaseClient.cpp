@@ -1,15 +1,19 @@
 #include "DatabaseClient.hpp"
 
-#include <boost/asio/co_spawn.hpp>
-
 #include <algorithm>
+#include <atomic>
 #include <cerrno>
 #include <condition_variable>
 #include <cstdlib>
+#include <deque>
+#include <future>
+#include <memory>
 #include <mutex>
 #include <poll.h>
 #include <sstream>
 #include <stdexcept>
+#include <thread>
+#include <vector>
 
 #include "DbExecutor.hpp"
 
@@ -67,6 +71,154 @@ class SimplePool {
     std::mutex _mutex;
     std::condition_variable _cv;
 };
+
+#if GERUEST_HAS_LIBPQ
+inline int pgPollTimeoutMs(int statementTimeoutMs) {
+    return statementTimeoutMs > 0 ? statementTimeoutMs : 30000;
+}
+
+void pgWaitSocket(PGconn* conn, short events, int pollTimeoutMs) {
+    const int fd = PQsocket(conn);
+    if (fd < 0) {
+        throw std::runtime_error("postgres socket unavailable");
+    }
+    struct pollfd pfd {
+        fd, events, 0
+    };
+    while (true) {
+        const int rc = ::poll(&pfd, 1, pollTimeoutMs);
+        if (rc > 0) {
+            return;
+        }
+        if (rc == 0) {
+            throw std::runtime_error("postgres socket wait timeout");
+        }
+        if (errno == EINTR) {
+            continue;
+        }
+        throw std::runtime_error("postgres socket wait failed");
+    }
+}
+
+void pgFlushConn(PGconn* conn, int pollTimeoutMs) {
+    while (PQflush(conn) == 1) {
+        pgWaitSocket(conn, POLLOUT, pollTimeoutMs);
+    }
+}
+
+void pgBindParams(const std::vector<BindValue>& params,
+                  std::vector<std::string>& paramStorage,
+                  std::vector<const char*>& values,
+                  std::vector<int>& lengths,
+                  std::vector<int>& formats,
+                  std::vector<Oid>& types) {
+    paramStorage.clear();
+    values.clear();
+    lengths.assign(params.size(), 0);
+    formats.assign(params.size(), 0);
+    types.assign(params.size(), 0);
+    paramStorage.reserve(params.size());
+    values.reserve(params.size());
+    for (const auto& p : params) {
+        if (std::holds_alternative<std::nullptr_t>(p)) {
+            paramStorage.emplace_back();
+            values.push_back(nullptr);
+        } else {
+            paramStorage.push_back(bindValueToString(p));
+            values.push_back(paramStorage.back().c_str());
+        }
+    }
+}
+
+PGresult* pgReceiveFinalResult(PGconn* conn, int pollTimeoutMs) {
+    PGresult* res = nullptr;
+    while (true) {
+        while (PQisBusy(conn) == 1) {
+            pgWaitSocket(conn, POLLIN, pollTimeoutMs);
+            if (PQconsumeInput(conn) == 0) {
+                const std::string err = PQerrorMessage(conn);
+                if (res != nullptr) {
+                    PQclear(res);
+                }
+                throw std::runtime_error("postgres consume input failed: " + err);
+            }
+        }
+        PGresult* next = PQgetResult(conn);
+        if (next == nullptr) {
+            break;
+        }
+        if (res != nullptr) {
+            PQclear(res);
+        }
+        res = next;
+    }
+    if (res == nullptr) {
+        const std::string err = PQerrorMessage(conn);
+        throw std::runtime_error("postgres query returned no result: " + err);
+    }
+    return res;
+}
+
+QueryResult pgBuildQueryResult(PGresult* res) {
+    const ExecStatusType status = PQresultStatus(res);
+    if (status != PGRES_TUPLES_OK && status != PGRES_COMMAND_OK) {
+        const std::string err = PQresultErrorMessage(res);
+        throw std::runtime_error("postgres query failed: " + err);
+    }
+    QueryResult out;
+    const int fields = PQnfields(res);
+    const int rows = PQntuples(res);
+    out.columnNames.reserve(static_cast<std::size_t>(fields));
+    for (int c = 0; c < fields; ++c) {
+        out.columnNames.emplace_back(PQfname(res, c));
+    }
+    out.rows.reserve(static_cast<std::size_t>(rows));
+    for (int r = 0; r < rows; ++r) {
+        QueryRow row;
+        row.columns.reserve(static_cast<std::size_t>(fields));
+        for (int c = 0; c < fields; ++c) {
+            if (PQgetisnull(res, r, c) == 1) {
+                row.columns.emplace_back();
+            } else {
+                row.columns.emplace_back(PQgetvalue(res, r, c));
+            }
+        }
+        out.rows.push_back(std::move(row));
+    }
+    const char* cmdTuples = PQcmdTuples(res);
+    if (cmdTuples != nullptr && *cmdTuples != '\0') {
+        out.affectedRows = static_cast<std::uint64_t>(std::strtoull(cmdTuples, nullptr, 10));
+    }
+    return out;
+}
+
+PGconn* pgConnectOne(const std::string& conninfo, int statementTimeoutMs) {
+    PGconn* conn = PQconnectdb(conninfo.c_str());
+    if (PQstatus(conn) != CONNECTION_OK) {
+        const std::string err = PQerrorMessage(conn);
+        PQfinish(conn);
+        throw std::runtime_error("Failed to connect postgres: " + err);
+    }
+    if (PQsetnonblocking(conn, 1) != 0) {
+        const std::string err = PQerrorMessage(conn);
+        PQfinish(conn);
+        throw std::runtime_error("Failed to set postgres nonblocking mode: " + err);
+    }
+    if (statementTimeoutMs > 0) {
+        const std::string setStmt = "SET statement_timeout = " + std::to_string(statementTimeoutMs);
+        PGresult* r = PQexec(conn, setStmt.c_str());
+        PQclear(r);
+    }
+    return conn;
+}
+
+void pgEnsurePipelineOff(PGconn* conn) {
+    if (PQpipelineStatus(conn) == PQ_PIPELINE_ON) {
+        PQexitPipelineMode(conn);
+    }
+}
+
+#endif  // GERUEST_HAS_LIBPQ
 
 }  // namespace
 
@@ -197,8 +349,9 @@ class SqliteClient final : public std::enable_shared_from_this<SqliteClient>, pu
 class PostgresClient final : public std::enable_shared_from_this<PostgresClient>, public DatabaseClient {
    public:
     PostgresClient(const PostgresConfig& config, const CommonConfig& common)
-        : _executor(std::max<std::size_t>(common.poolSize, 1))
-        , _statementTimeoutMs(config.statementTimeoutMs) {
+        : _bridge(std::max<std::size_t>(common.poolSize, 1))
+        , _statementTimeoutMs(config.statementTimeoutMs)
+        , _maxPipelineBatch(std::max(1u, config.maxPipelineBatch)) {
         const std::size_t poolSize = std::max<std::size_t>(common.poolSize, 1);
         std::ostringstream conninfo;
         conninfo << "host=" << config.host
@@ -214,36 +367,48 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
                      << " keepalives_interval=" << config.keepalivesIntervalSeconds
                      << " keepalives_count=" << config.keepalivesCount;
         }
-        const std::string connStr = conninfo.str();
+        _conninfo = conninfo.str();
 
+        _conns.reserve(poolSize);
         for (std::size_t i = 0; i < poolSize; ++i) {
-            PGconn* conn = PQconnectdb(connStr.c_str());
-            if (PQstatus(conn) != CONNECTION_OK) {
-                const std::string err = PQerrorMessage(conn);
-                PQfinish(conn);
-                throw std::runtime_error("Failed to connect postgres: " + err);
-            }
-            if (PQsetnonblocking(conn, 1) != 0) {
-                const std::string err = PQerrorMessage(conn);
-                PQfinish(conn);
-                throw std::runtime_error("Failed to set postgres nonblocking mode: " + err);
-            }
-            if (config.statementTimeoutMs > 0) {
-                const std::string setStmt =
-                    "SET statement_timeout = " + std::to_string(config.statementTimeoutMs);
-                PGresult* res = PQexec(conn, setStmt.c_str());
-                PQclear(res);
-            }
-            _pool.add(conn);
-            _allConnections.push_back(conn);
+            _conns.push_back(pgConnectOne(_conninfo, _statementTimeoutMs));
+        }
+        _workers.reserve(poolSize);
+        for (std::size_t i = 0; i < poolSize; ++i) {
+            _workers.emplace_back([this, i] { workerMain(static_cast<std::size_t>(i)); });
         }
     }
 
     ~PostgresClient() override {
-        _executor.join();
-        for (PGconn* conn : _allConnections) {
-            PQfinish(conn);
+        {
+            std::lock_guard<std::mutex> lock(_qMu);
+            _stop.store(true, std::memory_order_release);
         }
+        _qCv.notify_all();
+        for (std::thread& t : _workers) {
+            if (t.joinable()) {
+                t.join();
+            }
+        }
+        {
+            std::lock_guard<std::mutex> lock(_qMu);
+            while (!_queue.empty()) {
+                std::unique_ptr<WorkItem> w = std::move(_queue.front());
+                _queue.pop_front();
+                try {
+                    w->promise.set_exception(std::make_exception_ptr(
+                        std::runtime_error("postgres client shutting down")));
+                } catch (...) {
+                }
+            }
+        }
+        for (PGconn* c : _conns) {
+            if (c != nullptr) {
+                PQfinish(c);
+            }
+        }
+        _conns.clear();
+        _bridge.join();
     }
 
     Backend backend() const override { return Backend::Postgres; }
@@ -253,172 +418,8 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
         auto self = shared_from_this();
         auto sqlPtr = std::make_shared<std::string>(std::move(sql));
         auto paramsPtr = std::make_shared<std::vector<BindValue>>(std::move(params));
-        return _executor.run([self = std::move(self), sqlPtr = std::move(sqlPtr), paramsPtr = std::move(paramsPtr)]() {
-            PGconn* conn = self->_pool.acquire();
-
-            auto resetOrReconnect = [self](PGconn* c) {
-                if (PQstatus(c) != CONNECTION_OK) {
-                    PQreset(c);
-                    if (PQstatus(c) == CONNECTION_OK) {
-                        if (PQsetnonblocking(c, 1) != 0) {
-                            self->_pool.release(c);
-                            return;
-                        }
-                    }
-                    if (PQstatus(c) == CONNECTION_OK && self->_statementTimeoutMs > 0) {
-                        const std::string stmt =
-                            "SET statement_timeout = " + std::to_string(self->_statementTimeoutMs);
-                        PGresult* r = PQexec(c, stmt.c_str());
-                        PQclear(r);
-                    }
-                }
-                self->_pool.release(c);
-            };
-
-            if (PQstatus(conn) != CONNECTION_OK) {
-                PQreset(conn);
-                if (PQstatus(conn) != CONNECTION_OK) {
-                    const std::string err = PQerrorMessage(conn);
-                    self->_pool.release(conn);
-                    throw std::runtime_error("postgres connection lost: " + err);
-                }
-                if (PQsetnonblocking(conn, 1) != 0) {
-                    const std::string err = PQerrorMessage(conn);
-                    self->_pool.release(conn);
-                    throw std::runtime_error("postgres nonblocking restore failed: " + err);
-                }
-                if (self->_statementTimeoutMs > 0) {
-                    const std::string stmt =
-                        "SET statement_timeout = " + std::to_string(self->_statementTimeoutMs);
-                    PGresult* r = PQexec(conn, stmt.c_str());
-                    PQclear(r);
-                }
-            }
-
-            std::vector<std::string> paramStorage;
-            std::vector<const char*> values;
-            std::vector<int> lengths;
-            std::vector<int> formats;
-            std::vector<Oid> types;
-            paramStorage.reserve(paramsPtr->size());
-            values.reserve(paramsPtr->size());
-            lengths.assign(paramsPtr->size(), 0);
-            formats.assign(paramsPtr->size(), 0);
-            types.assign(paramsPtr->size(), 0);
-
-            for (const auto& p : *paramsPtr) {
-                if (std::holds_alternative<std::nullptr_t>(p)) {
-                    paramStorage.emplace_back();
-                    values.push_back(nullptr);
-                } else {
-                    paramStorage.push_back(bindValueToString(p));
-                    values.push_back(paramStorage.back().c_str());
-                }
-            }
-
-            auto waitSocket = [conn, self](short events) {
-                const int fd = PQsocket(conn);
-                if (fd < 0) {
-                    throw std::runtime_error("postgres socket unavailable");
-                }
-                const int timeoutMs = self->_statementTimeoutMs > 0 ? self->_statementTimeoutMs : 30000;
-                struct pollfd pfd {
-                    fd, events, 0
-                };
-                while (true) {
-                    const int rc = ::poll(&pfd, 1, timeoutMs);
-                    if (rc > 0) return;
-                    if (rc == 0) throw std::runtime_error("postgres socket wait timeout");
-                    if (errno == EINTR) continue;
-                    throw std::runtime_error("postgres socket wait failed");
-                }
-            };
-
-            if (PQsendQueryParams(conn, sqlPtr->c_str(), static_cast<int>(values.size()), types.data(),
-                                  values.data(), lengths.data(), formats.data(), 0) == 0) {
-                const std::string err = PQerrorMessage(conn);
-                resetOrReconnect(conn);
-                throw std::runtime_error("postgres query failed: " + err);
-            }
-
-            while (PQflush(conn) == 1) {
-                try {
-                    waitSocket(POLLOUT);
-                } catch (...) {
-                    resetOrReconnect(conn);
-                    throw;
-                }
-            }
-
-            PGresult* res = nullptr;
-            while (true) {
-                while (PQisBusy(conn) == 1) {
-                    try {
-                        waitSocket(POLLIN);
-                    } catch (...) {
-                        if (res != nullptr) PQclear(res);
-                        resetOrReconnect(conn);
-                        throw;
-                    }
-                    if (PQconsumeInput(conn) == 0) {
-                        const std::string err = PQerrorMessage(conn);
-                        if (res != nullptr) PQclear(res);
-                        resetOrReconnect(conn);
-                        throw std::runtime_error("postgres consume input failed: " + err);
-                    }
-                }
-                PGresult* next = PQgetResult(conn);
-                if (next == nullptr) {
-                    break;
-                }
-                if (res != nullptr) {
-                    PQclear(res);
-                }
-                res = next;
-            }
-
-            if (res == nullptr) {
-                const std::string err = PQerrorMessage(conn);
-                resetOrReconnect(conn);
-                throw std::runtime_error("postgres query returned no result: " + err);
-            }
-
-            const ExecStatusType status = PQresultStatus(res);
-            if (status != PGRES_TUPLES_OK && status != PGRES_COMMAND_OK) {
-                const std::string err = PQresultErrorMessage(res);
-                PQclear(res);
-                resetOrReconnect(conn);
-                throw std::runtime_error("postgres query failed: " + err);
-            }
-
-            QueryResult out;
-            const int fields = PQnfields(res);
-            const int rows = PQntuples(res);
-            out.columnNames.reserve(static_cast<std::size_t>(fields));
-            for (int c = 0; c < fields; ++c) {
-                out.columnNames.emplace_back(PQfname(res, c));
-            }
-            out.rows.reserve(static_cast<std::size_t>(rows));
-            for (int r = 0; r < rows; ++r) {
-                QueryRow row;
-                row.columns.reserve(static_cast<std::size_t>(fields));
-                for (int c = 0; c < fields; ++c) {
-                    if (PQgetisnull(res, r, c) == 1) {
-                        row.columns.emplace_back();
-                    } else {
-                        row.columns.emplace_back(PQgetvalue(res, r, c));
-                    }
-                }
-                out.rows.push_back(std::move(row));
-            }
-
-            const char* cmdTuples = PQcmdTuples(res);
-            if (cmdTuples != nullptr && *cmdTuples != '\0') {
-                out.affectedRows = static_cast<std::uint64_t>(std::strtoull(cmdTuples, nullptr, 10));
-            }
-            PQclear(res);
-            self->_pool.release(conn);
-            return out;
+        return _bridge.run([self = std::move(self), sqlPtr = std::move(sqlPtr), paramsPtr = std::move(paramsPtr)]() {
+            return self->enqueueAndWait(sqlPtr, paramsPtr);
         });
     }
 
@@ -429,10 +430,180 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
     }
 
    private:
-    DbExecutor _executor;
+    struct WorkItem {
+        std::shared_ptr<std::string> sql;
+        std::shared_ptr<std::vector<BindValue>> params;
+        std::promise<QueryResult> promise;
+    };
+
+    QueryResult enqueueAndWait(const std::shared_ptr<std::string>& sqlPtr,
+                                 const std::shared_ptr<std::vector<BindValue>>& paramsPtr) {
+        auto item = std::make_unique<WorkItem>();
+        item->sql = sqlPtr;
+        item->params = paramsPtr;
+        std::future<QueryResult> fut = item->promise.get_future();
+        {
+            std::lock_guard<std::mutex> lock(_qMu);
+            _queue.push_back(std::move(item));
+        }
+        _qCv.notify_one();
+        return fut.get();
+    }
+
+    void workerMain(std::size_t slotIndex) {
+        PGconn*& conn = _conns[slotIndex];
+        const int pollMs = pgPollTimeoutMs(_statementTimeoutMs);
+        while (true) {
+            std::vector<std::unique_ptr<WorkItem>> batch;
+            {
+                std::unique_lock<std::mutex> lock(_qMu);
+                _qCv.wait(lock, [this] { return _stop.load(std::memory_order_acquire) || !_queue.empty(); });
+                if (_stop.load(std::memory_order_acquire) && _queue.empty()) {
+                    return;
+                }
+                const std::size_t take = std::min<std::size_t>(static_cast<std::size_t>(_maxPipelineBatch), _queue.size());
+                batch.reserve(take);
+                for (std::size_t i = 0; i < take; ++i) {
+                    batch.push_back(std::move(_queue.front()));
+                    _queue.pop_front();
+                }
+            }
+
+            try {
+                runBatchOnConn(conn, batch, pollMs);
+            } catch (...) {
+                for (auto& w : batch) {
+                    try {
+                        w->promise.set_exception(std::current_exception());
+                    } catch (...) {
+                    }
+                }
+            }
+        }
+    }
+
+    void runBatchOnConn(PGconn*& conn, std::vector<std::unique_ptr<WorkItem>>& batch, int pollMs) {
+        if (batch.empty()) {
+            return;
+        }
+        if (batch.size() == 1 || _maxPipelineBatch <= 1) {
+            for (auto& w : batch) {
+                runOneItem(conn, *w, pollMs);
+            }
+            return;
+        }
+
+        pgEnsurePipelineOff(conn);
+        if (PQenterPipelineMode(conn) != 1) {
+            for (auto& w : batch) {
+                runOneItem(conn, *w, pollMs);
+            }
+            return;
+        }
+
+        for (auto& w : batch) {
+            std::vector<std::string> paramStorage;
+            std::vector<const char*> values;
+            std::vector<int> lengths;
+            std::vector<int> formats;
+            std::vector<Oid> types;
+            pgBindParams(*w->params, paramStorage, values, lengths, formats, types);
+            if (PQsendQueryParams(conn, w->sql->c_str(), static_cast<int>(values.size()), types.data(), values.data(),
+                                  lengths.data(), formats.data(), 0) == 0) {
+                const std::string err = PQerrorMessage(conn);
+                PQreset(conn);
+                reconnectConn(conn);
+                throw std::runtime_error("postgres pipeline send failed: " + err);
+            }
+        }
+
+        if (PQpipelineSync(conn) == 0) {
+            const std::string err = PQerrorMessage(conn);
+            PQreset(conn);
+            reconnectConn(conn);
+            throw std::runtime_error("postgres pipeline sync failed: " + err);
+        }
+
+        pgFlushConn(conn, pollMs);
+
+        std::vector<QueryResult> results;
+        results.reserve(batch.size());
+        while (results.size() < batch.size()) {
+            PGresult* res = pgReceiveFinalResult(conn, pollMs);
+            const ExecStatusType st = PQresultStatus(res);
+            if (st == PGRES_PIPELINE_SYNC) {
+                PQclear(res);
+                continue;
+            }
+            try {
+                results.push_back(pgBuildQueryResult(res));
+            } catch (...) {
+                PQclear(res);
+                throw;
+            }
+            PQclear(res);
+        }
+        for (std::size_t i = 0; i < batch.size(); ++i) {
+            try {
+                batch[i]->promise.set_value(std::move(results[i]));
+            } catch (...) {
+                try {
+                    batch[i]->promise.set_exception(std::current_exception());
+                } catch (...) {
+                }
+            }
+        }
+
+        pgEnsurePipelineOff(conn);
+    }
+
+    void runOneItem(PGconn*& conn, WorkItem& w, int pollMs) {
+        pgEnsurePipelineOff(conn);
+        std::vector<std::string> paramStorage;
+        std::vector<const char*> values;
+        std::vector<int> lengths;
+        std::vector<int> formats;
+        std::vector<Oid> types;
+        pgBindParams(*w.params, paramStorage, values, lengths, formats, types);
+        if (PQsendQueryParams(conn, w.sql->c_str(), static_cast<int>(values.size()), types.data(), values.data(), lengths.data(),
+                              formats.data(), 0) == 0) {
+            const std::string err = PQerrorMessage(conn);
+            PQreset(conn);
+            reconnectConn(conn);
+            throw std::runtime_error("postgres query failed: " + err);
+        }
+        pgFlushConn(conn, pollMs);
+        PGresult* res = pgReceiveFinalResult(conn, pollMs);
+        try {
+            w.promise.set_value(pgBuildQueryResult(res));
+        } catch (...) {
+            try {
+                w.promise.set_exception(std::current_exception());
+            } catch (...) {
+            }
+        }
+        PQclear(res);
+    }
+
+    void reconnectConn(PGconn*& conn) {
+        if (conn != nullptr) {
+            PQfinish(conn);
+            conn = nullptr;
+        }
+        conn = pgConnectOne(_conninfo, _statementTimeoutMs);
+    }
+
+    DbExecutor _bridge;
+    std::string _conninfo;
     int _statementTimeoutMs;
-    SimplePool<PGconn*> _pool;
-    std::vector<PGconn*> _allConnections;
+    unsigned _maxPipelineBatch;
+    std::vector<PGconn*> _conns;
+
+    std::mutex _qMu;
+    std::condition_variable _qCv;
+    std::deque<std::unique_ptr<WorkItem>> _queue;
+    std::atomic<bool> _stop{false};
+    std::vector<std::thread> _workers;
 };
 #endif
 

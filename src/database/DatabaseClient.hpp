@@ -37,6 +37,8 @@ struct PostgresConfig {
     int keepalivesIdleSeconds = 60;
     int keepalivesIntervalSeconds = 10;
     int keepalivesCount = 3;
+    /** Max statements per libpq pipeline batch per connection worker (1 = pipeline off). */
+    unsigned maxPipelineBatch = 8;
 };
 #endif
 
