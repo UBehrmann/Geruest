@@ -573,6 +573,13 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
             return;
         }
 
+        // Prepare statements outside pipeline mode. Preparing inside active pipeline
+        // can desync result consumption and break subsequent execute mapping.
+        pgEnsurePipelineOff(conn);
+        for (auto& w : batch) {
+            (void)ensurePrepared(conn, scratch, *w->sql, pollMs);
+        }
+
         pgEnsurePipelineOff(conn);
         if (PQenterPipelineMode(conn) != 1) {
             for (auto& w : batch) {
