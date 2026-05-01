@@ -691,6 +691,12 @@ boost::asio::awaitable<void> Handler::sendResponseAsync(const std::string& statu
 
 boost::asio::awaitable<void> Handler::sendNotFoundResponseAsync(HTTPRequest* httpRequest) {
     serverData.record4xx();
+    if (httpRequest != nullptr) {
+        sendToLoggerError("404 route miss. path=" + httpRequest->getPathString() +
+                          " request_line=" + httpRequest->getRawRequestLine());
+    } else {
+        sendToLoggerError("404 route miss. null request context");
+    }
     if (serverData.hasNotFoundPage() && httpRequest != nullptr) {
         std::string notFoundPath = serverData.getNotFoundPage();
         if (!notFoundPath.empty() && notFoundPath[0] != '/') {
