@@ -18,6 +18,32 @@ std::string envOr(const char* name, const char* fallback) {
     return (v && v[0]) ? v : fallback;
 }
 
+boost::asio::awaitable<void> setupPgUsersTable(const std::shared_ptr<geruest::db::DatabaseClient>& client) {
+    co_await client->executeAsync("DROP TABLE IF EXISTS pg_test_users", {});
+    co_await client->executeAsync("CREATE TABLE pg_test_users (id SERIAL PRIMARY KEY, name TEXT NOT NULL)", {});
+    co_return;
+}
+
+boost::asio::awaitable<void> insertPgAlice(const std::shared_ptr<geruest::db::DatabaseClient>& client) {
+    co_await client->executeAsync("INSERT INTO pg_test_users(name) VALUES('alice')", {});
+    co_return;
+}
+
+boost::asio::awaitable<void> insertPgBob(const std::shared_ptr<geruest::db::DatabaseClient>& client) {
+    co_await client->executeAsync("INSERT INTO pg_test_users(name) VALUES('bob')", {});
+    co_return;
+}
+
+boost::asio::awaitable<geruest::db::QueryResult> queryPgUsersById(
+    const std::shared_ptr<geruest::db::DatabaseClient>& client) {
+    co_return co_await client->queryAsync("SELECT name FROM pg_test_users ORDER BY id ASC", {});
+}
+
+boost::asio::awaitable<void> cleanupPgUsersTable(const std::shared_ptr<geruest::db::DatabaseClient>& client) {
+    co_await client->executeAsync("DROP TABLE IF EXISTS pg_test_users", {});
+    co_return;
+}
+
 }  // namespace
 
 TEST(DatabasePostgres, QueryAndConcurrentInsert) {
@@ -39,47 +65,19 @@ TEST(DatabasePostgres, QueryAndConcurrentInsert) {
 
     boost::asio::io_context io;
 
-    auto setupFuture = boost::asio::co_spawn(
-        io,
-        [client]() -> boost::asio::awaitable<void> {
-            co_await client->executeAsync("DROP TABLE IF EXISTS pg_test_users", {});
-            co_await client->executeAsync(
-                "CREATE TABLE pg_test_users (id SERIAL PRIMARY KEY, name TEXT NOT NULL)", {});
-            co_return;
-        },
-        boost::asio::use_future);
+    auto setupFuture = boost::asio::co_spawn(io, setupPgUsersTable(client), boost::asio::use_future);
     io.run();
     setupFuture.get();
 
     io.restart();
-    auto f1 = boost::asio::co_spawn(
-        io,
-        [client]() -> boost::asio::awaitable<void> {
-            co_await client->executeAsync(
-                "INSERT INTO pg_test_users(name) VALUES($1)", {std::string("alice")});
-            co_return;
-        },
-        boost::asio::use_future);
-    auto f2 = boost::asio::co_spawn(
-        io,
-        [client]() -> boost::asio::awaitable<void> {
-            co_await client->executeAsync(
-                "INSERT INTO pg_test_users(name) VALUES($1)", {std::string("bob")});
-            co_return;
-        },
-        boost::asio::use_future);
+    auto f1 = boost::asio::co_spawn(io, insertPgAlice(client), boost::asio::use_future);
+    auto f2 = boost::asio::co_spawn(io, insertPgBob(client), boost::asio::use_future);
     io.run();
     f1.get();
     f2.get();
 
     io.restart();
-    auto queryFuture = boost::asio::co_spawn(
-        io,
-        [client]() -> boost::asio::awaitable<geruest::db::QueryResult> {
-            co_return co_await client->queryAsync(
-                "SELECT name FROM pg_test_users ORDER BY id ASC", {});
-        },
-        boost::asio::use_future);
+    auto queryFuture = boost::asio::co_spawn(io, queryPgUsersById(client), boost::asio::use_future);
     io.run();
     geruest::db::QueryResult result = queryFuture.get();
     ASSERT_EQ(result.rows.size(), 2u);
@@ -95,13 +93,7 @@ TEST(DatabasePostgres, QueryAndConcurrentInsert) {
     EXPECT_EQ(names[1], "bob");
 
     io.restart();
-    auto cleanupFuture = boost::asio::co_spawn(
-        io,
-        [client]() -> boost::asio::awaitable<void> {
-            co_await client->executeAsync("DROP TABLE IF EXISTS pg_test_users", {});
-            co_return;
-        },
-        boost::asio::use_future);
+    auto cleanupFuture = boost::asio::co_spawn(io, cleanupPgUsersTable(client), boost::asio::use_future);
     io.run();
     cleanupFuture.get();
 #else
