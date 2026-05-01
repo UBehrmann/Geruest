@@ -254,6 +254,10 @@ struct HeaderPreflight {
 
         pos = lineEnd + 2;
         if (chunkSize == 0) {
+            // No trailers case: "0\\r\\n\\r\\n" => immediate CRLF terminator.
+            if (pos + 2 <= raw.size() && raw.compare(pos, 2, "\r\n") == 0) {
+                return pos + 2;
+            }
             const size_t trailerEnd = raw.find("\r\n\r\n", pos);
             if (trailerEnd == std::string::npos) {
                 return std::string::npos;
