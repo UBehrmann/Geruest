@@ -20,6 +20,23 @@ std::string tempSqlitePath() {
     return (std::filesystem::temp_directory_path() / ("geruest_db_test_" + std::to_string(now) + ".db")).string();
 }
 
+boost::asio::awaitable<void> createUsersTable(const std::shared_ptr<geruest::db::DatabaseClient>& client) {
+    co_await client->executeAsync(
+        "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL)", {});
+    co_return;
+}
+
+boost::asio::awaitable<void> insertUser(const std::shared_ptr<geruest::db::DatabaseClient>& client,
+                                        std::string name) {
+    co_await client->executeAsync("INSERT INTO users(name) VALUES(?)", {std::move(name)});
+    co_return;
+}
+
+boost::asio::awaitable<geruest::db::QueryResult> queryUsersById(
+    const std::shared_ptr<geruest::db::DatabaseClient>& client) {
+    co_return co_await client->queryAsync("SELECT name FROM users ORDER BY id ASC", {});
+}
+
 }  // namespace
 
 TEST(DatabaseSqlite, QueryAndConcurrentInsert) {
@@ -38,43 +55,19 @@ TEST(DatabaseSqlite, QueryAndConcurrentInsert) {
     ASSERT_NE(client, nullptr);
 
     boost::asio::io_context io;
-    auto setupFuture = boost::asio::co_spawn(
-        io,
-        [client]() -> boost::asio::awaitable<void> {
-            co_await client->executeAsync(
-                "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL)", {});
-            co_return;
-        },
-        boost::asio::use_future);
+    auto setupFuture = boost::asio::co_spawn(io, createUsersTable(client), boost::asio::use_future);
     io.run();
     setupFuture.get();
 
     io.restart();
-    auto f1 = boost::asio::co_spawn(
-        io,
-        [client]() -> boost::asio::awaitable<void> {
-            co_await client->executeAsync("INSERT INTO users(name) VALUES(?)", {std::string("alice")});
-            co_return;
-        },
-        boost::asio::use_future);
-    auto f2 = boost::asio::co_spawn(
-        io,
-        [client]() -> boost::asio::awaitable<void> {
-            co_await client->executeAsync("INSERT INTO users(name) VALUES(?)", {std::string("bob")});
-            co_return;
-        },
-        boost::asio::use_future);
+    auto f1 = boost::asio::co_spawn(io, insertUser(client, "alice"), boost::asio::use_future);
+    auto f2 = boost::asio::co_spawn(io, insertUser(client, "bob"), boost::asio::use_future);
     io.run();
     f1.get();
     f2.get();
 
     io.restart();
-    auto queryFuture = boost::asio::co_spawn(
-        io,
-        [client]() -> boost::asio::awaitable<geruest::db::QueryResult> {
-            co_return co_await client->queryAsync("SELECT name FROM users ORDER BY id ASC", {});
-        },
-        boost::asio::use_future);
+    auto queryFuture = boost::asio::co_spawn(io, queryUsersById(client), boost::asio::use_future);
     io.run();
     geruest::db::QueryResult result = queryFuture.get();
     ASSERT_EQ(result.rows.size(), 2u);
