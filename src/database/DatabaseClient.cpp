@@ -19,6 +19,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #include "DbExecutor.hpp"
@@ -465,9 +466,31 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
         std::function<void(std::exception_ptr, std::optional<QueryResult>)> complete;
     };
 
+    struct WorkerScratch {
+        std::vector<std::string> paramStorage;
+        std::vector<const char*> values;
+        std::vector<int> lengths;
+        std::vector<int> formats;
+        std::vector<Oid> types;
+        std::vector<QueryResult> results;
+        std::unordered_map<std::string, std::string> preparedBySql;
+        std::uint64_t nextStmtId = 1;
+
+        void resetBatch(std::size_t expectedResults) {
+            results.clear();
+            results.reserve(expectedResults);
+        }
+
+        void clearPreparedCache() {
+            preparedBySql.clear();
+            nextStmtId = 1;
+        }
+    };
+
     void workerMain(std::size_t slotIndex) {
         PGconn*& conn = _conns[slotIndex];
         const int pollMs = pgPollTimeoutMs(_statementTimeoutMs);
+        WorkerScratch scratch;
         while (true) {
             std::vector<std::unique_ptr<WorkItem>> batch;
             {
@@ -485,7 +508,7 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
             }
 
             try {
-                runBatchOnConn(conn, batch, pollMs);
+                runBatchOnConn(conn, batch, pollMs, scratch);
             } catch (...) {
                 for (auto& w : batch) {
                     completeItem(w, std::current_exception(), std::nullopt);
@@ -494,13 +517,58 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
         }
     }
 
-    void runBatchOnConn(PGconn*& conn, std::vector<std::unique_ptr<WorkItem>>& batch, int pollMs) {
+    const std::string& ensurePrepared(PGconn*& conn, WorkerScratch& scratch, const std::string& sql, int pollMs) {
+        auto it = scratch.preparedBySql.find(sql);
+        if (it != scratch.preparedBySql.end()) {
+            return it->second;
+        }
+
+        const std::string stmtName = "gstmt_" + std::to_string(scratch.nextStmtId++);
+        if (PQsendPrepare(conn, stmtName.c_str(), sql.c_str(), 0, nullptr) == 0) {
+            const std::string err = PQerrorMessage(conn);
+            PQreset(conn);
+            reconnectConn(conn);
+            scratch.clearPreparedCache();
+            throw std::runtime_error("postgres prepare failed: " + err);
+        }
+        pgFlushConn(conn, pollMs);
+        PGresult* prepRes = pgReceiveFinalResult(conn, pollMs);
+        try {
+            (void)pgBuildQueryResult(prepRes);
+        } catch (...) {
+            PQclear(prepRes);
+            throw;
+        }
+        PQclear(prepRes);
+
+        auto [insIt, inserted] = scratch.preparedBySql.emplace(sql, stmtName);
+        (void)inserted;
+        return insIt->second;
+    }
+
+    void sendPreparedQuery(PGconn*& conn,
+                           WorkerScratch& scratch,
+                           const std::string& stmtName,
+                           const std::vector<BindValue>& params,
+                           const char* failPrefix) {
+        pgBindParams(params, scratch.paramStorage, scratch.values, scratch.lengths, scratch.formats, scratch.types);
+        if (PQsendQueryPrepared(conn, stmtName.c_str(), static_cast<int>(scratch.values.size()), scratch.values.data(),
+                                scratch.lengths.data(), scratch.formats.data(), 0) == 0) {
+            const std::string err = PQerrorMessage(conn);
+            PQreset(conn);
+            reconnectConn(conn);
+            scratch.clearPreparedCache();
+            throw std::runtime_error(std::string(failPrefix) + err);
+        }
+    }
+
+    void runBatchOnConn(PGconn*& conn, std::vector<std::unique_ptr<WorkItem>>& batch, int pollMs, WorkerScratch& scratch) {
         if (batch.empty()) {
             return;
         }
         if (batch.size() == 1 || _maxPipelineBatch <= 1) {
             for (auto& w : batch) {
-                runOneItem(conn, *w, pollMs);
+                runOneItem(conn, *w, pollMs, scratch);
             }
             return;
         }
@@ -508,25 +576,14 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
         pgEnsurePipelineOff(conn);
         if (PQenterPipelineMode(conn) != 1) {
             for (auto& w : batch) {
-                runOneItem(conn, *w, pollMs);
+                runOneItem(conn, *w, pollMs, scratch);
             }
             return;
         }
 
         for (auto& w : batch) {
-            std::vector<std::string> paramStorage;
-            std::vector<const char*> values;
-            std::vector<int> lengths;
-            std::vector<int> formats;
-            std::vector<Oid> types;
-            pgBindParams(*w->params, paramStorage, values, lengths, formats, types);
-            if (PQsendQueryParams(conn, w->sql->c_str(), static_cast<int>(values.size()), types.data(), values.data(),
-                                  lengths.data(), formats.data(), 0) == 0) {
-                const std::string err = PQerrorMessage(conn);
-                PQreset(conn);
-                reconnectConn(conn);
-                throw std::runtime_error("postgres pipeline send failed: " + err);
-            }
+            const std::string& stmtName = ensurePrepared(conn, scratch, *w->sql, pollMs);
+            sendPreparedQuery(conn, scratch, stmtName, *w->params, "postgres pipeline send failed: ");
         }
 
         if (PQpipelineSync(conn) == 0) {
@@ -541,12 +598,11 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
         // Pipeline protocol: for each sent command, read every PGresult until PQgetResult
         // returns nullptr, then repeat for the next command (see libpq pipeline-mode docs).
         // A single nullptr ends one command's result chain, not the whole pipeline.
-        std::vector<QueryResult> results;
-        results.reserve(batch.size());
+        scratch.resetBatch(batch.size());
         for (std::size_t q = 0; q < batch.size(); ++q) {
             PGresult* res = pgReceiveFinalResult(conn, pollMs);
             try {
-                results.push_back(pgBuildQueryResult(res));
+                scratch.results.push_back(pgBuildQueryResult(res));
             } catch (...) {
                 PQclear(res);
                 throw;
@@ -572,27 +628,16 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
         }
 
         for (std::size_t i = 0; i < batch.size(); ++i) {
-            completeItem(batch[i], nullptr, std::move(results[i]));
+            completeItem(batch[i], nullptr, std::move(scratch.results[i]));
         }
 
         pgEnsurePipelineOff(conn);
     }
 
-    void runOneItem(PGconn*& conn, WorkItem& w, int pollMs) {
+    void runOneItem(PGconn*& conn, WorkItem& w, int pollMs, WorkerScratch& scratch) {
         pgEnsurePipelineOff(conn);
-        std::vector<std::string> paramStorage;
-        std::vector<const char*> values;
-        std::vector<int> lengths;
-        std::vector<int> formats;
-        std::vector<Oid> types;
-        pgBindParams(*w.params, paramStorage, values, lengths, formats, types);
-        if (PQsendQueryParams(conn, w.sql->c_str(), static_cast<int>(values.size()), types.data(), values.data(), lengths.data(),
-                              formats.data(), 0) == 0) {
-            const std::string err = PQerrorMessage(conn);
-            PQreset(conn);
-            reconnectConn(conn);
-            throw std::runtime_error("postgres query failed: " + err);
-        }
+        const std::string& stmtName = ensurePrepared(conn, scratch, *w.sql, pollMs);
+        sendPreparedQuery(conn, scratch, stmtName, *w.params, "postgres query failed: ");
         pgFlushConn(conn, pollMs);
         PGresult* res = pgReceiveFinalResult(conn, pollMs);
         try {
