@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <condition_variable>
 #include <cstdlib>
-#include <iostream>
 #include <mutex>
 #include <sstream>
 #include <stdexcept>
@@ -244,15 +243,11 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
 
     boost::asio::awaitable<QueryResult> queryAsync(std::string sql,
                                                    std::vector<BindValue> params) override {
-        std::cerr << "[geruest::db] queryAsync() entered, sql=\"" << sql << "\"" << std::endl;
         std::shared_ptr<PostgresClient> self = shared_from_this();
         auto sqlPtr = std::make_shared<std::string>(std::move(sql));
         auto paramsPtr = std::make_shared<std::vector<BindValue>>(std::move(params));
-        std::cerr << "[geruest::db] queryAsync() calling _executor.run() ..." << std::endl;
         co_return co_await _executor.run([self = std::move(self), sqlPtr = std::move(sqlPtr), paramsPtr = std::move(paramsPtr)]() {
-            std::cerr << "[geruest::db] pool.acquire() ..." << std::endl;
             PGconn* conn = self->_pool.acquire();
-            std::cerr << "[geruest::db] pool.acquire() done, conn=" << static_cast<void*>(conn) << std::endl;
 
             auto resetOrReconnect = [self](PGconn* c) {
                 if (PQstatus(c) != CONNECTION_OK) {
@@ -303,10 +298,8 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
                 }
             }
 
-            std::cerr << "[geruest::db] PQexecParams() sql=\"" << *sqlPtr << "\" nparams=" << values.size() << " ..." << std::endl;
             PGresult* res = PQexecParams(conn, sqlPtr->c_str(), static_cast<int>(values.size()), types.data(),
                                          values.data(), lengths.data(), formats.data(), 0);
-            std::cerr << "[geruest::db] PQexecParams() done, res=" << static_cast<void*>(res) << std::endl;
             if (res == nullptr) {
                 const std::string err = PQerrorMessage(conn);
                 resetOrReconnect(conn);
@@ -347,9 +340,7 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
                 out.affectedRows = static_cast<std::uint64_t>(std::strtoull(cmdTuples, nullptr, 10));
             }
             PQclear(res);
-            std::cerr << "[geruest::db] pool.release() conn=" << static_cast<void*>(conn) << " rows=" << out.rows.size() << std::endl;
             self->_pool.release(conn);
-            std::cerr << "[geruest::db] pool.release() done, returning result" << std::endl;
             return out;
         });
     }

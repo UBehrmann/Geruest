@@ -615,11 +615,7 @@ boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
     if (asyncRouteHandler) {
         const char* failLog = nullptr;
         try {
-            std::cerr << "[geruest::Handler] calling async route handler for " << request->getPathString() << " ..." << std::endl;
-            auto awaitable = (*asyncRouteHandler)(*request);
-            std::cerr << "[geruest::Handler] got awaitable, co_await ..." << std::endl;
-            HTTPResponse response = co_await std::move(awaitable);
-            std::cerr << "[geruest::Handler] co_await returned" << std::endl;
+            HTTPResponse response = co_await (*asyncRouteHandler)(*request);
 
             const std::string& _st = response.getStatus();
             if (!_st.empty()) {
