@@ -1,12 +1,18 @@
 #include "DatabaseClient.hpp"
 
+#include <boost/asio/post.hpp>
+#include <boost/asio/redirect_error.hpp>
+#include <boost/asio/steady_timer.hpp>
+#include <boost/asio/this_coro.hpp>
+#include <boost/asio/use_awaitable.hpp>
+
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
 #include <condition_variable>
 #include <cstdlib>
 #include <deque>
-#include <future>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <poll.h>
@@ -349,8 +355,7 @@ class SqliteClient final : public std::enable_shared_from_this<SqliteClient>, pu
 class PostgresClient final : public std::enable_shared_from_this<PostgresClient>, public DatabaseClient {
    public:
     PostgresClient(const PostgresConfig& config, const CommonConfig& common)
-        : _bridge(std::max<std::size_t>(common.poolSize, 1))
-        , _statementTimeoutMs(config.statementTimeoutMs)
+        : _statementTimeoutMs(config.statementTimeoutMs)
         , _maxPipelineBatch(std::max(1u, config.maxPipelineBatch)) {
         const std::size_t poolSize = std::max<std::size_t>(common.poolSize, 1);
         std::ostringstream conninfo;
@@ -383,23 +388,16 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
         {
             std::lock_guard<std::mutex> lock(_qMu);
             _stop.store(true, std::memory_order_release);
+            while (!_queue.empty()) {
+                std::unique_ptr<WorkItem> w = std::move(_queue.front());
+                _queue.pop_front();
+                completeItem(w, std::make_exception_ptr(std::runtime_error("postgres client shutting down")), std::nullopt);
+            }
         }
         _qCv.notify_all();
         for (std::thread& t : _workers) {
             if (t.joinable()) {
                 t.join();
-            }
-        }
-        {
-            std::lock_guard<std::mutex> lock(_qMu);
-            while (!_queue.empty()) {
-                std::unique_ptr<WorkItem> w = std::move(_queue.front());
-                _queue.pop_front();
-                try {
-                    w->promise.set_exception(std::make_exception_ptr(
-                        std::runtime_error("postgres client shutting down")));
-                } catch (...) {
-                }
             }
         }
         for (PGconn* c : _conns) {
@@ -408,19 +406,50 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
             }
         }
         _conns.clear();
-        _bridge.join();
     }
 
     Backend backend() const override { return Backend::Postgres; }
 
     boost::asio::awaitable<QueryResult> queryAsync(std::string sql,
                                                    std::vector<BindValue> params) override {
-        auto self = shared_from_this();
+        auto ex = co_await boost::asio::this_coro::executor;
+        auto done = std::make_shared<boost::asio::steady_timer>(ex);
+        done->expires_at((boost::asio::steady_timer::time_point::max)());
+        auto result = std::make_shared<std::optional<QueryResult>>();
+        auto error = std::make_shared<std::exception_ptr>();
+
         auto sqlPtr = std::make_shared<std::string>(std::move(sql));
         auto paramsPtr = std::make_shared<std::vector<BindValue>>(std::move(params));
-        return _bridge.run([self = std::move(self), sqlPtr = std::move(sqlPtr), paramsPtr = std::move(paramsPtr)]() {
-            return self->enqueueAndWait(sqlPtr, paramsPtr);
-        });
+        auto item = std::make_unique<WorkItem>();
+        item->sql = std::move(sqlPtr);
+        item->params = std::move(paramsPtr);
+        item->complete = [ex, done, result, error](std::exception_ptr err, std::optional<QueryResult> qr) mutable {
+            boost::asio::post(ex, [done, result, error, err = std::move(err), qr = std::move(qr)]() mutable {
+                *error = std::move(err);
+                if (qr.has_value()) {
+                    *result = std::move(*qr);
+                }
+                done->cancel();
+            });
+        };
+        {
+            std::lock_guard<std::mutex> lock(_qMu);
+            if (_stop.load(std::memory_order_acquire)) {
+                throw std::runtime_error("postgres client shutting down");
+            }
+            _queue.push_back(std::move(item));
+        }
+        _qCv.notify_one();
+
+        boost::system::error_code waitEc;
+        co_await done->async_wait(boost::asio::redirect_error(boost::asio::use_awaitable, waitEc));
+        if (*error) {
+            std::rethrow_exception(*error);
+        }
+        if (!result->has_value()) {
+            throw std::runtime_error("postgres query completed without result");
+        }
+        co_return std::move(**result);
     }
 
     boost::asio::awaitable<std::uint64_t> executeAsync(std::string sql,
@@ -433,22 +462,8 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
     struct WorkItem {
         std::shared_ptr<std::string> sql;
         std::shared_ptr<std::vector<BindValue>> params;
-        std::promise<QueryResult> promise;
+        std::function<void(std::exception_ptr, std::optional<QueryResult>)> complete;
     };
-
-    QueryResult enqueueAndWait(const std::shared_ptr<std::string>& sqlPtr,
-                                 const std::shared_ptr<std::vector<BindValue>>& paramsPtr) {
-        auto item = std::make_unique<WorkItem>();
-        item->sql = sqlPtr;
-        item->params = paramsPtr;
-        std::future<QueryResult> fut = item->promise.get_future();
-        {
-            std::lock_guard<std::mutex> lock(_qMu);
-            _queue.push_back(std::move(item));
-        }
-        _qCv.notify_one();
-        return fut.get();
-    }
 
     void workerMain(std::size_t slotIndex) {
         PGconn*& conn = _conns[slotIndex];
@@ -473,10 +488,7 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
                 runBatchOnConn(conn, batch, pollMs);
             } catch (...) {
                 for (auto& w : batch) {
-                    try {
-                        w->promise.set_exception(std::current_exception());
-                    } catch (...) {
-                    }
+                    completeItem(w, std::current_exception(), std::nullopt);
                 }
             }
         }
@@ -544,14 +556,7 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
             PQclear(res);
         }
         for (std::size_t i = 0; i < batch.size(); ++i) {
-            try {
-                batch[i]->promise.set_value(std::move(results[i]));
-            } catch (...) {
-                try {
-                    batch[i]->promise.set_exception(std::current_exception());
-                } catch (...) {
-                }
-            }
+            completeItem(batch[i], nullptr, std::move(results[i]));
         }
 
         pgEnsurePipelineOff(conn);
@@ -575,14 +580,25 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
         pgFlushConn(conn, pollMs);
         PGresult* res = pgReceiveFinalResult(conn, pollMs);
         try {
-            w.promise.set_value(pgBuildQueryResult(res));
+            completeItem(w, nullptr, pgBuildQueryResult(res));
         } catch (...) {
-            try {
-                w.promise.set_exception(std::current_exception());
-            } catch (...) {
-            }
+            completeItem(w, std::current_exception(), std::nullopt);
         }
         PQclear(res);
+    }
+
+    static void completeItem(std::unique_ptr<WorkItem>& item, std::exception_ptr err, std::optional<QueryResult> result) {
+        if (!item || !item->complete) {
+            return;
+        }
+        item->complete(std::move(err), std::move(result));
+    }
+
+    static void completeItem(WorkItem& item, std::exception_ptr err, std::optional<QueryResult> result) {
+        if (!item.complete) {
+            return;
+        }
+        item.complete(std::move(err), std::move(result));
     }
 
     void reconnectConn(PGconn*& conn) {
@@ -593,7 +609,6 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
         conn = pgConnectOne(_conninfo, _statementTimeoutMs);
     }
 
-    DbExecutor _bridge;
     std::string _conninfo;
     int _statementTimeoutMs;
     unsigned _maxPipelineBatch;
