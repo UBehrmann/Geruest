@@ -540,13 +540,27 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
 
         std::vector<QueryResult> results;
         results.reserve(batch.size());
-        while (results.size() < batch.size()) {
-            PGresult* res = pgReceiveFinalResult(conn, pollMs);
+        bool sawPipelineSync = false;
+        while (true) {
+            while (PQisBusy(conn) == 1) {
+                pgWaitSocket(conn, POLLIN, pollMs);
+                if (PQconsumeInput(conn) == 0) {
+                    const std::string err = PQerrorMessage(conn);
+                    throw std::runtime_error("postgres consume input failed: " + err);
+                }
+            }
+            PGresult* res = PQgetResult(conn);
+            if (res == nullptr) {
+                break;
+            }
+
             const ExecStatusType st = PQresultStatus(res);
             if (st == PGRES_PIPELINE_SYNC) {
+                sawPipelineSync = true;
                 PQclear(res);
                 continue;
             }
+
             try {
                 results.push_back(pgBuildQueryResult(res));
             } catch (...) {
@@ -555,6 +569,11 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
             }
             PQclear(res);
         }
+
+        if (!sawPipelineSync || results.size() != batch.size()) {
+            throw std::runtime_error("postgres pipeline result count mismatch");
+        }
+
         for (std::size_t i = 0; i < batch.size(); ++i) {
             completeItem(batch[i], nullptr, std::move(results[i]));
         }
