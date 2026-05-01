@@ -232,6 +232,18 @@ if(GERUEST_HAS_SQLITE)
     endif()
 endif()
 
+if(GERUEST_HAS_LIBPQ)
+    add_executable(DatabasePostgres_Tests
+        Database/DatabasePostgres_tests.cpp
+        ../database/DatabaseClient.cpp
+        ../database/DbExecutor.cpp
+    )
+    target_link_libraries(DatabasePostgres_Tests ${PLATFORM_LIBS} GTest::gtest_main PostgreSQL::PostgreSQL)
+    if(GERUEST_HAS_SQLITE)
+        target_link_libraries(DatabasePostgres_Tests SQLite::SQLite3)
+    endif()
+endif()
+
 # Add tests to CTest using Google Test discovery
 include(GoogleTest)
 gtest_discover_tests(JSONParser_Tests)
@@ -249,13 +261,41 @@ gtest_discover_tests(GeruestLifecycle_Tests)
 if(GERUEST_HAS_SQLITE)
     gtest_discover_tests(DatabaseSqlite_Tests)
 endif()
+if(GERUEST_HAS_LIBPQ)
+    gtest_discover_tests(DatabasePostgres_Tests)
+endif()
 
 # Custom target to run all tests
-add_custom_target(run_tests
-    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-    DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests ServerDataMetricsPersistence_Tests GeruestLifecycle_Tests
-    COMMENT "Running all unit tests via CTest"
-)
+if(GERUEST_HAS_LIBPQ)
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/run_tests_pg.sh" [=[#!/usr/bin/env bash
+set -e
+docker rm -f geruest_test_pg 2>/dev/null || true
+docker run -d --name geruest_test_pg \
+  -e POSTGRES_USER=geruest -e POSTGRES_PASSWORD=geruest -e POSTGRES_DB=geruest_test \
+  -p 5432:5432 postgres:16
+echo 'Waiting for PostgreSQL...'
+for i in $(seq 1 30); do
+  docker exec geruest_test_pg pg_isready -U geruest -q 2>/dev/null && break || sleep 1
+done
+export POSTGRES_HOST=localhost POSTGRES_PORT=5432
+export POSTGRES_DB=geruest_test POSTGRES_USER=geruest POSTGRES_PASSWORD=geruest
+rc=0
+"$1" --output-on-failure --verbose || rc=$?
+docker rm -f geruest_test_pg
+exit $rc
+]=])
+    add_custom_target(run_tests
+        COMMAND bash "${CMAKE_CURRENT_BINARY_DIR}/run_tests_pg.sh" "${CMAKE_CTEST_COMMAND}"
+        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests ServerDataMetricsPersistence_Tests GeruestLifecycle_Tests DatabasePostgres_Tests
+        COMMENT "Running all unit tests via CTest (with PostgreSQL container)"
+    )
+else()
+    add_custom_target(run_tests
+        COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
+        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests ServerDataMetricsPersistence_Tests GeruestLifecycle_Tests
+        COMMENT "Running all unit tests via CTest"
+    )
+endif()
 
 if(GERUEST_HAS_SQLITE)
     add_dependencies(run_tests DatabaseSqlite_Tests)

@@ -11,7 +11,22 @@ permissions:
 jobs:
   build-linux:
     runs-on: ubuntu-latest
-    
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: geruest
+          POSTGRES_PASSWORD: geruest
+          POSTGRES_DB: geruest_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U geruest"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -21,22 +36,28 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebp-dev libcurl4-openssl-dev libboost-system-dev libsqlite3-dev sqlite3
+          sudo apt-get install -y libwebp-dev libcurl4-openssl-dev libboost-system-dev libsqlite3-dev sqlite3 libpq-dev
 
       - name: Configure and Build
         run: |
           mkdir build && cd build
-          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DGERUEST_ENABLE_SQLITE=ON
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DGERUEST_ENABLE_SQLITE=ON -DGERUEST_ENABLE_POSTGRESQL=ON
           cmake --build . --config Release
 
       - name: Build Unit Tests
         run: |
           cd src/unitTests
           mkdir -p build && cd build
-          cmake .. -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DGERUEST_ENABLE_SQLITE=ON
+          cmake .. -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DGERUEST_ENABLE_SQLITE=ON -DGERUEST_ENABLE_POSTGRESQL=ON
           cmake --build .
 
       - name: Run Unit Tests
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: geruest_test
+          POSTGRES_USER: geruest
+          POSTGRES_PASSWORD: geruest
         run: |
           cd src/unitTests/build
           ctest --output-on-failure --verbose
