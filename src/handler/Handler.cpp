@@ -170,6 +170,7 @@ size_t findHeaderEndPos(const std::string& raw) {
 struct HeaderPreflight {
     std::string_view expect;
     std::string_view contentLength;
+    std::string_view transferEncoding;
 };
 
 [[nodiscard]] HeaderPreflight parseHeaderPreflight(std::string_view headerPrefix) {
@@ -200,12 +201,75 @@ struct HeaderPreflight {
             out.expect = value;
         } else if (out.contentLength.empty() && iequalsAsciiNoSpace(key, "content-length")) {
             out.contentLength = value;
+        } else if (out.transferEncoding.empty() && iequalsAsciiNoSpace(key, "transfer-encoding")) {
+            out.transferEncoding = value;
         }
-        if (!out.expect.empty() && !out.contentLength.empty()) {
+        if (!out.expect.empty() && !out.contentLength.empty() && !out.transferEncoding.empty()) {
             break;
         }
     }
     return out;
+}
+
+[[nodiscard]] bool containsChunkedToken(std::string_view v) {
+    size_t i = 0;
+    while (i < v.size()) {
+        while (i < v.size() && (v[i] == ' ' || v[i] == '\t' || v[i] == ',')) ++i;
+        size_t j = i;
+        while (j < v.size() && v[j] != ',') ++j;
+        std::string_view token = trimSv(v.substr(i, j - i));
+        if (iequalsAsciiNoSpace(token, "chunked")) {
+            return true;
+        }
+        i = j;
+    }
+    return false;
+}
+
+[[nodiscard]] size_t findChunkedBodyEnd(const std::string& raw, size_t bodyStart) {
+    size_t pos = bodyStart;
+    while (true) {
+        const size_t lineEnd = raw.find("\r\n", pos);
+        if (lineEnd == std::string::npos) {
+            return std::string::npos;
+        }
+
+        std::string_view sizeLine(raw.data() + pos, lineEnd - pos);
+        const size_t semi = sizeLine.find(';');
+        if (semi != std::string_view::npos) {
+            sizeLine = sizeLine.substr(0, semi);
+        }
+        sizeLine = trimSv(sizeLine);
+        if (sizeLine.empty()) {
+            return std::string::npos;
+        }
+
+        unsigned long long chunkSize = 0;
+        const char* begin = sizeLine.data();
+        const char* end = sizeLine.data() + sizeLine.size();
+        const std::from_chars_result parsed = std::from_chars(begin, end, chunkSize, 16);
+        if (parsed.ec != std::errc() || parsed.ptr != end) {
+            return std::string::npos;
+        }
+
+        pos = lineEnd + 2;
+        if (chunkSize == 0) {
+            const size_t trailerEnd = raw.find("\r\n\r\n", pos);
+            if (trailerEnd == std::string::npos) {
+                return std::string::npos;
+            }
+            return trailerEnd + 4;
+        }
+
+        const size_t chunkDataEnd = pos + static_cast<size_t>(chunkSize);
+        if (chunkDataEnd + 2 > raw.size()) {
+            return std::string::npos;
+        }
+        if (raw.compare(chunkDataEnd, 2, "\r\n") != 0) {
+            return std::string::npos;
+        }
+        pos = chunkDataEnd + 2;
+    }
 }
 
 bool parseContentLengthBytes(std::string_view cl, size_t* out) {
@@ -463,6 +527,7 @@ boost::asio::awaitable<void> Handler::runAsync() {
         const size_t headerEnd = findHeaderEndPos(raw);
 
         bool hasCL = false;
+        bool hasChunked = false;
         size_t bodyExpected = 0;
         const std::string_view headerPrefix(raw.data(), headerEnd);
         const HeaderPreflight preflight = parseHeaderPreflight(headerPrefix);
@@ -484,6 +549,9 @@ boost::asio::awaitable<void> Handler::runAsync() {
             }
             hasCL = true;
         }
+        if (!preflight.transferEncoding.empty()) {
+            hasChunked = containsChunkedToken(preflight.transferEncoding);
+        }
 
         if (hasCL && bodyExpected > kMaxHttpBodyBytes) {
             HTTPResponse br = responseBadRequest(nullptr);
@@ -495,16 +563,40 @@ boost::asio::awaitable<void> Handler::runAsync() {
             co_return;
         }
 
-        const size_t needTotal = headerEnd + (hasCL ? bodyExpected : 0);
-        while (raw.size() < needTotal) {
-            if (!co_await readSocketAsync()) {
-                co_return;
+        size_t needTotal = headerEnd + (hasCL ? bodyExpected : 0);
+        if (hasChunked) {
+            while (true) {
+                const size_t chunkEnd = findChunkedBodyEnd(raw, headerEnd);
+                if (chunkEnd != std::string::npos) {
+                    needTotal = chunkEnd;
+                    break;
+                }
+                if (!co_await readSocketAsync()) {
+                    co_return;
+                }
+                if (bufferLength <= 0) {
+                    sendToLoggerError("Invalid buffer length when reading chunked body.");
+                    co_return;
+                }
+                raw.append(buffer.get(), static_cast<size_t>(bufferLength));
+                if (raw.size() > kMaxHttpBodyBytes + headerEnd) {
+                    HTTPResponse br = responseBadRequest(nullptr);
+                    br.serializeTo(responseScratch_);
+                    co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size());
+                    co_return;
+                }
             }
-            if (bufferLength <= 0) {
-                sendToLoggerError("Invalid buffer length when reading body.");
-                co_return;
+        } else {
+            while (raw.size() < needTotal) {
+                if (!co_await readSocketAsync()) {
+                    co_return;
+                }
+                if (bufferLength <= 0) {
+                    sendToLoggerError("Invalid buffer length when reading body.");
+                    co_return;
+                }
+                raw.append(buffer.get(), static_cast<size_t>(bufferLength));
             }
-            raw.append(buffer.get(), static_cast<size_t>(bufferLength));
         }
 
         std::shared_ptr<const std::string> messageBacking =
