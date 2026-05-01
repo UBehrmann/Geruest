@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.11)
 
 # Define the project name and version
 project(GeruestLibrary VERSION 0.9.10 LANGUAGES CXX)
