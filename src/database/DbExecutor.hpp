@@ -9,6 +9,7 @@
 #include <boost/asio/this_coro.hpp>
 #include <boost/asio/use_awaitable.hpp>
 
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <type_traits>
@@ -42,7 +43,9 @@ auto DbExecutor::run(Fn&& fn) -> boost::asio::awaitable<typename std::invoke_res
     auto done = std::make_shared<boost::asio::steady_timer>(ex);
     done->expires_at((boost::asio::steady_timer::time_point::max)());
 
+    std::cerr << "[geruest::DbExecutor] posting task to pool ..." << std::endl;
     boost::asio::post(_pool, [ex, task = std::forward<Fn>(fn), error, result, done]() mutable {
+        std::cerr << "[geruest::DbExecutor] pool thread running task ..." << std::endl;
         try {
             if constexpr (std::is_void_v<ReturnType>) {
                 task();
@@ -51,17 +54,24 @@ auto DbExecutor::run(Fn&& fn) -> boost::asio::awaitable<typename std::invoke_res
             }
         } catch (...) {
             *error = std::current_exception();
+            std::cerr << "[geruest::DbExecutor] pool thread task threw exception" << std::endl;
         }
 
+        std::cerr << "[geruest::DbExecutor] pool thread posting cancel to strand ..." << std::endl;
         boost::asio::post(ex, [done]() mutable {
+            std::cerr << "[geruest::DbExecutor] strand running cancel" << std::endl;
             done->cancel();
         });
+        std::cerr << "[geruest::DbExecutor] pool thread done" << std::endl;
     });
 
+    std::cerr << "[geruest::DbExecutor] co_await timer ..." << std::endl;
     boost::system::error_code waitEc;
     co_await done->async_wait(boost::asio::redirect_error(boost::asio::use_awaitable, waitEc));
+    std::cerr << "[geruest::DbExecutor] timer woke up, ec=" << waitEc.message() << std::endl;
 
     if (*error) {
+        std::cerr << "[geruest::DbExecutor] rethrowing exception" << std::endl;
         std::rethrow_exception(*error);
     }
 
