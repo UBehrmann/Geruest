@@ -538,29 +538,13 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
 
         pgFlushConn(conn, pollMs);
 
+        // Pipeline protocol: for each sent command, read every PGresult until PQgetResult
+        // returns nullptr, then repeat for the next command (see libpq pipeline-mode docs).
+        // A single nullptr ends one command's result chain, not the whole pipeline.
         std::vector<QueryResult> results;
         results.reserve(batch.size());
-        bool sawPipelineSync = false;
-        while (true) {
-            while (PQisBusy(conn) == 1) {
-                pgWaitSocket(conn, POLLIN, pollMs);
-                if (PQconsumeInput(conn) == 0) {
-                    const std::string err = PQerrorMessage(conn);
-                    throw std::runtime_error("postgres consume input failed: " + err);
-                }
-            }
-            PGresult* res = PQgetResult(conn);
-            if (res == nullptr) {
-                break;
-            }
-
-            const ExecStatusType st = PQresultStatus(res);
-            if (st == PGRES_PIPELINE_SYNC) {
-                sawPipelineSync = true;
-                PQclear(res);
-                continue;
-            }
-
+        for (std::size_t q = 0; q < batch.size(); ++q) {
+            PGresult* res = pgReceiveFinalResult(conn, pollMs);
             try {
                 results.push_back(pgBuildQueryResult(res));
             } catch (...) {
@@ -570,8 +554,21 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
             PQclear(res);
         }
 
-        if (!sawPipelineSync || results.size() != batch.size()) {
-            throw std::runtime_error("postgres pipeline result count mismatch");
+        while (PQisBusy(conn) == 1) {
+            pgWaitSocket(conn, POLLIN, pollMs);
+            if (PQconsumeInput(conn) == 0) {
+                const std::string err = PQerrorMessage(conn);
+                throw std::runtime_error("postgres consume input failed: " + err);
+            }
+        }
+        PGresult* syncRes = PQgetResult(conn);
+        if (syncRes == nullptr) {
+            throw std::runtime_error("postgres pipeline missing sync result");
+        }
+        const ExecStatusType syncSt = PQresultStatus(syncRes);
+        PQclear(syncRes);
+        if (syncSt != PGRES_PIPELINE_SYNC) {
+            throw std::runtime_error("postgres pipeline expected PGRES_PIPELINE_SYNC");
         }
 
         for (std::size_t i = 0; i < batch.size(); ++i) {
