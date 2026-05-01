@@ -3,9 +3,11 @@
 #include <boost/asio/co_spawn.hpp>
 
 #include <algorithm>
+#include <cerrno>
 #include <condition_variable>
 #include <cstdlib>
 #include <mutex>
+#include <poll.h>
 #include <sstream>
 #include <stdexcept>
 
@@ -221,6 +223,11 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
                 PQfinish(conn);
                 throw std::runtime_error("Failed to connect postgres: " + err);
             }
+            if (PQsetnonblocking(conn, 1) != 0) {
+                const std::string err = PQerrorMessage(conn);
+                PQfinish(conn);
+                throw std::runtime_error("Failed to set postgres nonblocking mode: " + err);
+            }
             if (config.statementTimeoutMs > 0) {
                 const std::string setStmt =
                     "SET statement_timeout = " + std::to_string(config.statementTimeoutMs);
@@ -252,6 +259,12 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
             auto resetOrReconnect = [self](PGconn* c) {
                 if (PQstatus(c) != CONNECTION_OK) {
                     PQreset(c);
+                    if (PQstatus(c) == CONNECTION_OK) {
+                        if (PQsetnonblocking(c, 1) != 0) {
+                            self->_pool.release(c);
+                            return;
+                        }
+                    }
                     if (PQstatus(c) == CONNECTION_OK && self->_statementTimeoutMs > 0) {
                         const std::string stmt =
                             "SET statement_timeout = " + std::to_string(self->_statementTimeoutMs);
@@ -268,6 +281,11 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
                     const std::string err = PQerrorMessage(conn);
                     self->_pool.release(conn);
                     throw std::runtime_error("postgres connection lost: " + err);
+                }
+                if (PQsetnonblocking(conn, 1) != 0) {
+                    const std::string err = PQerrorMessage(conn);
+                    self->_pool.release(conn);
+                    throw std::runtime_error("postgres nonblocking restore failed: " + err);
                 }
                 if (self->_statementTimeoutMs > 0) {
                     const std::string stmt =
@@ -298,12 +316,71 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
                 }
             }
 
-            PGresult* res = PQexecParams(conn, sqlPtr->c_str(), static_cast<int>(values.size()), types.data(),
-                                         values.data(), lengths.data(), formats.data(), 0);
-            if (res == nullptr) {
+            auto waitSocket = [conn, self](short events) {
+                const int fd = PQsocket(conn);
+                if (fd < 0) {
+                    throw std::runtime_error("postgres socket unavailable");
+                }
+                const int timeoutMs = self->_statementTimeoutMs > 0 ? self->_statementTimeoutMs : 30000;
+                struct pollfd pfd {
+                    fd, events, 0
+                };
+                while (true) {
+                    const int rc = ::poll(&pfd, 1, timeoutMs);
+                    if (rc > 0) return;
+                    if (rc == 0) throw std::runtime_error("postgres socket wait timeout");
+                    if (errno == EINTR) continue;
+                    throw std::runtime_error("postgres socket wait failed");
+                }
+            };
+
+            if (PQsendQueryParams(conn, sqlPtr->c_str(), static_cast<int>(values.size()), types.data(),
+                                  values.data(), lengths.data(), formats.data(), 0) == 0) {
                 const std::string err = PQerrorMessage(conn);
                 resetOrReconnect(conn);
                 throw std::runtime_error("postgres query failed: " + err);
+            }
+
+            while (PQflush(conn) == 1) {
+                try {
+                    waitSocket(POLLOUT);
+                } catch (...) {
+                    resetOrReconnect(conn);
+                    throw;
+                }
+            }
+
+            PGresult* res = nullptr;
+            while (true) {
+                while (PQisBusy(conn) == 1) {
+                    try {
+                        waitSocket(POLLIN);
+                    } catch (...) {
+                        if (res != nullptr) PQclear(res);
+                        resetOrReconnect(conn);
+                        throw;
+                    }
+                    if (PQconsumeInput(conn) == 0) {
+                        const std::string err = PQerrorMessage(conn);
+                        if (res != nullptr) PQclear(res);
+                        resetOrReconnect(conn);
+                        throw std::runtime_error("postgres consume input failed: " + err);
+                    }
+                }
+                PGresult* next = PQgetResult(conn);
+                if (next == nullptr) {
+                    break;
+                }
+                if (res != nullptr) {
+                    PQclear(res);
+                }
+                res = next;
+            }
+
+            if (res == nullptr) {
+                const std::string err = PQerrorMessage(conn);
+                resetOrReconnect(conn);
+                throw std::runtime_error("postgres query returned no result: " + err);
             }
 
             const ExecStatusType status = PQresultStatus(res);
