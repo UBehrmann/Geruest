@@ -522,8 +522,8 @@ std::string mergeJsFilesResolvingBundleWriteback(AssetMerger& merger,
 
 JsMergeDiscovery AssetMerger::discoverJsMergeInputs(const std::string& htmlContent) {
     JsMergeDiscovery d;
-    auto jsRefs = extractJsReferences(htmlContent);
-    for (const auto& ref : jsRefs) {
+    d.allJsRefs = extractJsReferences(htmlContent);
+    for (const auto& ref : d.allJsRefs) {
         if (ref.isExternal) {
             continue;
         }
@@ -586,8 +586,7 @@ MergeResult AssetMerger::processHtml(const std::string& htmlContent, const std::
     result.jsFiles = std::move(jsDisc.jsHrefs);
     result.jsSubdir = std::move(jsDisc.jsSubdir);
     std::vector<std::string> localJsFiles = std::move(jsDisc.localJsAbsolutePaths);
-
-    auto jsRefs = extractJsReferences(htmlContent);
+    auto jsRefs = std::move(jsDisc.allJsRefs);
     
     // Determine if we should merge (always merge if there's at least 1 file)
     bool shouldMergeCss = localCssFiles.size() >= 1;

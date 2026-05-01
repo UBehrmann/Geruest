@@ -37,6 +37,23 @@ namespace geruest::db {
 
 namespace {
 
+inline std::string pqEscapeConnInfoValue(const std::string& val) {
+    bool needsQuoting = val.empty()
+        || val.find(' ')  != std::string::npos
+        || val.find('\'') != std::string::npos
+        || val.find('\\') != std::string::npos;
+    if (!needsQuoting) return val;
+    std::string out;
+    out.reserve(val.size() + 2);
+    out += '\'';
+    for (char c : val) {
+        if (c == '\'' || c == '\\') out += '\\';
+        out += c;
+    }
+    out += '\'';
+    return out;
+}
+
 inline std::string bindValueToString(const BindValue& v) {
     if (std::holds_alternative<std::nullptr_t>(v)) {
         return "";
@@ -360,12 +377,12 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
         , _maxPipelineBatch(std::max(1u, config.maxPipelineBatch)) {
         const std::size_t poolSize = std::max<std::size_t>(common.poolSize, 1);
         std::ostringstream conninfo;
-        conninfo << "host=" << config.host
+        conninfo << "host=" << pqEscapeConnInfoValue(config.host)
                  << " port=" << config.port
-                 << " dbname=" << config.database
-                 << " user=" << config.user
-                 << " password=" << config.password
-                 << " sslmode=" << config.sslmode
+                 << " dbname=" << pqEscapeConnInfoValue(config.database)
+                 << " user=" << pqEscapeConnInfoValue(config.user)
+                 << " password=" << pqEscapeConnInfoValue(config.password)
+                 << " sslmode=" << pqEscapeConnInfoValue(config.sslmode)
                  << " connect_timeout=" << config.connectTimeoutSeconds;
         if (config.tcpKeepalives) {
             conninfo << " keepalives=1"

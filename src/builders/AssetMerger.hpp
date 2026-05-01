@@ -54,6 +54,7 @@ struct JsMergeDiscovery {
     std::vector<std::string> jsHrefs;
     std::vector<std::string> localJsAbsolutePaths;
     std::string jsSubdir;
+    std::vector<AssetReference> allJsRefs;
 };
 
 class AssetMerger {
