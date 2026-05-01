@@ -244,9 +244,11 @@ class PostgresClient final : public std::enable_shared_from_this<PostgresClient>
 
     boost::asio::awaitable<QueryResult> queryAsync(std::string sql,
                                                    std::vector<BindValue> params) override {
+        std::cerr << "[geruest::db] queryAsync() entered, sql=\"" << sql << "\"" << std::endl;
         std::shared_ptr<PostgresClient> self = shared_from_this();
         auto sqlPtr = std::make_shared<std::string>(std::move(sql));
         auto paramsPtr = std::make_shared<std::vector<BindValue>>(std::move(params));
+        std::cerr << "[geruest::db] queryAsync() calling _executor.run() ..." << std::endl;
         co_return co_await _executor.run([self = std::move(self), sqlPtr = std::move(sqlPtr), paramsPtr = std::move(paramsPtr)]() {
             std::cerr << "[geruest::db] pool.acquire() ..." << std::endl;
             PGconn* conn = self->_pool.acquire();
