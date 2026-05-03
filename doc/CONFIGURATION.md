@@ -36,6 +36,9 @@ POSTGRES_DB=app
 POSTGRES_USER=app
 POSTGRES_PASSWORD=secret
 POSTGRES_SSLMODE=prefer
+POSTGRES_CONNECT_TIMEOUT=5
+POSTGRES_STATEMENT_TIMEOUT_MS=30000
+POSTGRES_PIPELINE_MAX_BATCH=8
 
 # Feature Flags
 DEV_MODE=false
@@ -96,7 +99,7 @@ Selection precedence is:
 2. environment /.env `DATABASE_BACKEND`
 3. default `none`
 
-If selected backend is not compiled in (`GERUEST_HAS_LIBPQ=0` or `GERUEST_HAS_SQLITE=0`), startup fails fast.
+If the selected backend is not compiled in (`GERUEST_HAS_LIBPQ=0` or `GERUEST_HAS_SQLITE=0`), initialization throws. If the backend is compiled in but required settings are missing (empty `POSTGRES_DB`/`POSTGRES_USER` for Postgres, empty `SQLITE_PATH` for SQLite), Geruest logs an error and leaves the database client unset (`HTTPRequest::database()` stays null). See [DATABASE.md](DATABASE.md).
 
 ### Server Configuration
 

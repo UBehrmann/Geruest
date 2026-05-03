@@ -12,6 +12,9 @@ std::string getPath(size_t idx) const;          // Path segment at index
 const std::string& getClientIP() const;         // Client IP address
 const std::string& getBody() const;             // Request body
 
+// Shared database client (async routes); null if backend is none or initialization failed
+std::shared_ptr<geruest::db::DatabaseClient> database() const;
+
 // Query parameters
 bool hasParam(const std::string& name) const;
 std::string getParam(const std::string& name) const;
