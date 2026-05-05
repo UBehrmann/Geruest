@@ -245,7 +245,79 @@ class ServerData {
             || target.rfind("//", 0) == 0;
     }
 
-    std::optional<std::pair<std::string, int>> findMatchingWildcardRedirect(const std::string& path) const {
+    std::optional<std::string> extractSupportedLanguagePrefix(const std::string& path) const {
+        if (path.size() < 3 || path[0] != '/') {
+            return std::nullopt;
+        }
+
+        const auto slashPos = path.find('/', 1);
+        const size_t langLen = (slashPos == std::string::npos) ? (path.size() - 1) : (slashPos - 1);
+        if (langLen != 2) {
+            return std::nullopt;
+        }
+
+        const char c1 = path[1];
+        const char c2 = path[2];
+        if (!std::isalpha(static_cast<unsigned char>(c1)) || !std::isalpha(static_cast<unsigned char>(c2))) {
+            return std::nullopt;
+        }
+
+        const std::string lang = path.substr(1, 2);
+        if (!isLanguageAvailable(lang)) {
+            return std::nullopt;
+        }
+
+        return lang;
+    }
+
+    bool hasSupportedLanguagePrefixInTarget(const std::string& target) const {
+        return extractSupportedLanguagePrefix(target).has_value();
+    }
+
+    std::optional<std::string> stripSupportedLanguagePrefix(const std::string& path) const {
+        const auto lang = extractSupportedLanguagePrefix(path);
+        if (!lang.has_value()) {
+            return std::nullopt;
+        }
+
+        if (path.size() == 3) {
+            return std::string("/");
+        }
+
+        return path.substr(3);
+    }
+
+    std::string normalizeRedirectTargetLanguage(const std::string& target, const std::string& requestPath) const {
+        if (!hasLanguages() || target.empty()) {
+            return target;
+        }
+
+        if (isLikelyExternalTarget(target)) {
+            return target;
+        }
+
+        if (target[0] != '/') {
+            return target;
+        }
+
+        if (hasSupportedLanguagePrefixInTarget(target)) {
+            return target;
+        }
+
+        const auto requestLang = extractSupportedLanguagePrefix(requestPath);
+        if (!requestLang.has_value()) {
+            return target;
+        }
+
+        if (target == "/") {
+            return "/" + *requestLang + "/";
+        }
+
+        return "/" + *requestLang + target;
+    }
+
+    std::optional<std::pair<std::string, int>> findMatchingWildcardRedirect(const std::string& path,
+                                                                            const std::string& requestPath) const {
         size_t bestPatternLength = 0;
         std::optional<std::pair<std::string, int>> bestMatch;
 
@@ -260,7 +332,8 @@ class ServerData {
                 continue;
             }
 
-            const std::string resolvedTarget = applyWildcardCapture(redirect.second.target, *capture);
+            const std::string capturedTarget = applyWildcardCapture(redirect.second.target, *capture);
+            const std::string resolvedTarget = normalizeRedirectTargetLanguage(capturedTarget, requestPath);
             if (!bestMatch.has_value() || pattern.size() > bestPatternLength) {
                 bestPatternLength = pattern.size();
                 bestMatch = std::make_pair(resolvedTarget, redirect.second.status);
@@ -484,11 +557,29 @@ class ServerData {
         // Priority rule 1: exact redirect first
         auto exactMatch = _redirects.find(path);
         if (exactMatch != _redirects.end()) {
-            return std::make_pair(exactMatch->second.target, exactMatch->second.status);
+            return std::make_pair(normalizeRedirectTargetLanguage(exactMatch->second.target, path),
+                                  exactMatch->second.status);
         }
 
         // Priority rule 2: wildcard redirect after exact redirect
-        return findMatchingWildcardRedirect(path);
+        auto wildcardMatch = findMatchingWildcardRedirect(path, path);
+        if (wildcardMatch.has_value()) {
+            return wildcardMatch;
+        }
+
+        // If request starts with supported language prefix, retry redirects on stripped path.
+        const auto strippedPath = stripSupportedLanguagePrefix(path);
+        if (!strippedPath.has_value()) {
+            return std::nullopt;
+        }
+
+        exactMatch = _redirects.find(*strippedPath);
+        if (exactMatch != _redirects.end()) {
+            return std::make_pair(normalizeRedirectTargetLanguage(exactMatch->second.target, path),
+                                  exactMatch->second.status);
+        }
+
+        return findMatchingWildcardRedirect(*strippedPath, path);
     }
 
     /**
