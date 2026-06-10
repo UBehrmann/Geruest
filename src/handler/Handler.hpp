@@ -54,8 +54,8 @@ class Handler {
     /** Reused for HTTPResponse::serializeTo and similar to reduce per-send allocations. */
     std::string responseScratch_;
 
-    boost::asio::awaitable<bool> readSocketAsync();
-    boost::asio::awaitable<bool> readSocketAsync(char* bufferToUse, size_t size);
+    boost::asio::awaitable<bool> readSocketAsync(std::string_view phase = {});
+    boost::asio::awaitable<bool> readSocketAsync(char* bufferToUse, size_t size, std::string_view phase = {});
 
     boost::asio::awaitable<bool> discardFromSocketAsync(size_t byteCount);
 

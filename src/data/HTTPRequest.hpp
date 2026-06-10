@@ -125,6 +125,76 @@ class HTTPRequest {
     static std::string toLower(std::string_view str);
 };
 
+[[nodiscard]] inline bool httpConnectionHeaderHasToken(std::string_view value, std::string_view token) {
+    size_t i = 0;
+    while (i < value.size()) {
+        while (i < value.size()) {
+            const unsigned char c = static_cast<unsigned char>(value[i]);
+            if (c != ' ' && c != '\t' && c != ',') {
+                break;
+            }
+            ++i;
+        }
+        if (i >= value.size()) {
+            break;
+        }
+        size_t j = i;
+        while (j < value.size() && value[j] != ',') {
+            ++j;
+        }
+        std::string_view part = value.substr(i, j - i);
+        while (!part.empty() && std::isspace(static_cast<unsigned char>(part.front()))) {
+            part.remove_prefix(1);
+        }
+        while (!part.empty() && std::isspace(static_cast<unsigned char>(part.back()))) {
+            part.remove_suffix(1);
+        }
+        if (part.size() == token.size()) {
+            bool match = true;
+            for (size_t k = 0; k < token.size(); ++k) {
+                const unsigned char c = static_cast<unsigned char>(part[k]);
+                const unsigned char t = static_cast<unsigned char>(token[k]);
+                const unsigned char lower = (c >= 'A' && c <= 'Z') ? static_cast<unsigned char>(c + ('a' - 'A')) : c;
+                if (lower != t) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) {
+                return true;
+            }
+        }
+        i = j;
+    }
+    return false;
+}
+
+/** True when the server should not wait for another request on this connection. */
+[[nodiscard]] inline bool httpShouldCloseAfterResponse(std::string_view requestLine,
+                                                       std::string_view connectionHeader) {
+    if (!connectionHeader.empty()) {
+        if (httpConnectionHeaderHasToken(connectionHeader, "close")) {
+            return true;
+        }
+        if (httpConnectionHeaderHasToken(connectionHeader, "keep-alive")) {
+            return false;
+        }
+    }
+
+    const size_t lastSp = requestLine.rfind(' ');
+    if (lastSp == std::string_view::npos || lastSp + 1 >= requestLine.size()) {
+        return true;
+    }
+    std::string_view version = requestLine.substr(lastSp + 1);
+    while (!version.empty() && std::isspace(static_cast<unsigned char>(version.front()))) {
+        version.remove_prefix(1);
+    }
+    while (!version.empty() && std::isspace(static_cast<unsigned char>(version.back()))) {
+        version.remove_suffix(1);
+    }
+    return version == "HTTP/1.0";
+}
+
 [[nodiscard]] inline bool httpExpectIs100Continue(std::string_view value) {
     size_t i = 0;
     while (i < value.size() && std::isspace(static_cast<unsigned char>(value[i]))) {

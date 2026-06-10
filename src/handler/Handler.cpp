@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <boost/asio/buffer.hpp>
+#include <boost/asio/error.hpp>
 #include <boost/asio/read.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/asio/write.hpp>
@@ -26,6 +27,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -165,6 +167,40 @@ size_t findHeaderEndPos(const std::string& raw) {
     while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) s.remove_prefix(1);
     while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.remove_suffix(1);
     return s;
+}
+
+[[nodiscard]] bool isExpectedKeepAliveTeardown(const boost::system::error_code& ec, std::string_view phase) {
+    if (phase != "waiting_for_request") {
+        return false;
+    }
+    return ec == boost::asio::error::eof || ec == boost::asio::error::connection_reset ||
+           ec == boost::asio::error::broken_pipe;
+}
+
+[[nodiscard]] const char* socketReadFailureHint(const boost::system::error_code& ec, std::string_view phase,
+                                                unsigned int connectionReq) {
+    if (ec == boost::asio::error::eof) {
+        if (phase == "waiting_for_request" && connectionReq > 1) {
+            return "client closed idle keep-alive connection (usually harmless)";
+        }
+        return "client closed connection (end of stream)";
+    }
+    if (ec == boost::asio::error::connection_reset) {
+        if (phase == "waiting_for_request") {
+            return "peer reset connection while waiting for next request (often browser idle teardown)";
+        }
+        return "connection reset by peer";
+    }
+    if (ec == boost::asio::error::operation_aborted) {
+        return "read operation aborted (server shutdown or cancelled I/O)";
+    }
+    if (ec == boost::asio::error::broken_pipe) {
+        return "broken pipe (peer already gone)";
+    }
+    if (ec == boost::asio::error::not_connected) {
+        return "socket is not connected";
+    }
+    return nullptr;
 }
 
 struct HeaderPreflight {
@@ -355,7 +391,7 @@ Handler::~Handler() {
     serverData.decrementActiveHandlers();
 }
 
-boost::asio::awaitable<bool> Handler::readSocketAsync(char* bufferToUse, size_t size) {
+boost::asio::awaitable<bool> Handler::readSocketAsync(char* bufferToUse, size_t size, std::string_view phase) {
     if (size > INT_MAX) {
         sendToLoggerError("Size of buffer is too big.");
         co_return false;
@@ -365,8 +401,21 @@ boost::asio::awaitable<bool> Handler::readSocketAsync(char* bufferToUse, size_t 
         const std::size_t n = co_await clientSocket.async_read_some(
             boost::asio::buffer(bufferToUse, size), boost::asio::use_awaitable);
         bufferLength = static_cast<std::int64_t>(n);
-    } catch (const boost::system::system_error&) {
-        sendToLogger("Error reading from socket.", LogLevel::Warning);
+    } catch (const boost::system::system_error& e) {
+        if (!isExpectedKeepAliveTeardown(e.code(), phase)) {
+            std::ostringstream oss;
+            oss << "Error reading from socket";
+            if (!phase.empty()) {
+                oss << " phase=" << phase;
+            }
+            oss << " connection_req=" << messageCount;
+            oss << " socket_open=" << (clientSocket.is_open() ? "yes" : "no");
+            oss << " error=[" << e.code().category().name() << ':' << e.code().value() << "] " << e.code().message();
+            if (const char* hint = socketReadFailureHint(e.code(), phase, messageCount)) {
+                oss << " hint=" << hint;
+            }
+            sendToLogger(oss.str(), LogLevel::Warning);
+        }
         co_return false;
     }
 
@@ -376,12 +425,14 @@ boost::asio::awaitable<bool> Handler::readSocketAsync(char* bufferToUse, size_t 
     co_return true;
 }
 
-boost::asio::awaitable<bool> Handler::readSocketAsync() { co_return co_await readSocketAsync(buffer.get(), BUFFER_SIZE); }
+boost::asio::awaitable<bool> Handler::readSocketAsync(std::string_view phase) {
+    co_return co_await readSocketAsync(buffer.get(), BUFFER_SIZE, phase);
+}
 
 boost::asio::awaitable<bool> Handler::discardFromSocketAsync(size_t byteCount) {
     while (byteCount > 0) {
         const size_t chunk = std::min(byteCount, static_cast<size_t>(BUFFER_SIZE));
-        if (!co_await readSocketAsync(buffer.get(), chunk)) {
+        if (!co_await readSocketAsync(buffer.get(), chunk, "discarding_body")) {
             co_return false;
         }
         if (bufferLength <= 0) {
@@ -503,7 +554,7 @@ boost::asio::awaitable<void> Handler::runAsync() {
         pendingRequestData.clear();
 
         if (raw.empty()) {
-            if (!co_await readSocketAsync()) {
+            if (!co_await readSocketAsync("waiting_for_request")) {
                 break;
             }
             if (bufferLength <= 0) {
@@ -518,7 +569,7 @@ boost::asio::awaitable<void> Handler::runAsync() {
                 sendToLoggerError("HTTP headers exceed maximum size.");
                 co_return;
             }
-            if (!co_await readSocketAsync()) {
+            if (!co_await readSocketAsync("reading_headers")) {
                 co_return;
             }
             if (bufferLength <= 0) {
@@ -575,7 +626,7 @@ boost::asio::awaitable<void> Handler::runAsync() {
                     needTotal = chunkEnd;
                     break;
                 }
-                if (!co_await readSocketAsync()) {
+                if (!co_await readSocketAsync("reading_chunked_body")) {
                     co_return;
                 }
                 if (bufferLength <= 0) {
@@ -592,7 +643,7 @@ boost::asio::awaitable<void> Handler::runAsync() {
             }
         } else {
             while (raw.size() < needTotal) {
-                if (!co_await readSocketAsync()) {
+                if (!co_await readSocketAsync("reading_body")) {
                     co_return;
                 }
                 if (bufferLength <= 0) {
@@ -625,6 +676,10 @@ boost::asio::awaitable<void> Handler::runAsync() {
             serverData.recordLatency(_elapsedUs <= 0 ? 0u
                                      : _elapsedUs > 0xFFFFFFFFLL ? 0xFFFFFFFFu
                                                                  : static_cast<uint32_t>(_elapsedUs));
+        }
+
+        if (httpShouldCloseAfterResponse(hTTPRequest.getRawRequestLine(), hTTPRequest.getHeaderView("connection"))) {
+            break;
         }
 
         memset(buffer.get(), 0, BUFFER_SIZE);
