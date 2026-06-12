@@ -306,19 +306,12 @@ TEST(WebSocketIntegration, ServerSendsCloseFrameAfterHandler) {
     const auto frame = maskedTextFrame("bye");
     ASSERT_TRUE(sendAll(fd, frame.data(), frame.size()));
 
-    std::string payload;
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (payload.find('\x88') == std::string::npos && std::chrono::steady_clock::now() < deadline) {
-        char buf[512];
-        const ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
-        if (n > 0) {
-            payload.append(buf, static_cast<size_t>(n));
-        } else {
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        }
-    }
-    EXPECT_NE(payload.find("bye"), std::string::npos);
-    EXPECT_NE(payload.find('\x88'), std::string::npos);
+    const std::string echoed = readUnmaskedTextPayload(fd);
+    EXPECT_EQ(echoed, "bye");
+
+    std::string closeFrame;
+    ASSERT_TRUE(recvSome(fd, closeFrame, 2, 1000));
+    EXPECT_EQ(static_cast<unsigned char>(closeFrame[0]), 0x88u);
 
     close(fd);
     server.stop();

@@ -1,5 +1,12 @@
 cmake_minimum_required(VERSION 3.28)
-project(Geruest_Unit_Tests VERSION 0.6.2)
+
+# Keep test Version.hpp in sync with GeruestLibrary (separate CMake project).
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../../CMakeLists.txt" GERUEST_ROOT_CMAKELISTS)
+string(REGEX MATCH "project\\(GeruestLibrary VERSION ([0-9]+\\.[0-9]+\\.[0-9]+)" _ "${GERUEST_ROOT_CMAKELISTS}")
+if(NOT CMAKE_MATCH_1)
+    message(FATAL_ERROR "Could not parse Geruest library version from root CMakeLists.txt")
+endif()
+project(Geruest_Unit_Tests VERSION ${CMAKE_MATCH_1})
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
