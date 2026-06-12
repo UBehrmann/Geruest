@@ -79,12 +79,6 @@ void appendUint16BE(std::vector<uint8_t>& out, uint16_t v) {
     out.push_back(static_cast<uint8_t>(v & 0xFF));
 }
 
-void appendUint64BE(std::vector<uint8_t>& out, uint64_t v) {
-    for (int shift = 56; shift >= 0; shift -= 8) {
-        out.push_back(static_cast<uint8_t>((v >> shift) & 0xFF));
-    }
-}
-
 void unmaskPayload(std::vector<uint8_t>& payload, const uint8_t mask[4]) {
     for (size_t i = 0; i < payload.size(); ++i) {
         payload[i] ^= mask[i % 4];
@@ -175,25 +169,40 @@ std::string sha1Hash(std::string_view input) {
 }
 
 std::vector<uint8_t> encodeServerFrame(WSOpcode opcode, std::span<const uint8_t> payload, bool fin) {
-    std::vector<uint8_t> frame;
-    frame.reserve(14 + payload.size());
+    const size_t len = payload.size();
+    size_t         headerSize = 2;
+    if (len >= 126 && len <= 0xFFFF) {
+        headerSize = 4;
+    } else if (len > 0xFFFF) {
+        headerSize = 10;
+    }
+
+    std::vector<uint8_t> frame(headerSize + len);
+    size_t               pos = 0;
+
     uint8_t b0 = static_cast<uint8_t>(opcode) & 0x0F;
     if (fin) {
         b0 |= 0x80;
     }
-    frame.push_back(b0);
+    frame[pos++] = b0;
 
-    const size_t len = payload.size();
     if (len < 126) {
-        frame.push_back(static_cast<uint8_t>(len));
+        frame[pos++] = static_cast<uint8_t>(len);
     } else if (len <= 0xFFFF) {
-        frame.push_back(126);
-        appendUint16BE(frame, static_cast<uint16_t>(len));
+        const uint16_t len16 = static_cast<uint16_t>(len);
+        frame[pos++] = 126;
+        frame[pos++] = static_cast<uint8_t>((len16 >> 8) & 0xFF);
+        frame[pos++] = static_cast<uint8_t>(len16 & 0xFF);
     } else {
-        frame.push_back(127);
-        appendUint64BE(frame, len);
+        frame[pos++] = 127;
+        for (int shift = 56; shift >= 0; shift -= 8) {
+            frame[pos++] = static_cast<uint8_t>((len >> shift) & 0xFF);
+        }
     }
-    frame.insert(frame.end(), payload.begin(), payload.end());
+
+    if (len > 0) {
+        std::memcpy(frame.data() + pos, payload.data(), len);
+    }
     return frame;
 }
 
