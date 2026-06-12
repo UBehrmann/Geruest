@@ -32,6 +32,7 @@
 #include "database/DatabaseClient.hpp"
 #include "../auth/BasicAuth.hpp"
 #include "parser/JSONParser.hpp"
+#include "server/WebSocketTypes.hpp"
 
 namespace geruest {
 
@@ -51,9 +52,13 @@ enum class LogLevel {
     Debug = 4
 };
 
+class WebSocketConnection;
+
 using RouteHandler = std::function<HTTPResponse(const HTTPRequest&)>;
 using AsyncResponse = boost::asio::awaitable<HTTPResponse>;
 using AsyncRouteHandler = std::function<AsyncResponse(const HTTPRequest&)>;
+using WebSocketHandler =
+    std::function<boost::asio::awaitable<void>(WebSocketConnection&, const HTTPRequest&)>;
 
 // class with the server data
 class ServerData {
@@ -67,6 +72,10 @@ class ServerData {
     std::unordered_map<std::string, RouteHandler> _wildcardRoutes;
     std::unordered_map<std::string, AsyncRouteHandler> _asyncRoutes;
     std::unordered_map<std::string, AsyncRouteHandler> _asyncWildcardRoutes;
+    std::unordered_map<std::string, WebSocketHandler> _webSocketRoutes;
+    std::unordered_map<std::string, WebSocketHandler> _webSocketWildcardRoutes;
+    WebSocketLimits _webSocketLimits{};
+    std::vector<std::string> _webSocketSubprotocols;
     std::unordered_map<std::string, RedirectRule> _redirects;
     std::unordered_map<std::string, RedirectRule> _wildcardRedirects;
     std::string _root;
@@ -405,6 +414,10 @@ class ServerData {
           _wildcardRoutes(other._wildcardRoutes),
           _asyncRoutes(other._asyncRoutes),
           _asyncWildcardRoutes(other._asyncWildcardRoutes),
+          _webSocketRoutes(other._webSocketRoutes),
+          _webSocketWildcardRoutes(other._webSocketWildcardRoutes),
+          _webSocketLimits(other._webSocketLimits),
+          _webSocketSubprotocols(other._webSocketSubprotocols),
           _redirects(other._redirects),
           _wildcardRedirects(other._wildcardRedirects),
           _root(other._root),
@@ -439,6 +452,10 @@ class ServerData {
             _wildcardRoutes = other._wildcardRoutes;
             _asyncRoutes = other._asyncRoutes;
             _asyncWildcardRoutes = other._asyncWildcardRoutes;
+            _webSocketRoutes = other._webSocketRoutes;
+            _webSocketWildcardRoutes = other._webSocketWildcardRoutes;
+            _webSocketLimits = other._webSocketLimits;
+            _webSocketSubprotocols = other._webSocketSubprotocols;
             _redirects = other._redirects;
             _wildcardRedirects = other._wildcardRedirects;
             _root = other._root;
@@ -502,6 +519,14 @@ class ServerData {
             _asyncWildcardRoutes[path] = std::move(routeHandler);
         } else {
             _asyncRoutes[path] = std::move(routeHandler);
+        }
+    }
+
+    void addWebSocketRoute(const std::string& path, WebSocketHandler routeHandler) {
+        if (path.find('*') != std::string::npos) {
+            _webSocketWildcardRoutes[path] = std::move(routeHandler);
+        } else {
+            _webSocketRoutes[path] = std::move(routeHandler);
         }
     }
 
@@ -616,6 +641,28 @@ class ServerData {
         }
         return std::nullopt;
     }
+
+    std::optional<WebSocketHandler> findMatchingWebSocketRoute(const std::string& path) const {
+        auto exactMatch = _webSocketRoutes.find(path);
+        if (exactMatch != _webSocketRoutes.end()) {
+            return exactMatch->second;
+        }
+        for (const auto& route : _webSocketWildcardRoutes) {
+            if (matchesWildcardPattern(route.first, path)) {
+                return route.second;
+            }
+        }
+        return std::nullopt;
+    }
+
+    void setWebSocketMaxMessageBytes(size_t bytes) { _webSocketLimits.maxMessageBytes = bytes; }
+    void setWebSocketMaxFrameBytes(size_t bytes) { _webSocketLimits.maxFrameBytes = bytes; }
+    void setWebSocketIdleTimeout(std::chrono::seconds seconds) { _webSocketLimits.idleTimeout = seconds; }
+    void setWebSocketPingInterval(std::chrono::seconds seconds) { _webSocketLimits.pingInterval = seconds; }
+    void addWebSocketSubprotocol(std::string name) { _webSocketSubprotocols.push_back(std::move(name)); }
+
+    const WebSocketLimits& getWebSocketLimits() const { return _webSocketLimits; }
+    const std::vector<std::string>& getWebSocketSubprotocols() const { return _webSocketSubprotocols; }
 
     const std::string& getRoot() const { return _root; }
     void setRoot(const std::string& newRoot) { _root = newRoot; }

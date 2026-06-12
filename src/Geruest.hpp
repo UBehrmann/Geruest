@@ -32,6 +32,7 @@
 #include "data/HTTPRequest.hpp"
 #include "data/HTTPResponse.hpp"
 #include "data/ServerData.hpp"
+#include "server/WebSocket.hpp"
 #include "database/DatabaseClient.hpp"
 #include "parser/JSONParser.hpp"
 #include "config/ConfigLoader.hpp"
@@ -64,6 +65,14 @@ class Geruest {
 
     void addRoute(const std::string& path, RouteHandler handler);
     void addRouteAsync(const std::string& path, AsyncRouteHandler handler);
+    void addRouteWebSocket(const std::string& path, WebSocketHandler handler);
+    void addRouteWebSocket(const std::string& path, WebSocketRoute route);
+
+    void setWebSocketMaxMessageBytes(size_t bytes);
+    void setWebSocketMaxFrameBytes(size_t bytes);
+    void setWebSocketIdleTimeout(int seconds);
+    void setWebSocketPingInterval(int seconds);
+    void addWebSocketSubprotocol(const std::string& name);
     void setDatabaseBackend(DatabaseBackend backend);
     void setDatabasePoolSize(size_t size);
     void setSqliteExecutorThreadCount(size_t count);

@@ -4,7 +4,7 @@
 
 | Feature | Description | Key Method/Header |
 |---------|-------------|-------------------|
-| **Routing** | Sync (`addRoute`) and async (`addRouteAsync`) handlers with exact/wildcard paths | `addRoute()`, `addRouteAsync()` |
+| **Routing** | Sync (`addRoute`), async (`addRouteAsync`), and WebSocket (`addRouteWebSocket`) handlers with exact/wildcard paths | `addRoute()`, `addRouteAsync()`, `addRouteWebSocket()` |
 | **Static Files** | Auto-serve files from root directories | `addRoot()` |
 | **Templates** | Component injection `{file}`, translations `[key]` | `ContentBuilder` |
 | **Asset Merging** | Combine CSS/JS files from file maps | `AssetMerger` |
@@ -29,7 +29,7 @@ The HTTP server is built on **Boost.Asio**:
 
 ## Routing
 
-Use `addRoute` for sync handlers and `addRouteAsync` when you need `co_await` (DB/network/waitable work).
+Use `addRoute` for sync handlers, `addRouteAsync` when you need `co_await` (DB/network/waitable work), and `addRouteWebSocket` for persistent WebSocket connections. See [WebSockets](WEBSOCKETS.md).
 
 ```cpp
 // Exact match (O(1) lookup)

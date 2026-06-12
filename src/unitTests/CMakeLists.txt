@@ -81,6 +81,7 @@ set(GERUEST_SOURCES
     ../server/Socket.cpp
     ../server/Workers.cpp
     ../server/HttpSession.cpp
+    ../server/WebSocket.cpp
     ../server/Status.cpp
     ../auth/BasicAuth.cpp
     ../config/ConfigLoader.cpp
@@ -196,6 +197,54 @@ add_executable(Security_Tests
 )
 target_link_libraries(Security_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
+add_executable(WebSocketCodec_Tests
+    WebSocket/WebSocketCodec_tests.cpp
+    ../server/WebSocket.cpp
+    ../data/HTTPRequest.cpp
+    ../parser/JSONParser.cpp
+    ../auth/BasicAuth.cpp
+    ../security/Security.cpp
+)
+target_link_libraries(WebSocketCodec_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+
+add_executable(WebSocketHandshake_Tests
+    WebSocket/WebSocketHandshake_tests.cpp
+    ../server/WebSocket.cpp
+    ../data/HTTPRequest.cpp
+    ../data/HTTPResponse.cpp
+    ../data/MethodNotAllowed.cpp
+    ../parser/JSONParser.cpp
+    ../auth/BasicAuth.cpp
+    ../security/Security.cpp
+)
+target_link_libraries(WebSocketHandshake_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+
+add_executable(WebSocketServerData_Tests
+    WebSocket/WebSocketServerData_tests.cpp
+    ../data/ServerData.cpp
+    ../data/HTTPRequest.cpp
+    ../server/WebSocket.cpp
+    ../parser/JSONParser.cpp
+    ../auth/BasicAuth.cpp
+    ../security/Security.cpp
+)
+target_link_libraries(WebSocketServerData_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+
+add_executable(WebSocketIntegration_Tests
+    WebSocket/WebSocketIntegration_tests.cpp
+    ${GERUEST_SOURCES}
+)
+target_link_libraries(WebSocketIntegration_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+if(GERUEST_HAS_CURL)
+    target_link_libraries(WebSocketIntegration_Tests CURL::libcurl)
+endif()
+if(GERUEST_HAS_SQLITE)
+    target_link_libraries(WebSocketIntegration_Tests SQLite::SQLite3)
+endif()
+if(GERUEST_HAS_LIBPQ)
+    target_link_libraries(WebSocketIntegration_Tests PostgreSQL::PostgreSQL)
+endif()
+
 add_executable(ServerDataMetricsPersistence_Tests
     ServerData/ServerDataMetricsPersistence_tests.cpp
     ../data/ServerData.cpp
@@ -273,6 +322,10 @@ gtest_discover_tests(BasicAuth_Tests)
 gtest_discover_tests(ConfigLoader_Tests)
 gtest_discover_tests(AssetMerger_Tests)
 gtest_discover_tests(Security_Tests)
+gtest_discover_tests(WebSocketCodec_Tests)
+gtest_discover_tests(WebSocketHandshake_Tests)
+gtest_discover_tests(WebSocketServerData_Tests)
+gtest_discover_tests(WebSocketIntegration_Tests)
 gtest_discover_tests(ServerDataMetricsPersistence_Tests)
 gtest_discover_tests(ServerDataRedirectLanguage_Tests)
 gtest_discover_tests(GeruestLifecycle_Tests)
@@ -304,13 +357,13 @@ exit $rc
 ]=])
     add_custom_target(run_tests
         COMMAND bash "${CMAKE_CURRENT_BINARY_DIR}/run_tests_pg.sh" "${CMAKE_CTEST_COMMAND}"
-        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests GeruestLifecycle_Tests DatabasePostgres_Tests
+        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests GeruestLifecycle_Tests DatabasePostgres_Tests
         COMMENT "Running all unit tests via CTest (with PostgreSQL container)"
     )
 else()
     add_custom_target(run_tests
         COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests GeruestLifecycle_Tests
+        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests GeruestLifecycle_Tests
         COMMENT "Running all unit tests via CTest"
     )
 endif()

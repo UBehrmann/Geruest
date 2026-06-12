@@ -60,6 +60,7 @@ set(GERUEST_SOURCES
     ../src/server/Socket.cpp
     ../src/server/Workers.cpp
     ../src/server/HttpSession.cpp
+    ../src/server/WebSocket.cpp
     ../src/server/Status.cpp
     ../src/auth/BasicAuth.cpp
     ../src/builders/AssetMerger.cpp

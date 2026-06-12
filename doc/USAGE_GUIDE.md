@@ -110,6 +110,21 @@ server {
 }
 ```
 
+## WebSockets
+
+Register with `addRouteWebSocket` (coroutine or callback API). See [WEBSOCKETS.md](WEBSOCKETS.md).
+
+For nginx WSS termination, proxy with upgrade headers:
+
+```nginx
+location /echo {
+    proxy_pass http://backend;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "Upgrade";
+}
+```
+
 ## Configuration
 
 ```cpp

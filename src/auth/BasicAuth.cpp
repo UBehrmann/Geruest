@@ -8,56 +8,19 @@
  */
 
 #include "auth/BasicAuth.hpp"
+#include "security/Base64.hpp"
+
 #include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <iomanip>
 #include <sstream>
 #include <vector>
-#include <iomanip>
-#include <cstring>
-#include <cstdint>
 
 namespace geruest {
 
-// Base64 decoding lookup table
-static const std::string base64_chars = 
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    "abcdefghijklmnopqrstuvwxyz"
-    "0123456789+/";
-
 std::string BasicAuth::base64Decode(const std::string& encoded) {
-    std::string decoded;
-    std::vector<int> temp(4);
-    
-    size_t i = 0;
-    size_t len = encoded.length();
-    
-    while (i < len && encoded[i] != '=') {
-        // Collect 4 base64 characters
-        size_t j = 0;
-        while (j < 4 && i < len && encoded[i] != '=') {
-            size_t pos = base64_chars.find(encoded[i]);
-            if (pos == std::string::npos) {
-                // Invalid character, skip it
-                i++;
-                continue;
-            }
-            temp[j] = static_cast<int>(pos);
-            j++;
-            i++;
-        }
-        
-        // Decode the collected characters
-        if (j >= 2) {
-            decoded += static_cast<char>((temp[0] << 2) + ((temp[1] & 0x30) >> 4));
-        }
-        if (j >= 3) {
-            decoded += static_cast<char>(((temp[1] & 0xf) << 4) + ((temp[2] & 0x3c) >> 2));
-        }
-        if (j >= 4) {
-            decoded += static_cast<char>(((temp[2] & 0x3) << 6) + temp[3]);
-        }
-    }
-    
-    return decoded;
+    return geruest::base64Decode(std::string_view(encoded));
 }
 
 std::string BasicAuth::sha256Hash(const std::string& input) {

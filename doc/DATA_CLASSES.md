@@ -38,6 +38,36 @@ server.addRoute("/search", [](const HTTPRequest& req) {
 });
 ```
 
+## WebSocketConnection
+
+Persistent connection after HTTP upgrade. Used with `addRouteWebSocket`.
+
+**Coroutine methods:**
+```cpp
+boost::asio::awaitable<WSMessage> recv();
+boost::asio::awaitable<void> send(std::string_view text);
+boost::asio::awaitable<void> sendBinary(std::span<const uint8_t> data);
+boost::asio::awaitable<void> close(uint16_t code = 1000, std::string_view reason = "");
+bool isOpen() const;
+```
+
+**Callback helpers:** `sendNow()`, `sendBinaryNow()` — fire-and-forget from `WebSocketRoute` callbacks.
+
+**Route registration:**
+```cpp
+// Coroutine
+server.addRouteWebSocket("/ws", handler);
+
+// Callback struct
+geruest::WebSocketRoute route;
+route.onOpen = ...;
+route.onMessage = ...;
+route.onClose = ...;
+server.addRouteWebSocket("/ws-cb", route);
+```
+
+See [WEBSOCKETS.md](WEBSOCKETS.md) for full examples.
+
 ## HTTPResponse
 
 Build HTTP responses.
