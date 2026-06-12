@@ -690,16 +690,16 @@ boost::asio::awaitable<bool> Handler::tryHandleWebSocketAsync(HTTPRequest* reque
         co_return false;
     }
 
-    if (!request->hasHeader("upgrade")) {
-        co_return false;
-    }
-
     if (!isWebSocketUpgrade(*request)) {
-        HTTPResponse br = responseBadRequest(request);
-        br.serializeTo(responseScratch_);
-        co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size());
-        _upgraded = true;
-        co_return true;
+        if (isWebSocketUpgradeIntent(*request)
+            && serverData.findMatchingWebSocketRoute(request->getPathString())) {
+            HTTPResponse br = responseBadRequest(request);
+            br.serializeTo(responseScratch_);
+            co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size());
+            _upgraded = true;
+            co_return true;
+        }
+        co_return false;
     }
 
     if (!request->getBody().empty()) {

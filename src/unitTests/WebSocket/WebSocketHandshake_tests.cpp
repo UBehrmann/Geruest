@@ -71,6 +71,29 @@ TEST(WebSocketHandshake, RejectsMissingUpgrade) {
     EXPECT_FALSE(isWebSocketUpgrade(req));
 }
 
+TEST(WebSocketHandshake, UpgradeIntentWithoutFullValidation) {
+    std::string raw = "GET /chat HTTP/1.1\r\n"
+                      "Host: example.com\r\n"
+                      "Upgrade: websocket\r\n"
+                      "Connection: Upgrade\r\n"
+                      "Sec-WebSocket-Version: 8\r\n"
+                      "\r\n";
+    const HTTPRequest req = makeWsRequest(std::move(raw));
+    EXPECT_TRUE(isWebSocketUpgradeIntent(req));
+    EXPECT_FALSE(isWebSocketUpgrade(req));
+}
+
+TEST(WebSocketHandshake, NoUpgradeIntentForH2c) {
+    std::string raw = "GET /api/ping HTTP/1.1\r\n"
+                      "Host: example.com\r\n"
+                      "Upgrade: h2c\r\n"
+                      "Connection: Upgrade, HTTP2-Settings\r\n"
+                      "\r\n";
+    const HTTPRequest req = makeWsRequest(std::move(raw));
+    EXPECT_FALSE(isWebSocketUpgradeIntent(req));
+    EXPECT_FALSE(isWebSocketUpgrade(req));
+}
+
 TEST(WebSocketHandshake, RejectsWrongVersion) {
     std::string raw = "GET /chat HTTP/1.1\r\n"
                       "Host: example.com\r\n"

@@ -240,6 +240,90 @@ TEST(WebSocketIntegration, RouteNotFoundReturns404) {
     server.stop();
 }
 
+TEST(WebSocketIntegration, NonWebSocketUpgradeReachesHttpRoute) {
+    Geruest server;
+    server.addRouteWebSocket(
+        "/ws",
+        [](WebSocketConnection&, const HTTPRequest&) -> boost::asio::awaitable<void> { co_return; });
+    server.addRoute("/api/ping", [](const HTTPRequest&) {
+        HTTPResponse r("200 OK");
+        r.setHeader("Content-Type", "text/plain");
+        r.setBody("pong");
+        return r;
+    });
+
+    startServerOnBackground(server);
+    const int fd = connectTo(server.getListenPort());
+    ASSERT_GE(fd, 0);
+
+    const std::string request =
+        "GET /api/ping HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: h2c\r\n"
+        "Connection: Upgrade, HTTP2-Settings\r\n"
+        "\r\n";
+    ASSERT_TRUE(sendAll(fd, request.data(), request.size()));
+
+    std::string response;
+    ASSERT_TRUE(recvSome(fd, response, 12));
+    EXPECT_NE(response.find("200 OK"), std::string::npos);
+    EXPECT_NE(response.find("pong"), std::string::npos);
+
+    close(fd);
+    server.stop();
+}
+
+TEST(WebSocketIntegration, ServerSendsCloseFrameAfterHandler) {
+    Geruest server;
+    server.addRouteWebSocket(
+        "/echo",
+        [](WebSocketConnection& ws, const HTTPRequest&) -> boost::asio::awaitable<void> {
+            WSMessage msg = co_await ws.recv();
+            if (msg.isText()) {
+                co_await ws.send(msg.text());
+            }
+            co_return;
+        });
+
+    startServerOnBackground(server);
+    const int fd = connectTo(server.getListenPort());
+    ASSERT_GE(fd, 0);
+
+    const std::string handshake =
+        "GET /echo HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "\r\n";
+    ASSERT_TRUE(sendAll(fd, handshake.data(), handshake.size()));
+
+    std::string response;
+    ASSERT_TRUE(recvSome(fd, response, 12));
+    EXPECT_NE(response.find("101 Switching Protocols"), std::string::npos);
+
+    const auto frame = maskedTextFrame("bye");
+    ASSERT_TRUE(sendAll(fd, frame.data(), frame.size()));
+
+    std::string payload;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (payload.find('\x88') == std::string::npos && std::chrono::steady_clock::now() < deadline) {
+        char buf[512];
+        const ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
+        if (n > 0) {
+            payload.append(buf, static_cast<size_t>(n));
+        } else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+    }
+    EXPECT_NE(payload.find("bye"), std::string::npos);
+    EXPECT_NE(payload.find('\x88'), std::string::npos);
+
+    close(fd);
+    server.stop();
+}
+
 TEST(WebSocketIntegration, NormalHttpStillWorks) {
     Geruest server;
     server.addRouteWebSocket(

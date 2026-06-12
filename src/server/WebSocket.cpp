@@ -330,6 +330,10 @@ WSMessage WSMessage::makePong(std::vector<uint8_t> payload) {
     return m;
 }
 
+bool isWebSocketUpgradeIntent(const HTTPRequest& req) {
+    return req.getMethod() == "GET" && headerContainsToken(req.getHeaderView("upgrade"), "websocket");
+}
+
 bool isWebSocketUpgrade(const HTTPRequest& req) {
     if (req.getMethod() != "GET") {
         return false;
@@ -398,26 +402,54 @@ std::string pickSubprotocol(std::string_view clientHeader, const std::vector<std
     return {};
 }
 
+WebSocketConnection::AsyncWriteState::AsyncWriteState(tcp_socket& sock)
+    : socket(sock), strand(boost::asio::make_strand(sock.get_executor())) {}
+
+boost::asio::awaitable<void> WebSocketConnection::AsyncWriteState::sendFrame(std::vector<uint8_t> frame) {
+    if (!writesEnabled.load(std::memory_order_relaxed)) {
+        co_return;
+    }
+    try {
+        co_await boost::asio::async_write(socket, boost::asio::buffer(frame), boost::asio::use_awaitable);
+    } catch (...) {
+        writesEnabled.store(false, std::memory_order_relaxed);
+    }
+    co_return;
+}
+
 WebSocketConnection::WebSocketConnection(tcp_socket& sock, std::string clientIp,
                                          std::string selectedSubprotocol, WebSocketLimits limits)
     : _socket(sock)
     , _strand(boost::asio::make_strand(sock.get_executor()))
+    , _asyncWrite(std::make_shared<AsyncWriteState>(sock))
     , _clientIp(std::move(clientIp))
     , _selectedSubprotocol(std::move(selectedSubprotocol))
     , _limits(std::move(limits)) {}
 
 void WebSocketConnection::markClosed(uint16_t code, std::string_view reason) {
     _open = false;
+    if (_asyncWrite) {
+        _asyncWrite->writesEnabled.store(false, std::memory_order_relaxed);
+    }
     _closeCode = code;
     _closeReason.assign(reason);
 }
 
-boost::asio::awaitable<void> WebSocketConnection::protocolError(uint16_t code, std::string_view reason) {
-    markClosed(code, reason);
+boost::asio::awaitable<void> WebSocketConnection::writeCloseFrame(uint16_t code, std::string_view reason) {
     try {
-        co_await writeFrame(WSOpcode::Close, WSMessage::makeClose(code, reason).data());
+        co_await boost::asio::async_write(
+            _socket,
+            boost::asio::buffer(websocket_codec::encodeServerFrame(
+                WSOpcode::Close, WSMessage::makeClose(code, reason).data())),
+            boost::asio::use_awaitable);
     } catch (...) {
     }
+    co_return;
+}
+
+boost::asio::awaitable<void> WebSocketConnection::protocolError(uint16_t code, std::string_view reason) {
+    co_await writeCloseFrame(code, reason);
+    markClosed(code, reason);
     co_return;
 }
 
@@ -465,8 +497,8 @@ boost::asio::awaitable<void> WebSocketConnection::close(uint16_t code, std::stri
     if (!_open) {
         co_return;
     }
+    co_await writeCloseFrame(code, reason);
     markClosed(code, reason);
-    co_await writeFrame(WSOpcode::Close, WSMessage::makeClose(code, reason).data());
     co_return;
 }
 
@@ -474,29 +506,29 @@ void WebSocketConnection::sendNow(std::string_view text) {
     const auto* begin = reinterpret_cast<const uint8_t*>(text.data());
     auto        frame = websocket_codec::encodeServerFrame(WSOpcode::Text,
                                                     std::span<const uint8_t>(begin, text.size()));
+    const std::shared_ptr<AsyncWriteState> state = _asyncWrite;
+    if (!state) {
+        return;
+    }
     boost::asio::co_spawn(
-        _strand,
-        [this, frame = std::move(frame)]() mutable -> boost::asio::awaitable<void> {
-            try {
-                co_await writeRawFrame(std::move(frame));
-            } catch (...) {
-                markClosed(1011, "send failed");
-            }
+        state->strand,
+        [state, frame = std::move(frame)]() mutable -> boost::asio::awaitable<void> {
+            co_await state->sendFrame(std::move(frame));
             co_return;
         },
         boost::asio::detached);
 }
 
 void WebSocketConnection::sendBinaryNow(std::span<const uint8_t> data) {
-    auto frame = websocket_codec::encodeServerFrame(WSOpcode::Binary, data);
+    auto                                   frame = websocket_codec::encodeServerFrame(WSOpcode::Binary, data);
+    const std::shared_ptr<AsyncWriteState> state   = _asyncWrite;
+    if (!state) {
+        return;
+    }
     boost::asio::co_spawn(
-        _strand,
-        [this, frame = std::move(frame)]() mutable -> boost::asio::awaitable<void> {
-            try {
-                co_await writeRawFrame(std::move(frame));
-            } catch (...) {
-                markClosed(1011, "send failed");
-            }
+        state->strand,
+        [state, frame = std::move(frame)]() mutable -> boost::asio::awaitable<void> {
+            co_await state->sendFrame(std::move(frame));
             co_return;
         },
         boost::asio::detached);
@@ -573,8 +605,8 @@ boost::asio::awaitable<WSMessage> WebSocketConnection::readMessage() {
                     reason.assign(payload.begin() + 2, payload.end());
                 }
             }
+            co_await writeCloseFrame(code, reason);
             markClosed(code, reason);
-            co_await writeFrame(WSOpcode::Close, WSMessage::makeClose(code, reason).data());
             co_return WSMessage::makeClose(code, reason);
         }
 

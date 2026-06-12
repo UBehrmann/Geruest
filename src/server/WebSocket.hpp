@@ -10,6 +10,7 @@
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/strand.hpp>
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -81,8 +82,19 @@ class WebSocketConnection {
     const std::string& selectedSubprotocol() const noexcept { return _selectedSubprotocol; }
 
    private:
+    struct AsyncWriteState : std::enable_shared_from_this<AsyncWriteState> {
+        explicit AsyncWriteState(tcp_socket& sock);
+
+        tcp_socket&                                    socket;
+        boost::asio::strand<tcp_socket::executor_type> strand;
+        std::atomic<bool>                              writesEnabled{true};
+
+        boost::asio::awaitable<void> sendFrame(std::vector<uint8_t> frame);
+    };
+
     tcp_socket&                                    _socket;
     boost::asio::strand<tcp_socket::executor_type> _strand;
+    std::shared_ptr<AsyncWriteState>               _asyncWrite;
     std::string                                    _clientIp;
     std::string                                    _selectedSubprotocol;
     WebSocketLimits                                _limits;
@@ -93,6 +105,7 @@ class WebSocketConnection {
 
     boost::asio::awaitable<void> writeFrame(WSOpcode op, std::span<const uint8_t> payload, bool fin = true);
     boost::asio::awaitable<void> writeRawFrame(std::vector<uint8_t> frame);
+    boost::asio::awaitable<void> writeCloseFrame(uint16_t code, std::string_view reason);
     boost::asio::awaitable<WSMessage> readMessage();
     boost::asio::awaitable<void>      protocolError(uint16_t code, std::string_view reason);
     void                              markClosed(uint16_t code, std::string_view reason);
@@ -111,6 +124,8 @@ WebSocketHandler adaptWebSocketRoute(WebSocketRoute route);
 
 // Handshake helpers (Handler + unit tests)
 [[nodiscard]] bool        isWebSocketUpgrade(const HTTPRequest& req);
+/** True when Upgrade header lists websocket (may still fail full upgrade validation). */
+[[nodiscard]] bool        isWebSocketUpgradeIntent(const HTTPRequest& req);
 [[nodiscard]] std::string computeAcceptKey(std::string_view secKey);
 [[nodiscard]] std::string buildHandshakeResponse(std::string_view acceptKey,
                                                  std::string_view subprotocol = {});
