@@ -49,6 +49,9 @@ Notes:
 
 - Wildcard forwarding uses the matched `*` segment from the source path.
 - The most specific wildcard pattern wins when several match.
+- With languages enabled, requests with language prefixes keep that prefix for internal redirect targets that do not already declare a language.
+  - Example: `/de/path/redirect` with `*/redirect -> /redirection` resolves to `/de/redirection`.
+  - If target already contains language (example `/en/redirection`), configured target is kept unchanged.
 
 ### Bulk Redirects (Map)
 
@@ -80,6 +83,15 @@ Request handling priority is:
 6. 404 response
 
 This makes short-link redirects predictable and keeps redirect behavior deterministic.
+
+## Redirects with Languages
+
+When `setAvailableLanguages(...)` is configured:
+
+- Exact and wildcard redirects can match language-prefixed request paths even if redirect source was configured without language.
+  - Example: configured `/something -> /redirection`, request `/de/something` redirects to `/de/redirection`.
+- Internal targets without explicit language inherit language from request path.
+- External targets (`http://`, `https://`, `//`) are never modified.
 
 ## Loop Protection
 

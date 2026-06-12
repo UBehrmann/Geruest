@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.11)
 
 # Define the project name and version
-project(GeruestLibrary VERSION 0.9.26 LANGUAGES CXX)
+project(GeruestLibrary VERSION 0.10.7 LANGUAGES CXX)
 
 # Configure version header
 configure_file(
@@ -101,6 +101,7 @@ add_library(Geruest STATIC
     src/server/Socket.cpp
     src/server/Workers.cpp
     src/server/HttpSession.cpp
+    src/server/WebSocket.cpp
     src/server/Status.cpp
     src/auth/BasicAuth.cpp
     src/builders/AssetMerger.cpp

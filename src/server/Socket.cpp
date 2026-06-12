@@ -30,8 +30,8 @@ constexpr const char* kOverloadedResponse =
 
 void Geruest::statusPersistenceLoop() {
     while (running.load(std::memory_order_relaxed)) {
-        for (int i = 0; i < 3600 && running.load(std::memory_order_relaxed); ++i) {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
+        for (int i = 0; i < 36000 && running.load(std::memory_order_relaxed); ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
         if (!running.load(std::memory_order_relaxed)) {
             break;

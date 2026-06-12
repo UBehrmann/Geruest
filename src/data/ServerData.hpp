@@ -32,6 +32,7 @@
 #include "database/DatabaseClient.hpp"
 #include "../auth/BasicAuth.hpp"
 #include "parser/JSONParser.hpp"
+#include "server/WebSocketTypes.hpp"
 
 namespace geruest {
 
@@ -51,9 +52,13 @@ enum class LogLevel {
     Debug = 4
 };
 
+class WebSocketConnection;
+
 using RouteHandler = std::function<HTTPResponse(const HTTPRequest&)>;
 using AsyncResponse = boost::asio::awaitable<HTTPResponse>;
 using AsyncRouteHandler = std::function<AsyncResponse(const HTTPRequest&)>;
+using WebSocketHandler =
+    std::function<boost::asio::awaitable<void>(WebSocketConnection&, const HTTPRequest&)>;
 
 // class with the server data
 class ServerData {
@@ -67,6 +72,10 @@ class ServerData {
     std::unordered_map<std::string, RouteHandler> _wildcardRoutes;
     std::unordered_map<std::string, AsyncRouteHandler> _asyncRoutes;
     std::unordered_map<std::string, AsyncRouteHandler> _asyncWildcardRoutes;
+    std::unordered_map<std::string, WebSocketHandler> _webSocketRoutes;
+    std::unordered_map<std::string, WebSocketHandler> _webSocketWildcardRoutes;
+    WebSocketLimits _webSocketLimits{};
+    std::vector<std::string> _webSocketSubprotocols;
     std::unordered_map<std::string, RedirectRule> _redirects;
     std::unordered_map<std::string, RedirectRule> _wildcardRedirects;
     std::string _root;
@@ -245,7 +254,79 @@ class ServerData {
             || target.rfind("//", 0) == 0;
     }
 
-    std::optional<std::pair<std::string, int>> findMatchingWildcardRedirect(const std::string& path) const {
+    std::optional<std::string> extractSupportedLanguagePrefix(const std::string& path) const {
+        if (path.size() < 3 || path[0] != '/') {
+            return std::nullopt;
+        }
+
+        const auto slashPos = path.find('/', 1);
+        const size_t langLen = (slashPos == std::string::npos) ? (path.size() - 1) : (slashPos - 1);
+        if (langLen != 2) {
+            return std::nullopt;
+        }
+
+        const char c1 = path[1];
+        const char c2 = path[2];
+        if (!std::isalpha(static_cast<unsigned char>(c1)) || !std::isalpha(static_cast<unsigned char>(c2))) {
+            return std::nullopt;
+        }
+
+        const std::string lang = path.substr(1, 2);
+        if (!isLanguageAvailable(lang)) {
+            return std::nullopt;
+        }
+
+        return lang;
+    }
+
+    bool hasSupportedLanguagePrefixInTarget(const std::string& target) const {
+        return extractSupportedLanguagePrefix(target).has_value();
+    }
+
+    std::optional<std::string> stripSupportedLanguagePrefix(const std::string& path) const {
+        const auto lang = extractSupportedLanguagePrefix(path);
+        if (!lang.has_value()) {
+            return std::nullopt;
+        }
+
+        if (path.size() == 3) {
+            return std::string("/");
+        }
+
+        return path.substr(3);
+    }
+
+    std::string normalizeRedirectTargetLanguage(const std::string& target, const std::string& requestPath) const {
+        if (!hasLanguages() || target.empty()) {
+            return target;
+        }
+
+        if (isLikelyExternalTarget(target)) {
+            return target;
+        }
+
+        if (target[0] != '/') {
+            return target;
+        }
+
+        if (hasSupportedLanguagePrefixInTarget(target)) {
+            return target;
+        }
+
+        const auto requestLang = extractSupportedLanguagePrefix(requestPath);
+        if (!requestLang.has_value()) {
+            return target;
+        }
+
+        if (target == "/") {
+            return "/" + *requestLang + "/";
+        }
+
+        return "/" + *requestLang + target;
+    }
+
+    std::optional<std::pair<std::string, int>> findMatchingWildcardRedirect(const std::string& path,
+                                                                            const std::string& requestPath) const {
         size_t bestPatternLength = 0;
         std::optional<std::pair<std::string, int>> bestMatch;
 
@@ -260,7 +341,8 @@ class ServerData {
                 continue;
             }
 
-            const std::string resolvedTarget = applyWildcardCapture(redirect.second.target, *capture);
+            const std::string capturedTarget = applyWildcardCapture(redirect.second.target, *capture);
+            const std::string resolvedTarget = normalizeRedirectTargetLanguage(capturedTarget, requestPath);
             if (!bestMatch.has_value() || pattern.size() > bestPatternLength) {
                 bestPatternLength = pattern.size();
                 bestMatch = std::make_pair(resolvedTarget, redirect.second.status);
@@ -332,6 +414,10 @@ class ServerData {
           _wildcardRoutes(other._wildcardRoutes),
           _asyncRoutes(other._asyncRoutes),
           _asyncWildcardRoutes(other._asyncWildcardRoutes),
+          _webSocketRoutes(other._webSocketRoutes),
+          _webSocketWildcardRoutes(other._webSocketWildcardRoutes),
+          _webSocketLimits(other._webSocketLimits),
+          _webSocketSubprotocols(other._webSocketSubprotocols),
           _redirects(other._redirects),
           _wildcardRedirects(other._wildcardRedirects),
           _root(other._root),
@@ -366,6 +452,10 @@ class ServerData {
             _wildcardRoutes = other._wildcardRoutes;
             _asyncRoutes = other._asyncRoutes;
             _asyncWildcardRoutes = other._asyncWildcardRoutes;
+            _webSocketRoutes = other._webSocketRoutes;
+            _webSocketWildcardRoutes = other._webSocketWildcardRoutes;
+            _webSocketLimits = other._webSocketLimits;
+            _webSocketSubprotocols = other._webSocketSubprotocols;
             _redirects = other._redirects;
             _wildcardRedirects = other._wildcardRedirects;
             _root = other._root;
@@ -432,6 +522,14 @@ class ServerData {
         }
     }
 
+    void addWebSocketRoute(const std::string& path, WebSocketHandler routeHandler) {
+        if (path.find('*') != std::string::npos) {
+            _webSocketWildcardRoutes[path] = std::move(routeHandler);
+        } else {
+            _webSocketRoutes[path] = std::move(routeHandler);
+        }
+    }
+
     bool addRedirect(const std::string& from, const std::string& to, int status = 301) {
         if (from.empty()) {
             return false;
@@ -484,11 +582,29 @@ class ServerData {
         // Priority rule 1: exact redirect first
         auto exactMatch = _redirects.find(path);
         if (exactMatch != _redirects.end()) {
-            return std::make_pair(exactMatch->second.target, exactMatch->second.status);
+            return std::make_pair(normalizeRedirectTargetLanguage(exactMatch->second.target, path),
+                                  exactMatch->second.status);
         }
 
         // Priority rule 2: wildcard redirect after exact redirect
-        return findMatchingWildcardRedirect(path);
+        auto wildcardMatch = findMatchingWildcardRedirect(path, path);
+        if (wildcardMatch.has_value()) {
+            return wildcardMatch;
+        }
+
+        // If request starts with supported language prefix, retry redirects on stripped path.
+        const auto strippedPath = stripSupportedLanguagePrefix(path);
+        if (!strippedPath.has_value()) {
+            return std::nullopt;
+        }
+
+        exactMatch = _redirects.find(*strippedPath);
+        if (exactMatch != _redirects.end()) {
+            return std::make_pair(normalizeRedirectTargetLanguage(exactMatch->second.target, path),
+                                  exactMatch->second.status);
+        }
+
+        return findMatchingWildcardRedirect(*strippedPath, path);
     }
 
     /**
@@ -525,6 +641,28 @@ class ServerData {
         }
         return std::nullopt;
     }
+
+    std::optional<WebSocketHandler> findMatchingWebSocketRoute(const std::string& path) const {
+        auto exactMatch = _webSocketRoutes.find(path);
+        if (exactMatch != _webSocketRoutes.end()) {
+            return exactMatch->second;
+        }
+        for (const auto& route : _webSocketWildcardRoutes) {
+            if (matchesWildcardPattern(route.first, path)) {
+                return route.second;
+            }
+        }
+        return std::nullopt;
+    }
+
+    void setWebSocketMaxMessageBytes(size_t bytes) { _webSocketLimits.maxMessageBytes = bytes; }
+    void setWebSocketMaxFrameBytes(size_t bytes) { _webSocketLimits.maxFrameBytes = bytes; }
+    void setWebSocketIdleTimeout(std::chrono::seconds seconds) { _webSocketLimits.idleTimeout = seconds; }
+    void setWebSocketPingInterval(std::chrono::seconds seconds) { _webSocketLimits.pingInterval = seconds; }
+    void addWebSocketSubprotocol(std::string name) { _webSocketSubprotocols.push_back(std::move(name)); }
+
+    const WebSocketLimits& getWebSocketLimits() const { return _webSocketLimits; }
+    const std::vector<std::string>& getWebSocketSubprotocols() const { return _webSocketSubprotocols; }
 
     const std::string& getRoot() const { return _root; }
     void setRoot(const std::string& newRoot) { _root = newRoot; }
@@ -623,6 +761,7 @@ class ServerData {
      * When enabled:
      * - Log level is automatically set to Debug (all logs shown)
      * - Files are generated in-memory only (not saved to disk)
+     * - Text response cache disabled (html/js/css rebuilt every request)
      * - Comments are kept (easier debugging)
      * - Asset merging setting is preserved (can be enabled or disabled separately)
      * This is useful during development when HTML/CSS/JS change frequently
@@ -632,6 +771,8 @@ class ServerData {
         _devMode = true;
         setLogLevel(LogLevel::Debug);  // Show all logs
         _removeComments = false;       // Keep comments for easier debugging
+        _textResponseCacheMaxEntryBytes = 0;
+        _textResponseCacheMaxTotalBytes = 0;
         // Note: Asset merging is NOT disabled - user can control it separately
     }
 

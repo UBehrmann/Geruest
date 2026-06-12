@@ -59,8 +59,8 @@ void EmailSender::stop() {
     activeWorkers.clear();
 }
 
-bool EmailSender::enqueueEmail(const std::string& to, const std::string& subject,
-                               const std::string& body, const std::string& clientIP) {
+bool EmailSender::enqueueEmail(const std::string& to, const std::string& subject, const std::string& body,
+                               const std::string& clientIP, const std::string& extraRFC822Headers) {
     // Check spam protection and update IP tracking atomically
     if (!checkAndUpdateSpamProtection(clientIP)) {
         _emailsRejected++;
@@ -76,7 +76,7 @@ bool EmailSender::enqueueEmail(const std::string& to, const std::string& subject
             return false;
         }
 
-        emailQueue.emplace(to, subject, body, clientIP);
+        emailQueue.emplace(to, subject, body, clientIP, extraRFC822Headers);
 
         // Create new worker thread if needed
         if (activeWorkers.size() < EMAIL_WORKER_COUNT) {
@@ -275,6 +275,16 @@ static size_t payloadSource(char* ptr, size_t size, size_t nmemb, void* userp) {
     return toCopy;
 }
 
+/** Remove accidental blank header lines so extra block cannot inject end-of-headers early. */
+static std::string collapseAccidentalHeaderBlankLines(std::string h) {
+    for (;;) {
+        const auto p = h.find("\r\n\r\n");
+        if (p == std::string::npos) break;
+        h.erase(p, 2);
+    }
+    return h;
+}
+
 bool EmailSender::sendEmail(const Email& email) {
     CURL* curl = curl_easy_init();
     if (!curl) return false;
@@ -286,7 +296,12 @@ bool EmailSender::sendEmail(const Email& email) {
     std::string from = "From: " + config.fromAddress + "\r\n";
     std::string to = "To: " + sanitizedTo + "\r\n";
     std::string subject = "Subject: " + sanitizedSubject + "\r\n";
-    std::string data = from + to + subject + "\r\n" + email.body + "\r\n";
+    std::string extra = collapseAccidentalHeaderBlankLines(email.extraRFC822Headers);
+    std::string headerBlock = from + to + subject;
+    if (!extra.empty()) {
+        headerBlock += extra;
+    }
+    std::string data = headerBlock + "\r\n" + email.body + "\r\n";
 
     struct curl_slist* recipients = nullptr;
     recipients = curl_slist_append(recipients, sanitizedTo.c_str());

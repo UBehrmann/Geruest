@@ -19,6 +19,7 @@
 #include <queue>
 #include <string>
 #include <thread>
+#include <utility>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -36,17 +37,20 @@ struct Email {
     std::string subject;
     std::string body;
     std::string clientIP;
+    /** Optional RFC 822 header lines after Subject (each line ends with CRLF). Example: MIME-Version + Content-Type. */
+    std::string extraRFC822Headers;
     std::chrono::steady_clock::time_point timestamp;
     int retries = 0;
 
     Email() : timestamp(std::chrono::steady_clock::now()) {}
-    
-    Email(const std::string& to_, const std::string& subject_,
-          const std::string& body_, const std::string& clientIP_)
+
+    Email(const std::string& to_, const std::string& subject_, const std::string& body_,
+          const std::string& clientIP_, std::string extraRFC822Headers_ = {})
         : to(to_),
           subject(subject_),
           body(body_),
           clientIP(clientIP_),
+          extraRFC822Headers(std::move(extraRFC822Headers_)),
           timestamp(std::chrono::steady_clock::now()),
           retries(0) {}
 };
@@ -111,13 +115,15 @@ class EmailSender {
      * @brief Queue an email for sending (producer)
      * @param to Recipient email address (will be sanitized internally)
      * @param subject Email subject (will be sanitized internally)
-     * @param body Email body (plain text or HTML)
+     * @param body Email body (plain text, HTML, or multipart payload after all RFC 822 headers)
      * @param clientIP IP address of the client requesting the email
+     * @param extraRFC822Headers Optional lines inserted after Subject, before the blank line that starts the body
+     *        (e.g. MIME-Version and Content-Type for multipart/alternative). Each line must end with CRLF.
      * @return true if email was queued, false if rejected due to spam protection
      * @note Header values (to, subject) are automatically sanitized to prevent SMTP injection
      */
-    bool enqueueEmail(const std::string& to, const std::string& subject,
-                      const std::string& body, const std::string& clientIP);
+    bool enqueueEmail(const std::string& to, const std::string& subject, const std::string& body,
+                      const std::string& clientIP, const std::string& extraRFC822Headers = {});
 
     /**
      * @brief Sanitize a string for use in SMTP headers

@@ -94,6 +94,41 @@ void Geruest::addRouteAsync(const std::string& path, AsyncRouteHandler routeHand
     serverData.addRouteAsync(path, std::move(routeHandler));
 }
 
+void Geruest::addRouteWebSocket(const std::string& path, WebSocketHandler handler) {
+    serverData.addWebSocketRoute(path, std::move(handler));
+    sendToLogger("Added WebSocket route: " + path);
+}
+
+void Geruest::addRouteWebSocket(const std::string& path, WebSocketRoute route) {
+    serverData.addWebSocketRoute(path, adaptWebSocketRoute(std::move(route)));
+    sendToLogger("Added WebSocket callback route: " + path);
+}
+
+void Geruest::setWebSocketMaxMessageBytes(size_t bytes) {
+    serverData.setWebSocketMaxMessageBytes(bytes);
+    sendToLogger("WebSocket max message bytes set to: " + std::to_string(bytes));
+}
+
+void Geruest::setWebSocketMaxFrameBytes(size_t bytes) {
+    serverData.setWebSocketMaxFrameBytes(bytes);
+    sendToLogger("WebSocket max frame bytes set to: " + std::to_string(bytes));
+}
+
+void Geruest::setWebSocketIdleTimeout(int seconds) {
+    serverData.setWebSocketIdleTimeout(std::chrono::seconds(seconds));
+    sendToLogger("WebSocket idle timeout set to: " + std::to_string(seconds) + "s");
+}
+
+void Geruest::setWebSocketPingInterval(int seconds) {
+    serverData.setWebSocketPingInterval(std::chrono::seconds(seconds));
+    sendToLogger("WebSocket ping interval set to: " + std::to_string(seconds) + "s");
+}
+
+void Geruest::addWebSocketSubprotocol(const std::string& name) {
+    serverData.addWebSocketSubprotocol(name);
+    sendToLogger("Added WebSocket subprotocol: " + name);
+}
+
 void Geruest::setDatabaseBackend(DatabaseBackend backend) {
     _databaseBackend = backend;
     _configFlags.databaseBackendSet = true;

@@ -7,11 +7,15 @@
  * @brief Example of how to use the Geruest server
  */
 
- #include <iostream>
-#include <memory>
-#include <string>
+#include <algorithm>
 #include <csignal>
 #include <filesystem>
+#include <iostream>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+#include <vector>
 #include "Geruest.hpp"
 #include "data/MethodNotAllowed.hpp"
 #if GERUEST_HAS_CURL
@@ -43,6 +47,102 @@ void signalHandler(int signum) {
 }
 
 void addRoutes(Geruest* serverToAddRoutes);
+
+namespace {
+
+constexpr size_t kChatMaxNameLen  = 32;
+constexpr size_t kChatMaxTextLen  = 2000;
+
+struct ChatRoom {
+    std::mutex                                        mu;
+    std::vector<WebSocketConnection*>                 members;
+    std::unordered_map<WebSocketConnection*, std::string> names;
+
+    static std::string trimName(std::string name) {
+        if (name.size() > kChatMaxNameLen) {
+            name.resize(kChatMaxNameLen);
+        }
+        return name;
+    }
+
+    std::string nameFor(WebSocketConnection* ws) const {
+        if (ws == nullptr) {
+            return "?";
+        }
+        const auto it = names.find(ws);
+        if (it != names.end() && !it->second.empty()) {
+            return it->second;
+        }
+        return ws->clientIp();
+    }
+
+    void broadcastLocked(std::string_view line) {
+        for (WebSocketConnection* peer : members) {
+            if (peer != nullptr && peer->isOpen()) {
+                peer->sendNow(line);
+            }
+        }
+    }
+
+    void join(WebSocketConnection& ws, const HTTPRequest& req) {
+        std::string name = trimName(req.getParam("name"));
+        if (name.empty()) {
+            name = "guest-" + ws.clientIp();
+        }
+
+        std::lock_guard<std::mutex> lock(mu);
+        names[&ws] = name;
+        members.push_back(&ws);
+        broadcastLocked("[join] " + name + " (" + std::to_string(members.size()) + " online)\n");
+    }
+
+    void leave(WebSocketConnection& ws) {
+        std::string name;
+        {
+            std::lock_guard<std::mutex> lock(mu);
+            name = nameFor(&ws);
+            members.erase(std::remove(members.begin(), members.end(), &ws), members.end());
+            names.erase(&ws);
+            if (!members.empty()) {
+                broadcastLocked("[leave] " + name + " (" + std::to_string(members.size()) + " online)\n");
+            }
+        }
+    }
+
+    void handleMessage(WebSocketConnection& ws, std::string_view text) {
+        std::string payload(text);
+        if (payload.size() > kChatMaxTextLen) {
+            payload.resize(kChatMaxTextLen);
+        }
+
+        if (payload.rfind("/nick ", 0) == 0) {
+            std::string newName = trimName(payload.substr(6));
+            if (newName.empty()) {
+                ws.sendNow("[system] usage: /nick YourName\n");
+                return;
+            }
+            std::string oldName;
+            {
+                std::lock_guard<std::mutex> lock(mu);
+                oldName = nameFor(&ws);
+                names[&ws] = newName;
+                broadcastLocked("[nick] " + oldName + " -> " + newName + "\n");
+            }
+            return;
+        }
+
+        std::string line;
+        {
+            std::lock_guard<std::mutex> lock(mu);
+            line = nameFor(&ws) + ": " + payload + "\n";
+            broadcastLocked(line);
+        }
+    }
+};
+
+ChatRoom g_chat;
+
+}  // namespace
 
 int main(int argc, char* argv[]) {
 
@@ -256,6 +356,8 @@ int main(int argc, char* argv[]) {
     std::cout << "  POST http://" << HOSTNAME << ":" << PORT << "/api/post" << std::endl;
     std::cout << "  POST http://" << HOSTNAME << ":" << PORT << "/api/send-test-email (Email)" << std::endl;
     std::cout << "  WEB  http://" << HOSTNAME << ":" << PORT << "/email-test (Email Test Page)" << std::endl;
+    std::cout << "  WEB  http://" << HOSTNAME << ":" << PORT << "/chat (WebSocket Chat)" << std::endl;
+    std::cout << "  WS   ws://" << HOSTNAME << ":" << PORT << "/chat?name=Alice" << std::endl;
     std::cout << "  Wildcard: http://" << HOSTNAME << ":" << PORT << "/api/anything" << std::endl;
     std::cout << "  Static files from: ./website/" << std::endl;
     std::cout << "\n=== Controls ===" << std::endl;
@@ -273,6 +375,36 @@ int main(int argc, char* argv[]) {
 }
 
 void addRoutes(Geruest* serverToAddRoutes) {
+    // WebSocket echo (coroutine API)
+    serverToAddRoutes->addRouteWebSocket(
+        "/echo",
+        [](WebSocketConnection& ws, const HTTPRequest&) -> boost::asio::awaitable<void> {
+            WSMessage msg = co_await ws.recv();
+            if (msg.isText()) {
+                co_await ws.send(msg.text());
+            }
+            co_return;
+        });
+
+    // WebSocket echo (callback API)
+    WebSocketRoute echoCb;
+    echoCb.onMessage = [](WebSocketConnection& ws, WSMessage msg) {
+        if (msg.isText()) {
+            ws.sendNow(msg.text());
+        }
+    };
+    serverToAddRoutes->addRouteWebSocket("/echo-cb", echoCb);
+
+    WebSocketRoute chat;
+    chat.onOpen = [](WebSocketConnection& ws, const HTTPRequest& req) { g_chat.join(ws, req); };
+    chat.onMessage = [](WebSocketConnection& ws, WSMessage msg) {
+        if (msg.isText()) {
+            g_chat.handleMessage(ws, msg.text());
+        }
+    };
+    chat.onClose = [](WebSocketConnection& ws, uint16_t, std::string_view) { g_chat.leave(ws); };
+    serverToAddRoutes->addRouteWebSocket("/chat", chat);
+
     // Example GET route
     serverToAddRoutes->addRoute("/test", [](const HTTPRequest& req) {
         HTTPResponse response("200 OK");

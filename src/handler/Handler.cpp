@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <boost/asio/buffer.hpp>
+#include <boost/asio/error.hpp>
 #include <boost/asio/read.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/asio/write.hpp>
@@ -26,6 +27,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -46,6 +48,7 @@
 #include "data/HTTPResponse.hpp"
 #include "data/MethodNotAllowed.hpp"
 #include "security/Security.hpp"
+#include "server/WebSocket.hpp"
 
 namespace {
 
@@ -70,11 +73,10 @@ std::atomic<uint64_t> gSendfileFallbackCount{0};
 }
 
 [[nodiscard]] std::shared_ptr<const std::string> lookupTextResponseCache(const std::string& key,
-                                                                          const std::string& contentPath,
                                                                           bool devMode,
                                                                           size_t maxEntryBytes,
                                                                           size_t maxTotalBytes) {
-    if (maxEntryBytes == 0 || maxTotalBytes == 0) {
+    if (devMode || maxEntryBytes == 0 || maxTotalBytes == 0) {
         return {};
     }
     std::lock_guard<std::mutex> lock(gTextResponseCacheMutex);
@@ -82,21 +84,12 @@ std::atomic<uint64_t> gSendfileFallbackCount{0};
     if (it == gTextResponseCache.end()) {
         return {};
     }
-    if (devMode && it->second.hasMtime) {
-        std::error_code ec;
-        const auto nowMtime = std::filesystem::last_write_time(contentPath, ec);
-        if (ec || nowMtime != it->second.mtime) {
-            gTextResponseCacheBytes -= it->second.sizeBytes;
-            gTextResponseCache.erase(it);
-            return {};
-        }
-    }
     return it->second.payload;
 }
 
 void storeTextResponseCache(const std::string& key, const std::string& contentPath, const std::string& payload,
-                            size_t maxEntryBytes, size_t maxTotalBytes) {
-    if (payload.empty() || maxEntryBytes == 0 || maxTotalBytes == 0 || payload.size() > maxEntryBytes) {
+                            bool devMode, size_t maxEntryBytes, size_t maxTotalBytes) {
+    if (devMode || payload.empty() || maxEntryBytes == 0 || maxTotalBytes == 0 || payload.size() > maxEntryBytes) {
         return;
     }
 
@@ -165,6 +158,40 @@ size_t findHeaderEndPos(const std::string& raw) {
     while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) s.remove_prefix(1);
     while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.remove_suffix(1);
     return s;
+}
+
+[[nodiscard]] bool isExpectedKeepAliveTeardown(const boost::system::error_code& ec, std::string_view phase) {
+    if (phase != "waiting_for_request") {
+        return false;
+    }
+    return ec == boost::asio::error::eof || ec == boost::asio::error::connection_reset ||
+           ec == boost::asio::error::broken_pipe;
+}
+
+[[nodiscard]] const char* socketReadFailureHint(const boost::system::error_code& ec, std::string_view phase,
+                                                unsigned int connectionReq) {
+    if (ec == boost::asio::error::eof) {
+        if (phase == "waiting_for_request" && connectionReq > 1) {
+            return "client closed idle keep-alive connection (usually harmless)";
+        }
+        return "client closed connection (end of stream)";
+    }
+    if (ec == boost::asio::error::connection_reset) {
+        if (phase == "waiting_for_request") {
+            return "peer reset connection while waiting for next request (often browser idle teardown)";
+        }
+        return "connection reset by peer";
+    }
+    if (ec == boost::asio::error::operation_aborted) {
+        return "read operation aborted (server shutdown or cancelled I/O)";
+    }
+    if (ec == boost::asio::error::broken_pipe) {
+        return "broken pipe (peer already gone)";
+    }
+    if (ec == boost::asio::error::not_connected) {
+        return "socket is not connected";
+    }
+    return nullptr;
 }
 
 struct HeaderPreflight {
@@ -355,7 +382,7 @@ Handler::~Handler() {
     serverData.decrementActiveHandlers();
 }
 
-boost::asio::awaitable<bool> Handler::readSocketAsync(char* bufferToUse, size_t size) {
+boost::asio::awaitable<bool> Handler::readSocketAsync(char* bufferToUse, size_t size, std::string_view phase) {
     if (size > INT_MAX) {
         sendToLoggerError("Size of buffer is too big.");
         co_return false;
@@ -365,8 +392,21 @@ boost::asio::awaitable<bool> Handler::readSocketAsync(char* bufferToUse, size_t 
         const std::size_t n = co_await clientSocket.async_read_some(
             boost::asio::buffer(bufferToUse, size), boost::asio::use_awaitable);
         bufferLength = static_cast<std::int64_t>(n);
-    } catch (const boost::system::system_error&) {
-        sendToLogger("Error reading from socket.", LogLevel::Warning);
+    } catch (const boost::system::system_error& e) {
+        if (!isExpectedKeepAliveTeardown(e.code(), phase)) {
+            std::ostringstream oss;
+            oss << "Error reading from socket";
+            if (!phase.empty()) {
+                oss << " phase=" << phase;
+            }
+            oss << " connection_req=" << messageCount;
+            oss << " socket_open=" << (clientSocket.is_open() ? "yes" : "no");
+            oss << " error=[" << e.code().category().name() << ':' << e.code().value() << "] " << e.code().message();
+            if (const char* hint = socketReadFailureHint(e.code(), phase, messageCount)) {
+                oss << " hint=" << hint;
+            }
+            sendToLogger(oss.str(), LogLevel::Warning);
+        }
         co_return false;
     }
 
@@ -376,12 +416,14 @@ boost::asio::awaitable<bool> Handler::readSocketAsync(char* bufferToUse, size_t 
     co_return true;
 }
 
-boost::asio::awaitable<bool> Handler::readSocketAsync() { co_return co_await readSocketAsync(buffer.get(), BUFFER_SIZE); }
+boost::asio::awaitable<bool> Handler::readSocketAsync(std::string_view phase) {
+    co_return co_await readSocketAsync(buffer.get(), BUFFER_SIZE, phase);
+}
 
 boost::asio::awaitable<bool> Handler::discardFromSocketAsync(size_t byteCount) {
     while (byteCount > 0) {
         const size_t chunk = std::min(byteCount, static_cast<size_t>(BUFFER_SIZE));
-        if (!co_await readSocketAsync(buffer.get(), chunk)) {
+        if (!co_await readSocketAsync(buffer.get(), chunk, "discarding_body")) {
             co_return false;
         }
         if (bufferLength <= 0) {
@@ -503,7 +545,7 @@ boost::asio::awaitable<void> Handler::runAsync() {
         pendingRequestData.clear();
 
         if (raw.empty()) {
-            if (!co_await readSocketAsync()) {
+            if (!co_await readSocketAsync("waiting_for_request")) {
                 break;
             }
             if (bufferLength <= 0) {
@@ -518,7 +560,7 @@ boost::asio::awaitable<void> Handler::runAsync() {
                 sendToLoggerError("HTTP headers exceed maximum size.");
                 co_return;
             }
-            if (!co_await readSocketAsync()) {
+            if (!co_await readSocketAsync("reading_headers")) {
                 co_return;
             }
             if (bufferLength <= 0) {
@@ -575,7 +617,7 @@ boost::asio::awaitable<void> Handler::runAsync() {
                     needTotal = chunkEnd;
                     break;
                 }
-                if (!co_await readSocketAsync()) {
+                if (!co_await readSocketAsync("reading_chunked_body")) {
                     co_return;
                 }
                 if (bufferLength <= 0) {
@@ -592,7 +634,7 @@ boost::asio::awaitable<void> Handler::runAsync() {
             }
         } else {
             while (raw.size() < needTotal) {
-                if (!co_await readSocketAsync()) {
+                if (!co_await readSocketAsync("reading_body")) {
                     co_return;
                 }
                 if (bufferLength <= 0) {
@@ -619,6 +661,9 @@ boost::asio::awaitable<void> Handler::runAsync() {
         {
             const auto _reqStart = std::chrono::steady_clock::now();
             co_await handleRequestAsync(&hTTPRequest);
+            if (_upgraded) {
+                co_return;
+            }
             const auto _elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
                                             std::chrono::steady_clock::now() - _reqStart)
                                         .count();
@@ -627,9 +672,86 @@ boost::asio::awaitable<void> Handler::runAsync() {
                                                                  : static_cast<uint32_t>(_elapsedUs));
         }
 
+        if (httpShouldCloseAfterResponse(hTTPRequest.getRawRequestLine(), hTTPRequest.getHeaderView("connection"))) {
+            break;
+        }
+
         memset(buffer.get(), 0, BUFFER_SIZE);
     }
     co_return;
+}
+
+boost::asio::awaitable<bool> Handler::tryHandleWebSocketAsync(HTTPRequest* request) {
+    if (request == nullptr) {
+        co_return false;
+    }
+
+    if (request->getMethod() != "GET") {
+        co_return false;
+    }
+
+    if (!isWebSocketUpgrade(*request)) {
+        if (isWebSocketUpgradeIntent(*request)
+            && serverData.findMatchingWebSocketRoute(request->getPathString())) {
+            HTTPResponse br = responseBadRequest(request);
+            br.serializeTo(responseScratch_);
+            co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size());
+            _upgraded = true;
+            co_return true;
+        }
+        co_return false;
+    }
+
+    if (!request->getBody().empty()) {
+        HTTPResponse br = responseBadRequest(request);
+        br.serializeTo(responseScratch_);
+        co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size());
+        _upgraded = true;
+        co_return true;
+    }
+
+    auto wsHandler = serverData.findMatchingWebSocketRoute(request->getPathString());
+    if (!wsHandler) {
+        co_await sendNotFoundResponseAsync(request);
+        _upgraded = true;
+        co_return true;
+    }
+
+    const std::string secKey = request->getHeader("sec-websocket-key");
+    const std::string acceptKey = computeAcceptKey(secKey);
+    const std::string subprotocol =
+        pickSubprotocol(request->getHeaderView("sec-websocket-protocol"),
+                        serverData.getWebSocketSubprotocols());
+    const std::string handshake = buildHandshakeResponse(acceptKey, subprotocol);
+    if (!co_await sendSocketAsync(handshake.c_str(), handshake.size())) {
+        _upgraded = true;
+        co_return true;
+    }
+
+    WebSocketConnection ws(clientSocket, IP, subprotocol, serverData.getWebSocketLimits());
+    bool handlerFailed = false;
+    try {
+        co_await (*wsHandler)(ws, *request);
+    } catch (const std::exception& e) {
+        handlerFailed = true;
+        serverData.record5xx();
+        sendToLoggerError(std::string("Exception in WebSocket handler: ") + e.what());
+    } catch (...) {
+        handlerFailed = true;
+        serverData.record5xx();
+        sendToLoggerError("Unknown exception in WebSocket handler");
+    }
+
+    if (ws.isOpen()) {
+        if (handlerFailed) {
+            co_await ws.close(1011, "internal error");
+        } else {
+            co_await ws.close(1000, "");
+        }
+    }
+
+    _upgraded = true;
+    co_return true;
 }
 
 boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
@@ -640,6 +762,10 @@ boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
         if (!co_await sendSocketAsync(header.c_str(), header.size())) {
             sendToLoggerError("Failed to send internal server error response");
         }
+        co_return;
+    }
+
+    if (co_await tryHandleWebSocketAsync(request)) {
         co_return;
     }
 
@@ -880,7 +1006,7 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
     if (contentType == "text/html" || contentType == "text/javascript" || contentType == "text/css") {
         const std::string cacheKey = textResponseCacheKey(contentType, contentPath);
         if (const std::shared_ptr<const std::string> cached = lookupTextResponseCache(
-                cacheKey, contentPath, serverData.isDevMode(), serverData.getTextResponseCacheMaxEntryBytes(),
+                cacheKey, serverData.isDevMode(), serverData.getTextResponseCacheMaxEntryBytes(),
                 serverData.getTextResponseCacheMaxTotalBytes())) {
             if (!co_await sendSocketAsync(cached->data(), cached->size())) {
                 sendToLoggerError("Failed to send cached file: " + contentPath);
@@ -932,7 +1058,8 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
         htmlResponse.setBody(contentBuilder->file());
 
         htmlResponse.serializeTo(responseScratch_);
-        storeTextResponseCache(cacheKey, contentPath, responseScratch_, serverData.getTextResponseCacheMaxEntryBytes(),
+        storeTextResponseCache(cacheKey, contentPath, responseScratch_, serverData.isDevMode(),
+                               serverData.getTextResponseCacheMaxEntryBytes(),
                                serverData.getTextResponseCacheMaxTotalBytes());
 
         if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {

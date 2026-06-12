@@ -51,11 +51,13 @@ class Handler {
     /** Unread bytes after the last fully parsed request (HTTP/1.1 pipelining / partial reads). */
     std::string pendingRequestData;
 
+    bool _upgraded = false;
+
     /** Reused for HTTPResponse::serializeTo and similar to reduce per-send allocations. */
     std::string responseScratch_;
 
-    boost::asio::awaitable<bool> readSocketAsync();
-    boost::asio::awaitable<bool> readSocketAsync(char* bufferToUse, size_t size);
+    boost::asio::awaitable<bool> readSocketAsync(std::string_view phase = {});
+    boost::asio::awaitable<bool> readSocketAsync(char* bufferToUse, size_t size, std::string_view phase = {});
 
     boost::asio::awaitable<bool> discardFromSocketAsync(size_t byteCount);
 
@@ -73,6 +75,8 @@ class Handler {
     void sendToLoggerError(const std::string& message) const;
 
     boost::asio::awaitable<void> handleRequestAsync(HTTPRequest* request);
+
+    boost::asio::awaitable<bool> tryHandleWebSocketAsync(HTTPRequest* request);
 
     boost::asio::awaitable<void> sendFileAsync(const std::string& contentType, const std::string& contentPath,
                                                HTTPRequest* httpRequest);

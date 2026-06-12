@@ -118,3 +118,13 @@ TEST(HTTPRequestTest, HttpExpect100ContinueMatcher) {
     EXPECT_FALSE(httpExpectIs100Continue(""));
     EXPECT_FALSE(httpExpectIs100Continue("100"));
 }
+
+TEST(HTTPRequestTest, HttpShouldCloseAfterResponse) {
+    EXPECT_TRUE(httpShouldCloseAfterResponse("GET / HTTP/1.1", "close"));
+    EXPECT_TRUE(httpShouldCloseAfterResponse("GET / HTTP/1.1", "Close"));
+    EXPECT_TRUE(httpShouldCloseAfterResponse("GET / HTTP/1.1", "keep-alive, close"));
+    EXPECT_FALSE(httpShouldCloseAfterResponse("GET / HTTP/1.1", "keep-alive"));
+    EXPECT_FALSE(httpShouldCloseAfterResponse("GET / HTTP/1.1", ""));
+    EXPECT_TRUE(httpShouldCloseAfterResponse("GET / HTTP/1.0", ""));
+    EXPECT_FALSE(httpShouldCloseAfterResponse("GET / HTTP/1.0", "keep-alive"));
+}
