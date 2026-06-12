@@ -9,8 +9,12 @@
 #include <vector>
 
 #include "DatabaseTypes.hpp"
+#include "parser/JSONParser.hpp"
 
 namespace geruest::db {
+
+/** Build JSON object `{"rows":[...], "affectedRows":N}` from a query result. */
+geruest::JSONParser toJSONParser(const QueryResult& result);
 
 class DatabaseClient {
    public:
@@ -21,6 +25,10 @@ class DatabaseClient {
                                                            std::vector<BindValue> params) = 0;
     virtual boost::asio::awaitable<std::uint64_t> executeAsync(std::string sql,
                                                                std::vector<BindValue> params) = 0;
+
+    /** Same SQL/params as queryAsync; returns toJSONParser(result). */
+    boost::asio::awaitable<geruest::JSONParser> queryJsonAsync(std::string sql,
+                                                                 std::vector<BindValue> params);
 };
 
 #if GERUEST_HAS_LIBPQ

@@ -17,6 +17,9 @@ endif()
 
 # Find required packages
 find_package(Threads REQUIRED)
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW)
+endif()
 find_package(Boost 1.75 REQUIRED COMPONENTS system)
 
 # Find CURL (optional for email functionality)

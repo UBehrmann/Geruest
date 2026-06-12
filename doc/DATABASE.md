@@ -132,18 +132,11 @@ server.addRouteAsync("/users", [](const geruest::HTTPRequest& request) -> gerues
         co_return response;
     }
 
-    auto result = co_await db->queryAsync(
+    auto json = co_await db->queryJsonAsync(
         "SELECT id, name FROM users WHERE name = ?",
         {std::string("alice")}
     );
-
-    std::string body = "[";
-    for (size_t i = 0; i < result.rows.size(); ++i) {
-        if (i > 0) body += ",";
-        body += "{\"id\":\"" + result.rows[i].columns[0] + "\",\"name\":\"" + result.rows[i].columns[1] + "\"}";
-    }
-    body += "]";
-    response.setBody(body);
+    response.setBody(json.toString());
     co_return response;
 });
 ```
@@ -169,6 +162,8 @@ std::uint64_t affected = co_await db->executeAsync(
   - `columnNames` — names in column order (empty for statements with no result set).
   - `rows` — each `QueryRow` has `columns` as strings (SQLite `NULL` becomes empty string).
   - `affectedRows` — rows changed / command tag where applicable; `executeAsync` returns this same count as `std::uint64_t`.
+- `queryJsonAsync` runs the same query and returns `geruest::JSONParser` via `geruest::db::toJSONParser(result)`.
+- `toJSONParser(const QueryResult&)` builds `{"rows":[{...}, ...], "affectedRows":N}` — each row object uses `columnNames` as keys; if names are empty, keys are `"0"`, `"1"`, …
 - `DatabaseClient::backend()` returns `geruest::db::Backend` (`None`, `Postgres`, `Sqlite`) for the concrete client implementation.
 
 ## SQLite Notes

@@ -47,6 +47,9 @@ else()
     add_compile_definitions(GERUEST_HAS_CURL=0)
 endif()
 
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW)
+endif()
 find_package(Boost 1.75 REQUIRED COMPONENTS system)
 
 option(GERUEST_ENABLE_POSTGRESQL "Enable PostgreSQL backend support in tests" OFF)
@@ -290,6 +293,8 @@ if(GERUEST_HAS_SQLITE)
         Database/DatabaseSqlite_tests.cpp
         ../database/DatabaseClient.cpp
         ../database/DbExecutor.cpp
+        ../parser/JSONParser.cpp
+        ../security/Security.cpp
     )
     # Work around GCC 13 internal compiler error in coroutine lowering for this test TU.
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 13 AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 14)
@@ -306,6 +311,8 @@ if(GERUEST_HAS_LIBPQ)
         Database/DatabasePostgres_tests.cpp
         ../database/DatabaseClient.cpp
         ../database/DbExecutor.cpp
+        ../parser/JSONParser.cpp
+        ../security/Security.cpp
     )
     # Work around GCC 13 internal compiler error in coroutine lowering for this test TU.
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 13 AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 14)

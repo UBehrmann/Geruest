@@ -1,5 +1,7 @@
 #include "DatabaseClient.hpp"
 
+#include "parser/JSONParser.hpp"
+
 #include <boost/asio/post.hpp>
 #include <boost/asio/redirect_error.hpp>
 #include <boost/asio/steady_timer.hpp>
@@ -34,6 +36,37 @@
 #endif
 
 namespace geruest::db {
+
+geruest::JSONParser toJSONParser(const QueryResult& result) {
+    std::vector<geruest::JSONParser> rowObjects;
+    rowObjects.reserve(result.rows.size());
+    for (const QueryRow& row : result.rows) {
+        geruest::JSONParser obj;
+        if (result.columnNames.empty()) {
+            for (std::size_t i = 0; i < row.columns.size(); ++i) {
+                obj.setString(std::to_string(i), row.columns[i]);
+            }
+        } else {
+            const std::size_t columnCount =
+                std::min(result.columnNames.size(), row.columns.size());
+            for (std::size_t i = 0; i < columnCount; ++i) {
+                obj.setString(result.columnNames[i], row.columns[i]);
+            }
+        }
+        rowObjects.push_back(std::move(obj));
+    }
+
+    geruest::JSONParser out;
+    out.setArrayOfJSON("rows", rowObjects);
+    out.setLongLong("affectedRows", static_cast<long long>(result.affectedRows));
+    return out;
+}
+
+boost::asio::awaitable<geruest::JSONParser> DatabaseClient::queryJsonAsync(std::string sql,
+                                                                            std::vector<BindValue> params) {
+    QueryResult result = co_await queryAsync(std::move(sql), std::move(params));
+    co_return toJSONParser(result);
+}
 
 namespace {
 
