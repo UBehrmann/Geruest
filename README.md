@@ -18,12 +18,17 @@ Geruest (German for "scaffold") is a lightweight C++ web framework designed to s
 - Multilanguage support
 - Static file serving
 - Routing
-  - simple add route function `addRoute(path, callback);`
-- **Asset Merging** (NEW)
+  - Sync: `addRoute(path, handler)`
+  - Async (C++20 coroutines): `addRouteAsync(path, handler)` — DB and other `co_await` work
+  - WebSockets: `addRouteWebSocket(path, handler)` — RFC 6455, coroutine or callback API
+- **Async database** (optional PostgreSQL / SQLite at build time)
+  - `request.database()` from async routes; `queryAsync`, `executeAsync`, `queryJsonAsync`
+  - Pooling, `.env` configuration, dedicated SQLite executor threads
+- **Asset Merging**
   - Automatically scan HTML templates for CSS/JS includes
   - Merge multiple files into single bundled files per page
   - Reduces HTTP requests and eliminates manual JSON mapping
-- **JavaScript Obfuscation** (NEW v0.6.7)
+- **JavaScript Obfuscation** (v0.6.7+)
   - Protect your JavaScript code from casual analysis
   - 3 obfuscation levels: basic, medium, advanced
   - Automatic caching with configurable expiry
@@ -50,15 +55,16 @@ Geruest (German for "scaffold") is a lightweight C++ web framework designed to s
 - [ ] Add CLI
 - [ ] Add Rate limiting
 - [ ] Add IP blocking
-- [ ] Add websockets support
+- [X] Add websockets support
 
 ## Requirements
 
 - **C++20** or later (coroutines with Boost.Asio)
-- **CMake** 3.10+
+- **CMake** 3.11+
 - **Boost** (Asio + Boost.System): install `libboost-system-dev` (Debian/Ubuntu/Fedora). If CMake cannot find Boost, configure your system package path.
 - **Threads** (pthread)
 - A compatible C++ compiler (GCC 10+, Clang 11+)
+- Optional: **libpq** / **libsqlite3** (`-DGERUEST_ENABLE_POSTGRESQL=ON`, `-DGERUEST_ENABLE_SQLITE=ON`), **libcurl** (email), **libwebp** (image conversion)
 
 ## Quick Start
 
@@ -67,6 +73,12 @@ Geruest (German for "scaffold") is a lightweight C++ web framework designed to s
 ### Linux/Unix (Bash)
 ```bash
 git clone https://github.com/UBehrmann/Geruest.git && cd Geruest && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build . && sudo cmake --install .
+```
+
+Optional database backends at configure time:
+
+```bash
+cmake .. -DCMAKE_BUILD_TYPE=Release -DGERUEST_ENABLE_POSTGRESQL=ON -DGERUEST_ENABLE_SQLITE=ON
 ```
 
 ## Documentation
@@ -88,6 +100,8 @@ git clone https://github.com/UBehrmann/Geruest.git && cd Geruest && mkdir build 
   - Multi-language support
   - Graceful shutdown
 - **[Data Classes Reference](doc/DATA_CLASSES.md)** - HTTPRequest, HTTPResponse, JSONParser API
+- **[Database Usage](doc/DATABASE.md)** - Async PostgreSQL/SQLite, pooling, `addRouteAsync`
+- **[WebSockets](doc/WEBSOCKETS.md)** - `addRouteWebSocket` coroutine and callback APIs
 
 ### Template System
 
@@ -172,8 +186,6 @@ int main() {
 
 ### Quick Install
 
-### Quick Install
-
 Clone the Geruest repository:
 
 ```bash
@@ -191,7 +203,7 @@ Geruest now targets Linux/Unix only. Windows support has been removed.
 **See [Getting Started - CMakeLists.txt](doc/GETTING_STARTED.md#cmakeliststxt-for-your-project) for a complete example.**
 
 ```cmake
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.11)
 project(MyWebsiteApp)
 set(CMAKE_CXX_STANDARD 20)
 
