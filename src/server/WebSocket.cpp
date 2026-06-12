@@ -411,17 +411,96 @@ std::string pickSubprotocol(std::string_view clientHeader, const std::vector<std
     return {};
 }
 
-WebSocketConnection::AsyncWriteState::AsyncWriteState(tcp_socket& sock)
-    : socket(sock), strand(boost::asio::make_strand(sock.get_executor())) {}
+WebSocketConnection::WriteChain::WriteChain(tcp_socket& sock) : socket(sock) {}
 
-boost::asio::awaitable<void> WebSocketConnection::AsyncWriteState::sendFrame(std::vector<uint8_t> frame) {
+void WebSocketConnection::WriteChain::enqueueOnExecutor(PendingWrite item) {
+    queue.push_back(std::move(item));
+    startPumpIfNeeded();
+}
+
+void WebSocketConnection::WriteChain::startPumpIfNeeded() {
+    if (pumping || queue.empty()) {
+        return;
+    }
+    pumping = true;
+    const std::shared_ptr<WriteChain> self = shared_from_this();
+    boost::asio::co_spawn(
+        socket.get_executor(),
+        [self]() -> boost::asio::awaitable<void> { co_await self->pump(); },
+        boost::asio::detached);
+}
+
+boost::asio::awaitable<void> WebSocketConnection::WriteChain::pump() {
+    while (true) {
+        PendingWrite item;
+        if (queue.empty()) {
+            pumping = false;
+            if (queue.empty()) {
+                co_return;
+            }
+            pumping = true;
+            continue;
+        }
+        item = std::move(queue.front());
+        queue.pop_front();
+
+        if (!writesEnabled.load(std::memory_order_relaxed)) {
+            if (item.onComplete) {
+                item.onComplete();
+            }
+            pumping = false;
+            co_return;
+        }
+
+        try {
+            co_await boost::asio::async_write(socket, boost::asio::buffer(item.frame),
+                                              boost::asio::use_awaitable);
+        } catch (...) {
+            writesEnabled.store(false, std::memory_order_relaxed);
+            if (item.onComplete) {
+                item.onComplete();
+            }
+            pumping = false;
+            co_return;
+        }
+
+        if (item.onComplete) {
+            item.onComplete();
+        }
+    }
+}
+
+void WebSocketConnection::WriteChain::schedule(std::vector<uint8_t> frame) {
+    if (!writesEnabled.load(std::memory_order_relaxed)) {
+        return;
+    }
+    const std::shared_ptr<WriteChain> self = shared_from_this();
+    boost::asio::post(socket.get_executor(), [self, f = std::move(frame)]() mutable {
+        if (!self->writesEnabled.load(std::memory_order_relaxed)) {
+            return;
+        }
+        self->enqueueOnExecutor(PendingWrite{std::move(f), nullptr});
+    });
+}
+
+boost::asio::awaitable<void> WebSocketConnection::WriteChain::write(std::vector<uint8_t> frame) {
     if (!writesEnabled.load(std::memory_order_relaxed)) {
         co_return;
     }
-    try {
-        co_await boost::asio::async_write(socket, boost::asio::buffer(frame), boost::asio::use_awaitable);
-    } catch (...) {
-        writesEnabled.store(false, std::memory_order_relaxed);
+    struct Gate {
+        bool done = false;
+    };
+    const std::shared_ptr<Gate>          gate = std::make_shared<Gate>();
+    const std::shared_ptr<WriteChain>    self = shared_from_this();
+    boost::asio::post(socket.get_executor(), [self, gate, f = std::move(frame)]() mutable {
+        if (!self->writesEnabled.load(std::memory_order_relaxed)) {
+            gate->done = true;
+            return;
+        }
+        self->enqueueOnExecutor(PendingWrite{std::move(f), [gate]() { gate->done = true; }});
+    });
+    while (!gate->done) {
+        co_await boost::asio::post(socket.get_executor(), boost::asio::use_awaitable);
     }
     co_return;
 }
@@ -429,28 +508,27 @@ boost::asio::awaitable<void> WebSocketConnection::AsyncWriteState::sendFrame(std
 WebSocketConnection::WebSocketConnection(tcp_socket& sock, std::string clientIp,
                                          std::string selectedSubprotocol, WebSocketLimits limits)
     : _socket(sock)
-    , _strand(boost::asio::make_strand(sock.get_executor()))
-    , _asyncWrite(std::make_shared<AsyncWriteState>(sock))
+    , _writeChain(std::make_shared<WriteChain>(sock))
     , _clientIp(std::move(clientIp))
     , _selectedSubprotocol(std::move(selectedSubprotocol))
     , _limits(std::move(limits)) {}
 
 void WebSocketConnection::markClosed(uint16_t code, std::string_view reason) {
     _open = false;
-    if (_asyncWrite) {
-        _asyncWrite->writesEnabled.store(false, std::memory_order_relaxed);
+    if (_writeChain) {
+        _writeChain->writesEnabled.store(false, std::memory_order_relaxed);
     }
     _closeCode = code;
     _closeReason.assign(reason);
 }
 
 boost::asio::awaitable<void> WebSocketConnection::writeCloseFrame(uint16_t code, std::string_view reason) {
+    if (!_writeChain) {
+        co_return;
+    }
     try {
-        co_await boost::asio::async_write(
-            _socket,
-            boost::asio::buffer(websocket_codec::encodeServerFrame(
-                WSOpcode::Close, WSMessage::makeClose(code, reason).data())),
-            boost::asio::use_awaitable);
+        co_await _writeChain->write(websocket_codec::encodeServerFrame(
+            WSOpcode::Close, WSMessage::makeClose(code, reason).data()));
     } catch (...) {
     }
     co_return;
@@ -463,11 +541,11 @@ boost::asio::awaitable<void> WebSocketConnection::protocolError(uint16_t code, s
 }
 
 boost::asio::awaitable<void> WebSocketConnection::writeRawFrame(std::vector<uint8_t> frame) {
-    if (!_open) {
+    if (!_open || !_writeChain) {
         co_return;
     }
     try {
-        co_await boost::asio::async_write(_socket, boost::asio::buffer(frame), boost::asio::use_awaitable);
+        co_await _writeChain->write(std::move(frame));
     } catch (...) {
         markClosed(1011, "write failed");
         throw;
@@ -512,35 +590,19 @@ boost::asio::awaitable<void> WebSocketConnection::close(uint16_t code, std::stri
 }
 
 void WebSocketConnection::sendNow(std::string_view text) {
-    const auto* begin = reinterpret_cast<const uint8_t*>(text.data());
-    auto        frame = websocket_codec::encodeServerFrame(WSOpcode::Text,
-                                                    std::span<const uint8_t>(begin, text.size()));
-    const std::shared_ptr<AsyncWriteState> state = _asyncWrite;
-    if (!state) {
+    if (!_writeChain) {
         return;
     }
-    boost::asio::co_spawn(
-        state->strand,
-        [state, frame = std::move(frame)]() mutable -> boost::asio::awaitable<void> {
-            co_await state->sendFrame(std::move(frame));
-            co_return;
-        },
-        boost::asio::detached);
+    const auto* begin = reinterpret_cast<const uint8_t*>(text.data());
+    _writeChain->schedule(websocket_codec::encodeServerFrame(
+        WSOpcode::Text, std::span<const uint8_t>(begin, text.size())));
 }
 
 void WebSocketConnection::sendBinaryNow(std::span<const uint8_t> data) {
-    auto                                   frame = websocket_codec::encodeServerFrame(WSOpcode::Binary, data);
-    const std::shared_ptr<AsyncWriteState> state   = _asyncWrite;
-    if (!state) {
+    if (!_writeChain) {
         return;
     }
-    boost::asio::co_spawn(
-        state->strand,
-        [state, frame = std::move(frame)]() mutable -> boost::asio::awaitable<void> {
-            co_await state->sendFrame(std::move(frame));
-            co_return;
-        },
-        boost::asio::detached);
+    _writeChain->schedule(websocket_codec::encodeServerFrame(WSOpcode::Binary, data));
 }
 
 boost::asio::awaitable<WSMessage> WebSocketConnection::readMessage() {

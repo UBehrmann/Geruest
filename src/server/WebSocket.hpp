@@ -8,10 +8,9 @@
 
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/ip/tcp.hpp>
-#include <boost/asio/strand.hpp>
-
 #include <atomic>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <span>
@@ -82,19 +81,29 @@ class WebSocketConnection {
     const std::string& selectedSubprotocol() const noexcept { return _selectedSubprotocol; }
 
    private:
-    struct AsyncWriteState : std::enable_shared_from_this<AsyncWriteState> {
-        explicit AsyncWriteState(tcp_socket& sock);
+    /** Serializes all outbound frames on the connection socket executor (session strand). */
+    struct WriteChain : std::enable_shared_from_this<WriteChain> {
+        explicit WriteChain(tcp_socket& sock);
 
-        tcp_socket&                                    socket;
-        boost::asio::strand<tcp_socket::executor_type> strand;
-        std::atomic<bool>                              writesEnabled{true};
+        struct PendingWrite {
+            std::vector<uint8_t> frame;
+            std::function<void()> onComplete;
+        };
 
-        boost::asio::awaitable<void> sendFrame(std::vector<uint8_t> frame);
+        tcp_socket&              socket;
+        std::atomic<bool>        writesEnabled{true};
+        std::deque<PendingWrite> queue;
+        bool                     pumping = false;
+
+        void                         enqueueOnExecutor(PendingWrite item);
+        void                         startPumpIfNeeded();
+        boost::asio::awaitable<void> pump();
+        void                         schedule(std::vector<uint8_t> frame);
+        boost::asio::awaitable<void> write(std::vector<uint8_t> frame);
     };
 
-    tcp_socket&                                    _socket;
-    boost::asio::strand<tcp_socket::executor_type> _strand;
-    std::shared_ptr<AsyncWriteState>               _asyncWrite;
+    tcp_socket&                    _socket;
+    std::shared_ptr<WriteChain>    _writeChain;
     std::string                                    _clientIp;
     std::string                                    _selectedSubprotocol;
     WebSocketLimits                                _limits;
