@@ -116,8 +116,8 @@ void Geruest::loadConfig(const std::string& envFilePath) {
         }
     }
 
-    // TEXT_RESPONSE_CACHE_MAX_ENTRY_BYTES (0 = do not cache new entries)
-    if (!_configFlags.textResponseCacheMaxEntryBytesSet) {
+    // TEXT_RESPONSE_CACHE_MAX_ENTRY_BYTES (0 = do not cache new entries; ignored in dev mode)
+    if (!_configFlags.textResponseCacheMaxEntryBytesSet && !serverData.isDevMode()) {
         const size_t currentValue = serverData.getTextResponseCacheMaxEntryBytes();
         const size_t configValue = ConfigLoader::getSizeT("TEXT_RESPONSE_CACHE_MAX_ENTRY_BYTES", currentValue);
         if (configValue != currentValue) {
@@ -126,8 +126,8 @@ void Geruest::loadConfig(const std::string& envFilePath) {
         }
     }
 
-    // TEXT_RESPONSE_CACHE_MAX_TOTAL_BYTES (0 = do not cache new entries)
-    if (!_configFlags.textResponseCacheMaxTotalBytesSet) {
+    // TEXT_RESPONSE_CACHE_MAX_TOTAL_BYTES (0 = do not cache new entries; ignored in dev mode)
+    if (!_configFlags.textResponseCacheMaxTotalBytesSet && !serverData.isDevMode()) {
         const size_t currentValue = serverData.getTextResponseCacheMaxTotalBytes();
         const size_t configValue = ConfigLoader::getSizeT("TEXT_RESPONSE_CACHE_MAX_TOTAL_BYTES", currentValue);
         if (configValue != currentValue) {

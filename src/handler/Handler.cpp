@@ -72,11 +72,10 @@ std::atomic<uint64_t> gSendfileFallbackCount{0};
 }
 
 [[nodiscard]] std::shared_ptr<const std::string> lookupTextResponseCache(const std::string& key,
-                                                                          const std::string& contentPath,
                                                                           bool devMode,
                                                                           size_t maxEntryBytes,
                                                                           size_t maxTotalBytes) {
-    if (maxEntryBytes == 0 || maxTotalBytes == 0) {
+    if (devMode || maxEntryBytes == 0 || maxTotalBytes == 0) {
         return {};
     }
     std::lock_guard<std::mutex> lock(gTextResponseCacheMutex);
@@ -84,21 +83,12 @@ std::atomic<uint64_t> gSendfileFallbackCount{0};
     if (it == gTextResponseCache.end()) {
         return {};
     }
-    if (devMode && it->second.hasMtime) {
-        std::error_code ec;
-        const auto nowMtime = std::filesystem::last_write_time(contentPath, ec);
-        if (ec || nowMtime != it->second.mtime) {
-            gTextResponseCacheBytes -= it->second.sizeBytes;
-            gTextResponseCache.erase(it);
-            return {};
-        }
-    }
     return it->second.payload;
 }
 
 void storeTextResponseCache(const std::string& key, const std::string& contentPath, const std::string& payload,
-                            size_t maxEntryBytes, size_t maxTotalBytes) {
-    if (payload.empty() || maxEntryBytes == 0 || maxTotalBytes == 0 || payload.size() > maxEntryBytes) {
+                            bool devMode, size_t maxEntryBytes, size_t maxTotalBytes) {
+    if (devMode || payload.empty() || maxEntryBytes == 0 || maxTotalBytes == 0 || payload.size() > maxEntryBytes) {
         return;
     }
 
@@ -935,7 +925,7 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
     if (contentType == "text/html" || contentType == "text/javascript" || contentType == "text/css") {
         const std::string cacheKey = textResponseCacheKey(contentType, contentPath);
         if (const std::shared_ptr<const std::string> cached = lookupTextResponseCache(
-                cacheKey, contentPath, serverData.isDevMode(), serverData.getTextResponseCacheMaxEntryBytes(),
+                cacheKey, serverData.isDevMode(), serverData.getTextResponseCacheMaxEntryBytes(),
                 serverData.getTextResponseCacheMaxTotalBytes())) {
             if (!co_await sendSocketAsync(cached->data(), cached->size())) {
                 sendToLoggerError("Failed to send cached file: " + contentPath);
@@ -987,7 +977,8 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
         htmlResponse.setBody(contentBuilder->file());
 
         htmlResponse.serializeTo(responseScratch_);
-        storeTextResponseCache(cacheKey, contentPath, responseScratch_, serverData.getTextResponseCacheMaxEntryBytes(),
+        storeTextResponseCache(cacheKey, contentPath, responseScratch_, serverData.isDevMode(),
+                               serverData.getTextResponseCacheMaxEntryBytes(),
                                serverData.getTextResponseCacheMaxTotalBytes());
 
         if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {

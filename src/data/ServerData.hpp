@@ -714,6 +714,7 @@ class ServerData {
      * When enabled:
      * - Log level is automatically set to Debug (all logs shown)
      * - Files are generated in-memory only (not saved to disk)
+     * - Text response cache disabled (html/js/css rebuilt every request)
      * - Comments are kept (easier debugging)
      * - Asset merging setting is preserved (can be enabled or disabled separately)
      * This is useful during development when HTML/CSS/JS change frequently
@@ -723,6 +724,8 @@ class ServerData {
         _devMode = true;
         setLogLevel(LogLevel::Debug);  // Show all logs
         _removeComments = false;       // Keep comments for easier debugging
+        _textResponseCacheMaxEntryBytes = 0;
+        _textResponseCacheMaxTotalBytes = 0;
         // Note: Asset merging is NOT disabled - user can control it separately
     }
 

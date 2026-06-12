@@ -325,6 +325,7 @@ class Geruest {
      * When enabled, development mode:
      * - Sets log level to Debug (shows all logs including verbose information)
      * - Disables file caching (content generated in-memory only)
+     * - Disables text response cache (html/js/css rebuilt on every request)
      * - Keeps HTML/CSS/JS comments (easier debugging)
      * 
      * This is particularly useful during development when HTML, CSS, and JS files
