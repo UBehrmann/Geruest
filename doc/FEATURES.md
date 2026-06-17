@@ -12,6 +12,7 @@
 | **Translations** | Multi-language with JSON files | `setAvailableLanguages()` |
 | **CORS** | Preflight/CORS headers | Manual headers |
 | **Basic Auth** | SHA-256 password protection | `BasicAuth` |
+| **Page Gates** | Custom access check + redirect for HTML pages | `addGatedPage()` |
 | **Email/SMTP** | Send emails via SMTP (with TLS) | `EmailService` |
 | **JSON Parsing** | String-based JSON handling | `JSONParser` |
 | **WebP Conversion** | Auto-convert images to WebP | `WebPConverter` |
@@ -162,6 +163,18 @@ server.addRoute("/admin", [&auth](const HTTPRequest& req) {
 ```
 
 **Note:** This framework does not provide built-in HTTPS/TLS support. For production deployments with authentication, use a reverse proxy (nginx, Apache, Caddy) to handle TLS termination.
+
+## Page Gates
+
+Custom `bool(const HTTPRequest&)` checks on static HTML pages. Deny → `302` redirect (default: language-aware index).
+
+```cpp
+server.addGatedPage("/devices/devices", [](const HTTPRequest& req) {
+    return req.getParam("token") == "secret";
+}, "/login");  // optional redirect; omit for index
+```
+
+See [PAGE_GATES.md](PAGE_GATES.md) for full API.
 
 ## Email Service
 

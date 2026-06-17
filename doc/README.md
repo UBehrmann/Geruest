@@ -28,6 +28,7 @@ Welcome to the Geruest documentation! This guide will help you get started with 
 
 - [**Security Utilities**](SECURITY.md) - SQL injection, XSS, JSON injection, path traversal
 - [**Basic Authentication**](BASIC_AUTH.md) - HTTP Basic Auth for protected pages
+- [**Page Gates**](PAGE_GATES.md) - Custom access checks with redirect for HTML pages
 
 ### Development
 

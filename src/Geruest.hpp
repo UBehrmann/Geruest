@@ -453,6 +453,28 @@ class Geruest {
      */
     void clearProtectedPages();
 
+    // ========== Page Gate Methods ==========
+
+    /**
+     * @brief Register a custom access check for a static HTML page
+     * @param path Page path to gate (supports `*` wildcard, e.g. `/admin/...`)
+     * @param gate Handler returning true to allow access, false to redirect
+     * @param redirectTo Optional redirect target on denial (empty = language-aware index)
+     */
+    void addGatedPage(const std::string& path, PageGateHandler gate, const std::string& redirectTo = "");
+
+    /**
+     * @brief Remove a page gate
+     * @param path The gated path pattern to remove
+     * @return true if a gate was removed
+     */
+    bool removeGatedPage(const std::string& path);
+
+    /**
+     * @brief Clear all page gates
+     */
+    void clearGatedPages();
+
     // ========== Email Configuration Methods ==========
 #if GERUEST_HAS_CURL    /**
      * @brief Initialize the email sender with SMTP configuration

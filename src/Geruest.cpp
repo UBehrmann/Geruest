@@ -420,9 +420,30 @@ void Geruest::clearBasicAuthUsers()  {
     sendToLogger("Cleared all Basic Auth users"); 
 }
 
-void Geruest::clearProtectedPages()  { 
-    serverData.getBasicAuth().clearProtectedPages();  
-    sendToLogger("Cleared all protected pages"); 
+void Geruest::clearProtectedPages()  {
+    serverData.getBasicAuth().clearProtectedPages();
+    sendToLogger("Cleared all protected pages");
+}
+
+// ========== Page Gates ==========
+
+void Geruest::addGatedPage(const std::string& path, PageGateHandler gate, const std::string& redirectTo) {
+    if (serverData.addPageGate(path, std::move(gate), redirectTo)) {
+        sendToLogger("Added gated page: " + path);
+    } else {
+        sendToLoggerError("Failed to add gated page (path/handler invalid): " + path);
+    }
+}
+
+bool Geruest::removeGatedPage(const std::string& path) {
+    bool removed = serverData.removePageGate(path);
+    if (removed) sendToLogger("Removed gated page: " + path);
+    return removed;
+}
+
+void Geruest::clearGatedPages() {
+    serverData.clearPageGates();
+    sendToLogger("Cleared all gated pages");
 }
 
 // ========== Email Configuration ==========

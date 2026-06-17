@@ -60,6 +60,24 @@ using AsyncRouteHandler = std::function<AsyncResponse(const HTTPRequest&)>;
 using WebSocketHandler =
     std::function<boost::asio::awaitable<void>(WebSocketConnection&, const HTTPRequest&)>;
 
+/** Returns true when access to the page should be granted. */
+using PageGateHandler = std::function<bool(const HTTPRequest&)>;
+
+struct PageGateRule {
+    PageGateHandler handler;
+    std::string redirectTo;
+};
+
+/** Default redirect when a page gate denies access and no custom target is set. */
+inline std::string defaultPageGateRedirect(const std::string& requestPath) {
+    if (requestPath.size() >= 4 && requestPath[0] == '/' &&
+        std::isalpha(static_cast<unsigned char>(requestPath[1])) &&
+        std::isalpha(static_cast<unsigned char>(requestPath[2])) && requestPath[3] == '/') {
+        return requestPath.substr(0, 4);
+    }
+    return "/";
+}
+
 // class with the server data
 class ServerData {
    private:
@@ -78,6 +96,8 @@ class ServerData {
     std::vector<std::string> _webSocketSubprotocols;
     std::unordered_map<std::string, RedirectRule> _redirects;
     std::unordered_map<std::string, RedirectRule> _wildcardRedirects;
+    std::unordered_map<std::string, PageGateRule> _pageGates;
+    std::unordered_map<std::string, PageGateRule> _wildcardPageGates;
     std::string _root;
     bool _removeComments = true;    // Remove comments from built files
     bool _mergeAssets = false;      // Automatic CSS/JS merging per page
@@ -420,6 +440,8 @@ class ServerData {
           _webSocketSubprotocols(other._webSocketSubprotocols),
           _redirects(other._redirects),
           _wildcardRedirects(other._wildcardRedirects),
+          _pageGates(other._pageGates),
+          _wildcardPageGates(other._wildcardPageGates),
           _root(other._root),
           _removeComments(other._removeComments),
           _mergeAssets(other._mergeAssets),
@@ -458,6 +480,8 @@ class ServerData {
             _webSocketSubprotocols = other._webSocketSubprotocols;
             _redirects = other._redirects;
             _wildcardRedirects = other._wildcardRedirects;
+            _pageGates = other._pageGates;
+            _wildcardPageGates = other._wildcardPageGates;
             _root = other._root;
             _removeComments = other._removeComments;
             _mergeAssets = other._mergeAssets;
@@ -605,6 +629,90 @@ class ServerData {
         }
 
         return findMatchingWildcardRedirect(*strippedPath, path);
+    }
+
+    bool addPageGate(const std::string& path, PageGateHandler handler, const std::string& redirectTo = "") {
+        if (path.empty() || !handler) {
+            return false;
+        }
+        PageGateRule rule{std::move(handler), redirectTo};
+        if (path.find('*') != std::string::npos) {
+            _wildcardPageGates[path] = std::move(rule);
+        } else {
+            _pageGates[path] = std::move(rule);
+        }
+        return true;
+    }
+
+    bool removePageGate(const std::string& path) {
+        if (path.find('*') != std::string::npos) {
+            return _wildcardPageGates.erase(path) > 0;
+        }
+        return _pageGates.erase(path) > 0;
+    }
+
+    void clearPageGates() {
+        _pageGates.clear();
+        _wildcardPageGates.clear();
+    }
+
+    std::optional<PageGateRule> findMatchingPageGate(const std::string& path) const {
+        auto exactMatch = _pageGates.find(path);
+        if (exactMatch != _pageGates.end()) {
+            return exactMatch->second;
+        }
+
+        size_t bestPatternLength = 0;
+        std::optional<std::string> bestPattern;
+        std::optional<PageGateRule> bestMatch;
+        for (const auto& gate : _wildcardPageGates) {
+            const std::string& pattern = gate.first;
+            if (!matchesWildcardPattern(pattern, path)) {
+                continue;
+            }
+            const bool better = !bestMatch.has_value() ||
+                                pattern.size() > bestPatternLength ||
+                                (pattern.size() == bestPatternLength && bestPattern.has_value() &&
+                                 pattern < *bestPattern);
+            if (better) {
+                bestPatternLength = pattern.size();
+                bestPattern = pattern;
+                bestMatch = gate.second;
+            }
+        }
+        if (bestMatch.has_value()) {
+            return bestMatch;
+        }
+
+        const auto strippedPath = stripSupportedLanguagePrefix(path);
+        if (!strippedPath.has_value()) {
+            return std::nullopt;
+        }
+
+        exactMatch = _pageGates.find(*strippedPath);
+        if (exactMatch != _pageGates.end()) {
+            return exactMatch->second;
+        }
+
+        bestPatternLength = 0;
+        bestPattern.reset();
+        bestMatch.reset();
+        for (const auto& gate : _wildcardPageGates) {
+            const std::string& pattern = gate.first;
+            if (!matchesWildcardPattern(pattern, *strippedPath)) {
+                continue;
+            }
+            const bool better = !bestMatch.has_value() ||
+                                pattern.size() > bestPatternLength ||
+                                (pattern.size() == bestPatternLength && bestPattern.has_value() &&
+                                 pattern < *bestPattern);
+            if (better) {
+                bestPatternLength = pattern.size();
+                bestPattern = pattern;
+                bestMatch = gate.second;
+            }
+        }
+        return bestMatch;
     }
 
     /**

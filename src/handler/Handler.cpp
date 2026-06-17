@@ -1005,13 +1005,20 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
 
     if (contentType == "text/html" || contentType == "text/javascript" || contentType == "text/css") {
         const std::string cacheKey = textResponseCacheKey(contentType, contentPath);
-        if (const std::shared_ptr<const std::string> cached = lookupTextResponseCache(
-                cacheKey, serverData.isDevMode(), serverData.getTextResponseCacheMaxEntryBytes(),
-                serverData.getTextResponseCacheMaxTotalBytes())) {
-            if (!co_await sendSocketAsync(cached->data(), cached->size())) {
-                sendToLoggerError("Failed to send cached file: " + contentPath);
+        const std::string requestPath = httpRequest != nullptr ? httpRequest->getPathString() : std::string();
+        const bool perRequestHtml = contentType == "text/html" && httpRequest != nullptr &&
+                                    (serverData.getBasicAuth().requiresAuth(requestPath) ||
+                                     serverData.findMatchingPageGate(requestPath).has_value());
+
+        if (!perRequestHtml) {
+            if (const std::shared_ptr<const std::string> cached = lookupTextResponseCache(
+                    cacheKey, serverData.isDevMode(), serverData.getTextResponseCacheMaxEntryBytes(),
+                    serverData.getTextResponseCacheMaxTotalBytes())) {
+                if (!co_await sendSocketAsync(cached->data(), cached->size())) {
+                    sendToLoggerError("Failed to send cached file: " + contentPath);
+                }
+                co_return;
             }
-            co_return;
         }
 
         std::unique_ptr<ContentBuilder> contentBuilder;
@@ -1026,6 +1033,33 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
                         sendToLoggerError("Failed to send auth header");
                     }
                     co_return;
+                }
+            }
+
+            if (httpRequest) {
+                if (auto gate = serverData.findMatchingPageGate(httpRequest->getPathString())) {
+                    bool allowed = false;
+                    try {
+                        allowed = gate->handler(*httpRequest);
+                    } catch (const std::exception& e) {
+                        sendToLoggerError(std::string("Exception in page gate handler: ") + e.what());
+                    } catch (...) {
+                        sendToLoggerError("Unknown exception in page gate handler");
+                    }
+                    if (!allowed) {
+                        serverData.record4xx();
+                        const std::string target = gate->redirectTo.empty()
+                                                       ? defaultPageGateRedirect(httpRequest->getPathString())
+                                                       : gate->redirectTo;
+                        HTTPResponse redirectResponse("302 Found");
+                        redirectResponse.setHeader("Location", target);
+                        redirectResponse.setBody("");
+                        redirectResponse.serializeTo(responseScratch_);
+                        if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
+                            sendToLoggerError("Failed to send page gate redirect for: " + httpRequest->getPathString());
+                        }
+                        co_return;
+                    }
                 }
             }
 
@@ -1058,9 +1092,11 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
         htmlResponse.setBody(contentBuilder->file());
 
         htmlResponse.serializeTo(responseScratch_);
-        storeTextResponseCache(cacheKey, contentPath, responseScratch_, serverData.isDevMode(),
-                               serverData.getTextResponseCacheMaxEntryBytes(),
-                               serverData.getTextResponseCacheMaxTotalBytes());
+        if (!perRequestHtml) {
+            storeTextResponseCache(cacheKey, contentPath, responseScratch_, serverData.isDevMode(),
+                                   serverData.getTextResponseCacheMaxEntryBytes(),
+                                   serverData.getTextResponseCacheMaxTotalBytes());
+        }
 
         if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
             sendToLoggerError("Failed to send file: " + contentPath);
