@@ -17,6 +17,7 @@
 #include <cerrno>
 #include <cstring>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -139,16 +140,105 @@ std::vector<uint8_t> maskedTextFrame(std::string_view text) {
     return frame;
 }
 
-std::string readUnmaskedTextPayload(int fd) {
-    std::string raw;
-    if (!recvSome(fd, raw, 4)) {
-        return {};
+class SocketRecvBuffer {
+public:
+    explicit SocketRecvBuffer(int fd) : fd_(fd) {}
+
+    struct ServerFrame {
+        uint8_t     opcode{0};
+        std::string payload;
+    };
+
+    std::optional<ServerFrame> popServerFrame(int timeoutMs = 3000) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+        while (true) {
+            if (const auto frameLen = completeServerFrameLength()) {
+                return extractFrame(*frameLen);
+            }
+            if (std::chrono::steady_clock::now() >= deadline) {
+                return std::nullopt;
+            }
+            const int remainingMs = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                          deadline - std::chrono::steady_clock::now())
+                                                          .count());
+            if (remainingMs <= 0) {
+                return std::nullopt;
+            }
+            const size_t need = buf_.size() + 1;
+            if (!recvSome(fd_, buf_, need, remainingMs) && !completeServerFrameLength()) {
+                return std::nullopt;
+            }
+        }
     }
-    const size_t payloadLen = static_cast<unsigned char>(raw[1]) & 0x7F;
-    if (!recvSome(fd, raw, 2 + payloadLen)) {
-        return {};
+
+private:
+    std::optional<size_t> completeServerFrameLength() const {
+        if (buf_.size() < 2) {
+            return std::nullopt;
+        }
+        if ((static_cast<uint8_t>(buf_[1]) & 0x80) != 0) {
+            return std::nullopt;
+        }
+
+        uint64_t payloadLen = static_cast<uint8_t>(buf_[1]) & 0x7F;
+        size_t   header     = 2;
+        if (payloadLen == 126) {
+            if (buf_.size() < 4) {
+                return std::nullopt;
+            }
+            payloadLen = (static_cast<uint64_t>(static_cast<uint8_t>(buf_[2])) << 8) |
+                         static_cast<uint8_t>(buf_[3]);
+            header = 4;
+        } else if (payloadLen == 127) {
+            if (buf_.size() < 10) {
+                return std::nullopt;
+            }
+            payloadLen = 0;
+            for (int i = 0; i < 8; ++i) {
+                payloadLen = (payloadLen << 8) | static_cast<uint8_t>(buf_[2 + static_cast<size_t>(i)]);
+            }
+            header = 10;
+        }
+
+        const size_t total = header + static_cast<size_t>(payloadLen);
+        if (buf_.size() < total) {
+            return std::nullopt;
+        }
+        return total;
     }
-    return raw.substr(2, payloadLen);
+
+    ServerFrame extractFrame(size_t frameLen) {
+        uint64_t payloadLen = static_cast<uint8_t>(buf_[1]) & 0x7F;
+        size_t   header     = 2;
+        if (payloadLen == 126) {
+            payloadLen = (static_cast<uint64_t>(static_cast<uint8_t>(buf_[2])) << 8) |
+                         static_cast<uint8_t>(buf_[3]);
+            header = 4;
+        } else if (payloadLen == 127) {
+            payloadLen = 0;
+            for (int i = 0; i < 8; ++i) {
+                payloadLen = (payloadLen << 8) | static_cast<uint8_t>(buf_[2 + static_cast<size_t>(i)]);
+            }
+            header = 10;
+        }
+
+        ServerFrame frame;
+        frame.opcode   = static_cast<uint8_t>(buf_[0]) & 0x0F;
+        frame.payload  = buf_.substr(header, static_cast<size_t>(payloadLen));
+        buf_.erase(0, frameLen);
+        return frame;
+    }
+
+    int         fd_{-1};
+    std::string buf_;
+};
+
+std::optional<std::string> readServerTextPayload(SocketRecvBuffer& rx, int timeoutMs = 3000) {
+    const std::optional<SocketRecvBuffer::ServerFrame> frame = rx.popServerFrame(timeoutMs);
+    if (!frame || frame->opcode != 0x1) {
+        return std::nullopt;
+    }
+    return frame->payload;
 }
 
 class ScopedBackgroundServer {
@@ -246,8 +336,10 @@ TEST(WebSocketIntegration, CoroutineEcho) {
     const auto frame = maskedTextFrame("hello");
     ASSERT_TRUE(sendAll(fd, frame.data(), frame.size()));
 
-    const std::string echoed = readUnmaskedTextPayload(fd);
-    EXPECT_EQ(echoed, "hello");
+    SocketRecvBuffer rx(fd);
+    const std::optional<std::string> echoed = readServerTextPayload(rx);
+    ASSERT_TRUE(echoed.has_value());
+    EXPECT_EQ(*echoed, "hello");
 
     close(fd);
 }
@@ -285,8 +377,10 @@ TEST(WebSocketIntegration, CallbackEcho) {
     const auto frame = maskedTextFrame("ping");
     ASSERT_TRUE(sendAll(fd, frame.data(), frame.size()));
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    const std::string echoed = readUnmaskedTextPayload(fd);
-    EXPECT_EQ(echoed, "ping");
+    SocketRecvBuffer rx(fd);
+    const std::optional<std::string> echoed = readServerTextPayload(rx);
+    ASSERT_TRUE(echoed.has_value());
+    EXPECT_EQ(*echoed, "ping");
 
     close(fd);
     EXPECT_GE(messageCount.load(), 1);
@@ -411,12 +505,14 @@ TEST(WebSocketIntegration, ServerSendsCloseFrameAfterHandler) {
     const auto frame = maskedTextFrame("bye");
     ASSERT_TRUE(sendAll(fd, frame.data(), frame.size()));
 
-    const std::string echoed = readUnmaskedTextPayload(fd);
-    EXPECT_EQ(echoed, "bye");
+    SocketRecvBuffer rx(fd);
+    const std::optional<std::string> echoed = readServerTextPayload(rx);
+    ASSERT_TRUE(echoed.has_value());
+    EXPECT_EQ(*echoed, "bye");
 
-    std::string closeFrame;
-    ASSERT_TRUE(recvSome(fd, closeFrame, 2, 5000));
-    EXPECT_EQ(static_cast<unsigned char>(closeFrame[0]), 0x88u);
+    const std::optional<SocketRecvBuffer::ServerFrame> closeFrame = rx.popServerFrame(5000);
+    ASSERT_TRUE(closeFrame.has_value());
+    EXPECT_EQ(closeFrame->opcode, 0x8u);
 
     close(fd);
 }
