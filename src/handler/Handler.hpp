@@ -66,10 +66,12 @@ class Handler {
 
     /** Returns denial response when a page gate rejects access; empty when allowed or no gate. */
     boost::asio::awaitable<std::optional<HTTPResponse>> checkPageGateDenialAsync(
-        const HTTPRequest& request) const;
+        const HTTPRequest& request,
+        const std::optional<ResolvedPageGate>& resolvedGate = std::nullopt) const;
 
     /** Returns 403 when a route gate rejects access; empty when allowed or no gate. */
-    std::optional<HTTPResponse> checkRouteGateDenial(const HTTPRequest& request) const;
+    boost::asio::awaitable<std::optional<HTTPResponse>> checkRouteGateDenialAsync(
+        const HTTPRequest& request) const;
 
     boost::asio::awaitable<bool> readSocketAsync(std::string_view phase = {});
     boost::asio::awaitable<bool> readSocketAsync(char* bufferToUse, size_t size, std::string_view phase = {});

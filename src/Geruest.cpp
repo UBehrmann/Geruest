@@ -466,6 +466,16 @@ void Geruest::addGatedRoute(const std::string& path, RouteHandler handler, Route
     sendToLogger("Added gated route: " + path);
 }
 
+void Geruest::addGatedRoute(const std::string& path, RouteHandler handler, AsyncRouteGateHandler gate) {
+    if (path.empty() || !handler || !gate) {
+        sendToLoggerError("Failed to add gated route with async gate (path/handler/gate invalid): " + path);
+        return;
+    }
+    serverData.addRoute(path, std::move(handler));
+    serverData.addAsyncRouteGate(path, std::move(gate));
+    sendToLogger("Added gated route (async gate): " + path);
+}
+
 void Geruest::addGatedRouteAsync(const std::string& path, AsyncRouteHandler handler, RouteGateHandler gate) {
     if (path.empty() || !handler || !gate) {
         sendToLoggerError("Failed to add gated async route (path/handler/gate invalid): " + path);
@@ -474,6 +484,16 @@ void Geruest::addGatedRouteAsync(const std::string& path, AsyncRouteHandler hand
     serverData.addRouteAsync(path, std::move(handler));
     serverData.addRouteGate(path, std::move(gate));
     sendToLogger("Added gated async route: " + path);
+}
+
+void Geruest::addGatedRouteAsync(const std::string& path, AsyncRouteHandler handler, AsyncRouteGateHandler gate) {
+    if (path.empty() || !handler || !gate) {
+        sendToLoggerError("Failed to add gated async route with async gate (path/handler/gate invalid): " + path);
+        return;
+    }
+    serverData.addRouteAsync(path, std::move(handler));
+    serverData.addAsyncRouteGate(path, std::move(gate));
+    sendToLogger("Added gated async route (async gate): " + path);
 }
 
 bool Geruest::removeGatedRoute(const std::string& path) {

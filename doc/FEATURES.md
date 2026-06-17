@@ -166,17 +166,23 @@ server.addRoute("/admin", [&auth](const HTTPRequest& req) {
 
 ## Gated Pages & Routes
 
-Custom `bool(const HTTPRequest&)` checks for static HTML pages and sync API routes.
+Custom access checks for static HTML pages and API routes. Page gates deny with **302**; route gates deny with **403**.
 
 ```cpp
 server.addGatedPage("/devices/devices", [](const HTTPRequest& req) {
     return req.getParam("token") == "secret";
 }, "/login");  // pages: optional redirect; omit for language-aware index
 
-server.addGatedRoute("/v1/secret", handleSecret, checkSession);  // sync API: deny → 403
+server.addGatedPageAsync("/admin", checkSessionAsync, "/login");  // async gate (co_await)
 
-server.addGatedRouteAsync("/v1/profile", handleProfileAsync, checkSession);  // async API: deny → 403
+server.addGatedRoute("/v1/secret", handleSecret, checkSession);  // sync API + sync gate
+
+server.addGatedRouteAsync("/v1/profile", handleProfileAsync, checkSession);  // async route + sync gate
+
+server.addGatedRouteAsync("/v1/profile", handleProfileAsync, checkSessionAsync);  // async route + async gate
 ```
+
+> `addGatedPageAsync` = async **gate**. `addGatedRouteAsync` = async **route**; pass `AsyncRouteGateHandler` when the gate needs `co_await`.
 
 See [GATED_ROUTES_PAGES.md](GATED_ROUTES_PAGES.md) for full API.
 

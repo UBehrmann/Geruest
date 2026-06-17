@@ -287,6 +287,7 @@ add_executable(ServerDataRouteGate_Tests
     ServerData/ServerDataRouteGate_tests.cpp
     ../data/ServerData.cpp
     ../data/HTTPRequest.cpp
+    ../data/HTTPResponse.cpp
     ../parser/JSONParser.cpp
     ../auth/BasicAuth.cpp
     ../security/Security.cpp

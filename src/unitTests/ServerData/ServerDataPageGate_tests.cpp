@@ -206,3 +206,20 @@ TEST(ServerDataPageGate, ExactAsyncWinsOverSyncOnSamePath) {
     EXPECT_TRUE(gate->async);
     EXPECT_EQ(gate->redirectTo, "/async-login");
 }
+
+TEST(ServerDataPageGate, CanonicalPathMatchesHtmlExtension) {
+    ServerData sd;
+    ASSERT_TRUE(sd.addPageGate("/devices/devices", [](const HTTPRequest&) { return true; }));
+
+    EXPECT_TRUE(sd.findResolvedPageGate("/devices/devices.html").has_value());
+    EXPECT_TRUE(sd.findResolvedPageGate("/devices/devices.htm").has_value());
+    EXPECT_TRUE(sd.findResolvedPageGate("/devices/devices/").has_value());
+}
+
+TEST(ServerDataPageGate, CanonicalPathDoesNotMatchUnrelated) {
+    ServerData sd;
+    ASSERT_TRUE(sd.addPageGate("/devices/devices", [](const HTTPRequest&) { return true; }));
+
+    EXPECT_FALSE(sd.findResolvedPageGate("/devices/other").has_value());
+    EXPECT_FALSE(sd.findResolvedPageGate("/devices/devices-extra").has_value());
+}

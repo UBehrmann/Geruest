@@ -401,8 +401,8 @@ void Handler::recordErrorMetric() const {
 }
 
 boost::asio::awaitable<std::optional<HTTPResponse>> Handler::checkPageGateDenialAsync(
-    const HTTPRequest& request) const {
-    const auto gate = serverData.findResolvedPageGate(request.getPathString());
+    const HTTPRequest& request, const std::optional<ResolvedPageGate>& resolvedGate) const {
+    const auto gate = resolvedGate.has_value() ? resolvedGate : serverData.findResolvedPageGate(request.getPathString());
     if (!gate.has_value()) {
         co_return std::nullopt;
     }
@@ -431,15 +431,20 @@ boost::asio::awaitable<std::optional<HTTPResponse>> Handler::checkPageGateDenial
     co_return redirectResponse;
 }
 
-std::optional<HTTPResponse> Handler::checkRouteGateDenial(const HTTPRequest& request) const {
-    const auto gate = serverData.findMatchingRouteGate(request.getPathString());
+boost::asio::awaitable<std::optional<HTTPResponse>> Handler::checkRouteGateDenialAsync(
+    const HTTPRequest& request) const {
+    const auto gate = serverData.findResolvedRouteGate(request.getPathString());
     if (!gate.has_value()) {
-        return std::nullopt;
+        co_return std::nullopt;
     }
 
     bool allowed = false;
     try {
-        allowed = gate->handler(request);
+        if (gate->async) {
+            allowed = co_await gate->asyncHandler(request);
+        } else {
+            allowed = gate->syncHandler(request);
+        }
     } catch (const std::exception& e) {
         sendToLoggerError(std::string("Exception in route gate handler: ") + e.what());
     } catch (...) {
@@ -447,10 +452,10 @@ std::optional<HTTPResponse> Handler::checkRouteGateDenial(const HTTPRequest& req
     }
 
     if (allowed) {
-        return std::nullopt;
+        co_return std::nullopt;
     }
 
-    return responseForbidden(&request);
+    co_return responseForbidden(&request);
 }
 
 boost::asio::awaitable<bool> Handler::readSocketAsync(char* bufferToUse, size_t size, std::string_view phase) {
@@ -868,7 +873,7 @@ boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
     // Priority rule 3+4: normal sync routes (exact route, then wildcard route)
     auto routeHandler = serverData.findMatchingRoute(path);
     if (routeHandler) {
-        if (auto denial = checkRouteGateDenial(*request)) {
+        if (auto denial = co_await checkRouteGateDenialAsync(*request)) {
             record4xxMetric();
             denial->serializeTo(responseScratch_);
             if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
@@ -922,7 +927,7 @@ boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
     // Priority rule 5+6: async routes (exact route, then wildcard route)
     auto asyncRouteHandler = serverData.findMatchingAsyncRoute(path);
     if (asyncRouteHandler) {
-        if (auto denial = checkRouteGateDenial(*request)) {
+        if (auto denial = co_await checkRouteGateDenialAsync(*request)) {
             record4xxMetric();
             denial->serializeTo(responseScratch_);
             if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
@@ -1101,9 +1106,13 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
     if (contentType == "text/html" || contentType == "text/javascript" || contentType == "text/css") {
         const std::string cacheKey = textResponseCacheKey(contentType, contentPath);
         const std::string requestPath = httpRequest != nullptr ? httpRequest->getPathString() : std::string();
+        const std::optional<ResolvedPageGate> resolvedPageGate =
+            contentType == "text/html" && httpRequest != nullptr
+                ? serverData.findResolvedPageGate(requestPath)
+                : std::nullopt;
         const bool perRequestHtml = contentType == "text/html" && httpRequest != nullptr &&
                                     (serverData.getBasicAuth().requiresAuth(requestPath) ||
-                                     serverData.findResolvedPageGate(requestPath).has_value());
+                                     resolvedPageGate.has_value());
 
         if (!perRequestHtml) {
             if (const std::shared_ptr<const std::string> cached = lookupTextResponseCache(
@@ -1132,8 +1141,7 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
             }
 
             if (httpRequest) {
-                if (auto denial = co_await checkPageGateDenialAsync(*httpRequest)) {
-                    record4xxMetric();
+                if (auto denial = co_await checkPageGateDenialAsync(*httpRequest, resolvedPageGate)) {
                     denial->serializeTo(responseScratch_);
                     if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
                         sendToLoggerError("Failed to send page gate denial for: " + httpRequest->getPathString());
