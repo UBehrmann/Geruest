@@ -237,6 +237,7 @@ add_executable(WebSocketServerData_Tests
     ../parser/JSONParser.cpp
     ../auth/BasicAuth.cpp
     ../security/Security.cpp
+    ../builders/AssetMerger.cpp
 )
 target_link_libraries(WebSocketServerData_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
@@ -261,6 +262,7 @@ add_executable(ServerDataMetricsPersistence_Tests
     ../parser/JSONParser.cpp
     ../auth/BasicAuth.cpp
     ../security/Security.cpp
+    ../builders/AssetMerger.cpp
 )
 target_link_libraries(ServerDataMetricsPersistence_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
@@ -270,6 +272,7 @@ add_executable(ServerDataRedirectLanguage_Tests
     ../parser/JSONParser.cpp
     ../auth/BasicAuth.cpp
     ../security/Security.cpp
+    ../builders/AssetMerger.cpp
 )
 target_link_libraries(ServerDataRedirectLanguage_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
