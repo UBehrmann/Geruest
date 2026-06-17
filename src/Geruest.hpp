@@ -464,6 +464,14 @@ class Geruest {
     void addGatedPage(const std::string& path, PageGateHandler gate, const std::string& redirectTo = "");
 
     /**
+     * @brief Register an async access check for a static HTML page (for DB/session co_await)
+     * @param path Page path to gate (supports asterisk wildcard, e.g. /admin/...)
+     * @param gate Coroutine handler returning true to allow access, false to redirect
+     * @param redirectTo Optional redirect target on denial (empty = language-aware index)
+     */
+    void addGatedPageAsync(const std::string& path, AsyncPageGateHandler gate, const std::string& redirectTo = "");
+
+    /**
      * @brief Remove a page gate
      * @param path The gated path pattern to remove
      * @return true if a gate was removed

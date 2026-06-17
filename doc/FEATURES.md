@@ -12,7 +12,7 @@
 | **Translations** | Multi-language with JSON files | `setAvailableLanguages()` |
 | **CORS** | Preflight/CORS headers | Manual headers |
 | **Basic Auth** | SHA-256 password protection | `BasicAuth` |
-| **Gated Pages & Routes** | Custom access checks for HTML pages (302) and API routes (403) | `addGatedPage()`, `addGatedRoute()`, `addGatedRouteAsync()` |
+| **Gated Pages & Routes** | Custom access checks for HTML pages (302) and API routes (403) | `addGatedPage()`, `addGatedPageAsync()`, `addGatedRoute()`, `addGatedRouteAsync()` |
 | **Email/SMTP** | Send emails via SMTP (with TLS) | `EmailService` |
 | **JSON Parsing** | String-based JSON handling | `JSONParser` |
 | **WebP Conversion** | Auto-convert images to WebP | `WebPConverter` |

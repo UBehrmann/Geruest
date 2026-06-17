@@ -28,7 +28,7 @@ Welcome to the Geruest documentation! This guide will help you get started with 
 
 - [**Security Utilities**](SECURITY.md) - SQL injection, XSS, JSON injection, path traversal
 - [**Basic Authentication**](BASIC_AUTH.md) - HTTP Basic Auth for protected pages
-- [**Gated Routes & Pages**](GATED_ROUTES_PAGES.md) - `addGatedPage()`, `addGatedRoute()`, `addGatedRouteAsync()`
+- [**Gated Routes & Pages**](GATED_ROUTES_PAGES.md) - `addGatedPage()`, `addGatedPageAsync()`, `addGatedRoute()`, `addGatedRouteAsync()`
 
 ### Development
 

@@ -2,11 +2,11 @@
 
 Custom `bool(const HTTPRequest&)` access checks for static HTML pages and API routes. Unlike [Basic Authentication](BASIC_AUTH.md) (username/password + `401`), gates run your own logic and deny when the handler returns `false`.
 
-| | Pages (`addGatedPage`) | Sync API (`addGatedRoute`) | Async API (`addGatedRouteAsync`) |
-|---|------------------------|----------------------------|----------------------------------|
-| Target | Static HTML from `addRoot()` | Sync `addRoute` handlers | Async `addRouteAsync` handlers |
-| On deny | **302 Found** redirect | **403 Forbidden** | **403 Forbidden** |
-| Registers handler | No (page already on disk) | Yes | Yes |
+| | Pages (`addGatedPage`) | Async pages (`addGatedPageAsync`) | Sync API (`addGatedRoute`) | Async API (`addGatedRouteAsync`) |
+|---|------------------------|-----------------------------------|----------------------------|----------------------------------|
+| Target | Static HTML from `addRoot()` | Static HTML from `addRoot()` | Sync `addRoute` handlers | Async `addRouteAsync` handlers |
+| On deny | **302 Found** redirect | **302 Found** redirect | **403 Forbidden** | **403 Forbidden** |
+| Registers handler | No (page already on disk) | No | Yes | Yes |
 
 ## Quick Start
 
@@ -24,6 +24,9 @@ server->addGatedPage("/devices/devices", [](const HTTPRequest& req) {
 
 server->addGatedPage("/admin/dashboard", checkAdminSession, "/login");
 
+// Async page gate: deny → 302 redirect (use when gate needs co_await, e.g. DB session)
+server->addGatedPageAsync("/admin/dashboard", checkAdminSessionAsync, "/login");
+
 // Sync API route: deny → 403 Forbidden
 server->addGatedRoute("/v1/admin", handleAdmin, [](const HTTPRequest& req) {
     return req.getHeader("authorization") == "Bearer mytoken";
@@ -40,11 +43,15 @@ server->addGatedRouteAsync("/v1/profile", handleProfileAsync, checkSession);
 ```cpp
 void addGatedPage(const std::string& path, PageGateHandler gate,
                   const std::string& redirectTo = "");
+void addGatedPageAsync(const std::string& path, AsyncPageGateHandler gate,
+                       const std::string& redirectTo = "");
 bool removeGatedPage(const std::string& path);
 void clearGatedPages();
 ```
 
-`PageGateHandler` is `std::function<bool(const HTTPRequest&)>`:
+`PageGateHandler` is `std::function<bool(const HTTPRequest&)>`.
+
+`AsyncPageGateHandler` is `std::function<boost::asio::awaitable<bool>(const HTTPRequest&)>` (alias `AsyncPageGateAccess` in `geruest` namespace).
 
 - Return `true` → page is served normally
 - Return `false` → **302 Found** with `Location` header
@@ -90,7 +97,7 @@ Both can apply to the same static page. Basic Auth runs first (`401` on failure)
 - Gate runs after Basic Auth when serving HTML
 - Handler exceptions are treated as denial (redirect)
 - Gated pages skip the text-response cache so access is checked on every request
-- For database/session checks that need `co_await`, use `addGatedRouteAsync` or `addRouteAsync` and check access inside the handler
+- Use `addGatedPageAsync` when the gate needs `co_await` (database/session lookup)
 
 **API routes**
 

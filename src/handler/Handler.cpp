@@ -400,15 +400,20 @@ void Handler::recordErrorMetric() const {
     }
 }
 
-std::optional<HTTPResponse> Handler::checkPageGateDenial(const HTTPRequest& request) const {
-    const auto gate = serverData.findMatchingPageGate(request.getPathString());
+boost::asio::awaitable<std::optional<HTTPResponse>> Handler::checkPageGateDenialAsync(
+    const HTTPRequest& request) const {
+    const auto gate = serverData.findResolvedPageGate(request.getPathString());
     if (!gate.has_value()) {
-        return std::nullopt;
+        co_return std::nullopt;
     }
 
     bool allowed = false;
     try {
-        allowed = gate->handler(request);
+        if (gate->async) {
+            allowed = co_await gate->asyncHandler(request);
+        } else {
+            allowed = gate->syncHandler(request);
+        }
     } catch (const std::exception& e) {
         sendToLoggerError(std::string("Exception in page gate handler: ") + e.what());
     } catch (...) {
@@ -416,14 +421,14 @@ std::optional<HTTPResponse> Handler::checkPageGateDenial(const HTTPRequest& requ
     }
 
     if (allowed) {
-        return std::nullopt;
+        co_return std::nullopt;
     }
 
     HTTPResponse redirectResponse("302 Found");
     redirectResponse.setHeader("Location",
                                serverData.resolvePageGateRedirect(gate->redirectTo, request.getPathString()));
     redirectResponse.setBody("");
-    return redirectResponse;
+    co_return redirectResponse;
 }
 
 std::optional<HTTPResponse> Handler::checkRouteGateDenial(const HTTPRequest& request) const {
@@ -1098,7 +1103,7 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
         const std::string requestPath = httpRequest != nullptr ? httpRequest->getPathString() : std::string();
         const bool perRequestHtml = contentType == "text/html" && httpRequest != nullptr &&
                                     (serverData.getBasicAuth().requiresAuth(requestPath) ||
-                                     serverData.findMatchingPageGate(requestPath).has_value());
+                                     serverData.findResolvedPageGate(requestPath).has_value());
 
         if (!perRequestHtml) {
             if (const std::shared_ptr<const std::string> cached = lookupTextResponseCache(
@@ -1127,7 +1132,7 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
             }
 
             if (httpRequest) {
-                if (auto denial = checkPageGateDenial(*httpRequest)) {
+                if (auto denial = co_await checkPageGateDenialAsync(*httpRequest)) {
                     record4xxMetric();
                     denial->serializeTo(responseScratch_);
                     if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {

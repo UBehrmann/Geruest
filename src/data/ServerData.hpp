@@ -62,10 +62,25 @@ using WebSocketHandler =
 
 /** Returns true when access should be granted. */
 using PageGateHandler = std::function<bool(const HTTPRequest&)>;
+using AsyncPageGateAccess = boost::asio::awaitable<bool>;
+using AsyncPageGateHandler = std::function<AsyncPageGateAccess(const HTTPRequest&)>;
 using RouteGateHandler = PageGateHandler;
 
 struct PageGateRule {
     PageGateHandler handler;
+    std::string redirectTo;
+};
+
+struct AsyncPageGateRule {
+    AsyncPageGateHandler handler;
+    std::string redirectTo;
+};
+
+/** Winning page gate after sync/async and wildcard resolution. */
+struct ResolvedPageGate {
+    bool async = false;
+    PageGateHandler syncHandler;
+    AsyncPageGateHandler asyncHandler;
     std::string redirectTo;
 };
 
@@ -103,6 +118,8 @@ class ServerData {
     std::unordered_map<std::string, RedirectRule> _wildcardRedirects;
     std::unordered_map<std::string, PageGateRule> _pageGates;
     std::unordered_map<std::string, PageGateRule> _wildcardPageGates;
+    std::unordered_map<std::string, AsyncPageGateRule> _asyncPageGates;
+    std::unordered_map<std::string, AsyncPageGateRule> _wildcardAsyncPageGates;
     std::unordered_map<std::string, RouteGateRule> _routeGates;
     std::unordered_map<std::string, RouteGateRule> _wildcardRouteGates;
     std::string _root;
@@ -422,6 +439,50 @@ class ServerData {
         }
     }
 
+    std::optional<ResolvedPageGate> findBestWildcardPageGate(const std::string& path) const {
+        size_t bestPatternLength = 0;
+        std::optional<std::string> bestPattern;
+        std::optional<ResolvedPageGate> bestMatch;
+
+        auto consider = [&](const std::string& pattern, ResolvedPageGate resolved) {
+            const bool better = !bestMatch.has_value() || pattern.size() > bestPatternLength ||
+                                (pattern.size() == bestPatternLength && bestPattern.has_value() &&
+                                 pattern < *bestPattern);
+            if (better) {
+                bestPatternLength = pattern.size();
+                bestPattern = pattern;
+                bestMatch = std::move(resolved);
+            }
+        };
+
+        for (const auto& gate : _wildcardAsyncPageGates) {
+            const std::string& pattern = gate.first;
+            if (matchesWildcardPattern(pattern, path)) {
+                consider(pattern, ResolvedPageGate{true, {}, gate.second.handler, gate.second.redirectTo});
+            }
+        }
+        for (const auto& gate : _wildcardPageGates) {
+            const std::string& pattern = gate.first;
+            if (matchesWildcardPattern(pattern, path)) {
+                consider(pattern, ResolvedPageGate{false, gate.second.handler, {}, gate.second.redirectTo});
+            }
+        }
+
+        return bestMatch;
+    }
+
+    std::optional<ResolvedPageGate> resolveExactPageGate(const std::string& lookupPath) const {
+        const auto asyncIt = _asyncPageGates.find(lookupPath);
+        if (asyncIt != _asyncPageGates.end()) {
+            return ResolvedPageGate{true, {}, asyncIt->second.handler, asyncIt->second.redirectTo};
+        }
+        const auto syncIt = _pageGates.find(lookupPath);
+        if (syncIt != _pageGates.end()) {
+            return ResolvedPageGate{false, syncIt->second.handler, {}, syncIt->second.redirectTo};
+        }
+        return std::nullopt;
+    }
+
     std::optional<std::pair<std::string, int>> findMatchingWildcardRedirect(const std::string& path,
                                                                             const std::string& requestPath) const {
         size_t bestPatternLength = 0;
@@ -519,6 +580,8 @@ class ServerData {
           _wildcardRedirects(other._wildcardRedirects),
           _pageGates(other._pageGates),
           _wildcardPageGates(other._wildcardPageGates),
+          _asyncPageGates(other._asyncPageGates),
+          _wildcardAsyncPageGates(other._wildcardAsyncPageGates),
           _routeGates(other._routeGates),
           _wildcardRouteGates(other._wildcardRouteGates),
           _root(other._root),
@@ -561,6 +624,8 @@ class ServerData {
             _wildcardRedirects = other._wildcardRedirects;
             _pageGates = other._pageGates;
             _wildcardPageGates = other._wildcardPageGates;
+            _asyncPageGates = other._asyncPageGates;
+            _wildcardAsyncPageGates = other._wildcardAsyncPageGates;
             _routeGates = other._routeGates;
             _wildcardRouteGates = other._wildcardRouteGates;
             _root = other._root;
@@ -720,20 +785,63 @@ class ServerData {
         return true;
     }
 
-    bool removePageGate(const std::string& path) {
-        if (path.find('*') != std::string::npos) {
-            return _wildcardPageGates.erase(path) > 0;
+    bool addAsyncPageGate(const std::string& path, AsyncPageGateHandler handler,
+                          const std::string& redirectTo = "") {
+        if (path.empty() || !handler) {
+            return false;
         }
-        return _pageGates.erase(path) > 0;
+        storeGateRule(path, AsyncPageGateRule{std::move(handler), redirectTo}, _asyncPageGates,
+                      _wildcardAsyncPageGates);
+        return true;
+    }
+
+    bool removePageGate(const std::string& path) {
+        bool removed = false;
+        if (path.find('*') != std::string::npos) {
+            removed = _wildcardPageGates.erase(path) > 0;
+            removed = _wildcardAsyncPageGates.erase(path) > 0 || removed;
+        } else {
+            removed = _pageGates.erase(path) > 0;
+            removed = _asyncPageGates.erase(path) > 0 || removed;
+        }
+        return removed;
     }
 
     void clearPageGates() {
         _pageGates.clear();
         _wildcardPageGates.clear();
+        _asyncPageGates.clear();
+        _wildcardAsyncPageGates.clear();
     }
 
     std::optional<PageGateRule> findMatchingPageGate(const std::string& path) const {
         return findMatchingGateImpl(_pageGates, _wildcardPageGates, path);
+    }
+
+    std::optional<AsyncPageGateRule> findMatchingAsyncPageGate(const std::string& path) const {
+        return findMatchingGateImpl(_asyncPageGates, _wildcardAsyncPageGates, path);
+    }
+
+    /** Best matching sync or async page gate (exact beats wildcard; longest wildcard wins). */
+    std::optional<ResolvedPageGate> findResolvedPageGate(const std::string& path) const {
+        if (auto resolved = resolveExactPageGate(path)) {
+            return resolved;
+        }
+
+        if (auto resolved = findBestWildcardPageGate(path)) {
+            return resolved;
+        }
+
+        const auto strippedPath = stripSupportedLanguagePrefix(path);
+        if (!strippedPath.has_value()) {
+            return std::nullopt;
+        }
+
+        if (auto resolved = resolveExactPageGate(*strippedPath)) {
+            return resolved;
+        }
+
+        return findBestWildcardPageGate(*strippedPath);
     }
 
     /** Resolve redirect target for a denied page gate (language-aware when languages are configured). */

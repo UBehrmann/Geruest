@@ -435,6 +435,14 @@ void Geruest::addGatedPage(const std::string& path, PageGateHandler gate, const 
     }
 }
 
+void Geruest::addGatedPageAsync(const std::string& path, AsyncPageGateHandler gate, const std::string& redirectTo) {
+    if (serverData.addAsyncPageGate(path, std::move(gate), redirectTo)) {
+        sendToLogger("Added gated page (async): " + path);
+    } else {
+        sendToLoggerError("Failed to add gated page (async) (path/handler invalid): " + path);
+    }
+}
+
 bool Geruest::removeGatedPage(const std::string& path) {
     bool removed = serverData.removePageGate(path);
     if (removed) sendToLogger("Removed gated page: " + path);

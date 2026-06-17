@@ -65,7 +65,8 @@ class Handler {
     void recordErrorMetric() const;
 
     /** Returns denial response when a page gate rejects access; empty when allowed or no gate. */
-    std::optional<HTTPResponse> checkPageGateDenial(const HTTPRequest& request) const;
+    boost::asio::awaitable<std::optional<HTTPResponse>> checkPageGateDenialAsync(
+        const HTTPRequest& request) const;
 
     /** Returns 403 when a route gate rejects access; empty when allowed or no gate. */
     std::optional<HTTPResponse> checkRouteGateDenial(const HTTPRequest& request) const;

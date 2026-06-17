@@ -1,5 +1,9 @@
 #include <gtest/gtest.h>
 
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/use_future.hpp>
+
 #include "data/HTTPRequest.hpp"
 #include "data/ServerData.hpp"
 
@@ -126,4 +130,79 @@ TEST(ServerDataPageGate, WildcardPrefersLongestPattern) {
     auto gate = sd.findMatchingPageGate("/admin/secure/panel");
     ASSERT_TRUE(gate.has_value());
     EXPECT_EQ(gate->redirectTo, "/secure-login");
+}
+
+TEST(ServerDataPageGate, AsyncExactPathMatch) {
+    ServerData sd;
+    ASSERT_TRUE(sd.addAsyncPageGate("/admin", [](const HTTPRequest&) -> AsyncPageGateAccess {
+        co_return true;
+    }));
+
+    EXPECT_TRUE(sd.findMatchingAsyncPageGate("/admin").has_value());
+    EXPECT_FALSE(sd.findMatchingAsyncPageGate("/other").has_value());
+}
+
+TEST(ServerDataPageGate, AsyncHandlerGrantsOrDeniesAccess) {
+    ServerData sd;
+    ASSERT_TRUE(sd.addAsyncPageGate("/token-page", [](const HTTPRequest& req) -> AsyncPageGateAccess {
+        co_return req.getParam("token") == "secret";
+    }));
+
+    auto gate = sd.findMatchingAsyncPageGate("/token-page");
+    ASSERT_TRUE(gate.has_value());
+
+    HTTPRequest allowed = makeGetRequest("/token-page", "token=secret");
+    HTTPRequest denied = makeGetRequest("/token-page", "token=wrong");
+
+    {
+        boost::asio::io_context io;
+        auto future = boost::asio::co_spawn(io, gate->handler(allowed), boost::asio::use_future);
+        io.run();
+        EXPECT_TRUE(future.get());
+    }
+    {
+        boost::asio::io_context io;
+        auto future = boost::asio::co_spawn(io, gate->handler(denied), boost::asio::use_future);
+        io.run();
+        EXPECT_FALSE(future.get());
+    }
+}
+
+TEST(ServerDataPageGate, RemoveClearsSyncAndAsync) {
+    ServerData sd;
+    ASSERT_TRUE(sd.addPageGate("/sync", [](const HTTPRequest&) { return true; }));
+    ASSERT_TRUE(sd.addAsyncPageGate("/async", [](const HTTPRequest&) -> AsyncPageGateAccess {
+        co_return true;
+    }));
+
+    EXPECT_TRUE(sd.removePageGate("/sync"));
+    EXPECT_TRUE(sd.removePageGate("/async"));
+    EXPECT_FALSE(sd.findResolvedPageGate("/sync").has_value());
+    EXPECT_FALSE(sd.findResolvedPageGate("/async").has_value());
+}
+
+TEST(ServerDataPageGate, ResolvedPrefersLongestWildcardAcrossSyncAndAsync) {
+    ServerData sd;
+    ASSERT_TRUE(sd.addPageGate("/admin/*", [](const HTTPRequest&) { return true; }, "/sync-fallback"));
+    ASSERT_TRUE(sd.addAsyncPageGate("/admin/secure/*", [](const HTTPRequest&) -> AsyncPageGateAccess {
+        co_return false;
+    }, "/async-secure"));
+
+    auto gate = sd.findResolvedPageGate("/admin/secure/panel");
+    ASSERT_TRUE(gate.has_value());
+    EXPECT_TRUE(gate->async);
+    EXPECT_EQ(gate->redirectTo, "/async-secure");
+}
+
+TEST(ServerDataPageGate, ExactAsyncWinsOverSyncOnSamePath) {
+    ServerData sd;
+    ASSERT_TRUE(sd.addPageGate("/admin", [](const HTTPRequest&) { return true; }));
+    ASSERT_TRUE(sd.addAsyncPageGate("/admin", [](const HTTPRequest&) -> AsyncPageGateAccess {
+        co_return false;
+    }, "/async-login"));
+
+    auto gate = sd.findResolvedPageGate("/admin");
+    ASSERT_TRUE(gate.has_value());
+    EXPECT_TRUE(gate->async);
+    EXPECT_EQ(gate->redirectTo, "/async-login");
 }
