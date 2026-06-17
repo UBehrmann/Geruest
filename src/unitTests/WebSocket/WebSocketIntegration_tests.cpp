@@ -6,13 +6,17 @@
 #include <gtest/gtest.h>
 
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 #include <atomic>
 #include <chrono>
+#include <cerrno>
 #include <cstring>
+#include <filesystem>
 #include <string>
 #include <thread>
 #include <vector>
@@ -24,16 +28,72 @@ using namespace geruest;
 
 namespace {
 
-int connectTo(int port) {
+bool setSocketTimeouts(int fd, int timeoutMs) {
+    timeval tv{};
+    tv.tv_sec  = timeoutMs / 1000;
+    tv.tv_usec = static_cast<suseconds_t>((timeoutMs % 1000) * 1000);
+    return setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) == 0 &&
+           setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) == 0;
+}
+
+void wakeAcceptOnLocalhost(int port) {
+    if (port <= 0 || port > 65535) {
+        return;
+    }
+    const int c = socket(AF_INET, SOCK_STREAM, 0);
+    if (c < 0) {
+        return;
+    }
+    sockaddr_in a{};
+    a.sin_family = AF_INET;
+    a.sin_port   = htons(static_cast<uint16_t>(port));
+    inet_pton(AF_INET, "127.0.0.1", &a.sin_addr);
+    (void)::connect(c, reinterpret_cast<sockaddr*>(&a), sizeof(a));
+    close(c);
+}
+
+int connectTo(int port, int timeoutMs = 5000) {
     const int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) {
         return -1;
     }
+    if (!setSocketTimeouts(fd, timeoutMs)) {
+        close(fd);
+        return -1;
+    }
+
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(static_cast<uint16_t>(port));
+    addr.sin_port   = htons(static_cast<uint16_t>(port));
     inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-    if (connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
+
+    const int flags = fcntl(fd, F_GETFL, 0);
+    if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) != 0) {
+        close(fd);
+        return -1;
+    }
+
+    const int connectRc = connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+    if (connectRc != 0 && errno != EINPROGRESS) {
+        close(fd);
+        return -1;
+    }
+    if (connectRc != 0) {
+        pollfd pfd{fd, POLLOUT, 0};
+        const int pollRc = poll(&pfd, 1, timeoutMs);
+        if (pollRc <= 0) {
+            close(fd);
+            return -1;
+        }
+        int sockErr = 0;
+        socklen_t errLen = sizeof(sockErr);
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &sockErr, &errLen) != 0 || sockErr != 0) {
+            close(fd);
+            return -1;
+        }
+    }
+
+    if (fcntl(fd, F_SETFL, flags) != 0) {
         close(fd);
         return -1;
     }
@@ -91,17 +151,61 @@ std::string readUnmaskedTextPayload(int fd) {
     return raw.substr(2, payloadLen);
 }
 
-void startServerOnBackground(Geruest& server) {
-    server.setPort(0);
-    server.setWorkerThreadCount(1);
-    server.setMaxQueueSize(8);
-    server.init();
-    std::thread([&server] { server.start(); }).detach();
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-    while (!server.isRunning() && std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+class ScopedBackgroundServer {
+public:
+    ~ScopedBackgroundServer() { shutdown(); }
+
+    void launch(Geruest& server) {
+        shutdown();
+
+        const auto tag = std::to_string(
+            std::chrono::steady_clock::now().time_since_epoch().count());
+        metricsDir_ = std::filesystem::temp_directory_path() / ("geruest_ws_int_" + tag);
+        std::filesystem::create_directories(metricsDir_);
+
+        server_ = &server;
+        server.setPort(0);
+        server.setWorkerThreadCount(1);
+        server.setMaxQueueSize(8);
+        server.setStatusPersistencePath((metricsDir_ / "metrics.json").string());
+        server.init();
+        listenPort_ = server.getListenPort();
+        ASSERT_GT(listenPort_, 0);
+
+        thread_ = std::thread([&server] { server.start(); });
+
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (!server.isRunning() && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        ASSERT_TRUE(server.isRunning()) << "background server failed to start";
     }
-}
+
+    int listenPort() const { return listenPort_; }
+
+    void shutdown() {
+        if (server_ != nullptr && server_->isRunning()) {
+            server_->stop();
+            wakeAcceptOnLocalhost(listenPort_);
+        }
+        if (thread_.joinable()) {
+            thread_.join();
+        }
+        server_     = nullptr;
+        listenPort_ = -1;
+        if (!metricsDir_.empty()) {
+            std::error_code ec;
+            std::filesystem::remove_all(metricsDir_, ec);
+            metricsDir_.clear();
+        }
+    }
+
+private:
+    Geruest*                 server_{nullptr};
+    std::thread              thread_;
+    int                      listenPort_{-1};
+    std::filesystem::path    metricsDir_;
+};
 
 }  // namespace
 
@@ -117,8 +221,9 @@ TEST(WebSocketIntegration, CoroutineEcho) {
             co_return;
         });
 
-    startServerOnBackground(server);
-    const int port = server.getListenPort();
+    ScopedBackgroundServer bg;
+    bg.launch(server);
+    const int port = bg.listenPort();
     ASSERT_GT(port, 0);
 
     const int fd = connectTo(port);
@@ -145,7 +250,6 @@ TEST(WebSocketIntegration, CoroutineEcho) {
     EXPECT_EQ(echoed, "hello");
 
     close(fd);
-    server.stop();
 }
 
 TEST(WebSocketIntegration, CallbackEcho) {
@@ -160,8 +264,9 @@ TEST(WebSocketIntegration, CallbackEcho) {
     };
     server.addRouteWebSocket("/echo-cb", route);
 
-    startServerOnBackground(server);
-    const int fd = connectTo(server.getListenPort());
+    ScopedBackgroundServer bg;
+    bg.launch(server);
+    const int fd = connectTo(bg.listenPort());
     ASSERT_GE(fd, 0);
 
     const std::string handshake =
@@ -184,7 +289,6 @@ TEST(WebSocketIntegration, CallbackEcho) {
     EXPECT_EQ(echoed, "ping");
 
     close(fd);
-    server.stop();
     EXPECT_GE(messageCount.load(), 1);
 }
 
@@ -194,8 +298,9 @@ TEST(WebSocketIntegration, RejectsBadVersion) {
         "/echo",
         [](WebSocketConnection&, const HTTPRequest&) -> boost::asio::awaitable<void> { co_return; });
 
-    startServerOnBackground(server);
-    const int fd = connectTo(server.getListenPort());
+    ScopedBackgroundServer bg;
+    bg.launch(server);
+    const int fd = connectTo(bg.listenPort());
     ASSERT_GE(fd, 0);
 
     const std::string handshake =
@@ -213,13 +318,13 @@ TEST(WebSocketIntegration, RejectsBadVersion) {
     EXPECT_NE(response.find("400 Bad Request"), std::string::npos);
 
     close(fd);
-    server.stop();
 }
 
 TEST(WebSocketIntegration, RouteNotFoundReturns404) {
     Geruest server;
-    startServerOnBackground(server);
-    const int fd = connectTo(server.getListenPort());
+    ScopedBackgroundServer bg;
+    bg.launch(server);
+    const int fd = connectTo(bg.listenPort());
     ASSERT_GE(fd, 0);
 
     const std::string handshake =
@@ -237,7 +342,6 @@ TEST(WebSocketIntegration, RouteNotFoundReturns404) {
     EXPECT_NE(response.find("404 Not Found"), std::string::npos);
 
     close(fd);
-    server.stop();
 }
 
 TEST(WebSocketIntegration, NonWebSocketUpgradeReachesHttpRoute) {
@@ -252,8 +356,9 @@ TEST(WebSocketIntegration, NonWebSocketUpgradeReachesHttpRoute) {
         return r;
     });
 
-    startServerOnBackground(server);
-    const int fd = connectTo(server.getListenPort());
+    ScopedBackgroundServer bg;
+    bg.launch(server);
+    const int fd = connectTo(bg.listenPort());
     ASSERT_GE(fd, 0);
 
     const std::string request =
@@ -270,7 +375,6 @@ TEST(WebSocketIntegration, NonWebSocketUpgradeReachesHttpRoute) {
     EXPECT_NE(response.find("pong"), std::string::npos);
 
     close(fd);
-    server.stop();
 }
 
 TEST(WebSocketIntegration, ServerSendsCloseFrameAfterHandler) {
@@ -285,8 +389,9 @@ TEST(WebSocketIntegration, ServerSendsCloseFrameAfterHandler) {
             co_return;
         });
 
-    startServerOnBackground(server);
-    const int fd = connectTo(server.getListenPort());
+    ScopedBackgroundServer bg;
+    bg.launch(server);
+    const int fd = connectTo(bg.listenPort());
     ASSERT_GE(fd, 0);
 
     const std::string handshake =
@@ -310,11 +415,10 @@ TEST(WebSocketIntegration, ServerSendsCloseFrameAfterHandler) {
     EXPECT_EQ(echoed, "bye");
 
     std::string closeFrame;
-    ASSERT_TRUE(recvSome(fd, closeFrame, 2, 1000));
+    ASSERT_TRUE(recvSome(fd, closeFrame, 2, 5000));
     EXPECT_EQ(static_cast<unsigned char>(closeFrame[0]), 0x88u);
 
     close(fd);
-    server.stop();
 }
 
 TEST(WebSocketIntegration, NormalHttpStillWorks) {
@@ -329,8 +433,9 @@ TEST(WebSocketIntegration, NormalHttpStillWorks) {
         return r;
     });
 
-    startServerOnBackground(server);
-    const int fd = connectTo(server.getListenPort());
+    ScopedBackgroundServer bg;
+    bg.launch(server);
+    const int fd = connectTo(bg.listenPort());
     ASSERT_GE(fd, 0);
 
     const std::string request =
@@ -346,5 +451,4 @@ TEST(WebSocketIntegration, NormalHttpStillWorks) {
     EXPECT_NE(response.find("pong"), std::string::npos);
 
     close(fd);
-    server.stop();
 }
