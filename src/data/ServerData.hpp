@@ -935,6 +935,17 @@ class ServerData {
         return normalizeRedirectTargetLanguage(redirectTo, requestPath);
     }
 
+    /** True when the page path has a page gate or Basic Auth protection. */
+    bool pageRequiresAccessControl(const std::string& pagePath) const {
+        const std::string canon = canonicalRequestPath(pagePath);
+        return findResolvedPageGate(canon).has_value() || _basicAuth.requiresAuth(canon);
+    }
+
+    /**
+     * If assetRequestPath is a per-page merged JS/CSS bundle (mergeAssets), returns the owning HTML site path.
+     */
+    std::optional<std::string> findMergedAssetOwnerPagePath(const std::string& assetRequestPath) const;
+
     bool addRouteGate(const std::string& path, RouteGateHandler handler) {
         if (path.empty() || !handler) {
             return false;

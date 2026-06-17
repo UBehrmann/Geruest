@@ -280,6 +280,7 @@ add_executable(ServerDataPageGate_Tests
     ../parser/JSONParser.cpp
     ../auth/BasicAuth.cpp
     ../security/Security.cpp
+    ../builders/AssetMerger.cpp
 )
 target_link_libraries(ServerDataPageGate_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
@@ -291,8 +292,20 @@ add_executable(ServerDataRouteGate_Tests
     ../parser/JSONParser.cpp
     ../auth/BasicAuth.cpp
     ../security/Security.cpp
+    ../builders/AssetMerger.cpp
 )
 target_link_libraries(ServerDataRouteGate_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+
+add_executable(ServerDataMergedAsset_Tests
+    ServerData/ServerDataMergedAsset_tests.cpp
+    ../data/ServerData.cpp
+    ../data/HTTPRequest.cpp
+    ../parser/JSONParser.cpp
+    ../auth/BasicAuth.cpp
+    ../security/Security.cpp
+    ../builders/AssetMerger.cpp
+)
+target_link_libraries(ServerDataMergedAsset_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
 add_executable(GeruestLifecycle_Tests
     Geruest/GeruestLifecycle_tests.cpp
@@ -365,6 +378,7 @@ gtest_discover_tests(ServerDataMetricsPersistence_Tests)
 gtest_discover_tests(ServerDataRedirectLanguage_Tests)
 gtest_discover_tests(ServerDataPageGate_Tests)
 gtest_discover_tests(ServerDataRouteGate_Tests)
+gtest_discover_tests(ServerDataMergedAsset_Tests)
 gtest_discover_tests(GeruestLifecycle_Tests)
 if(GERUEST_HAS_SQLITE)
     gtest_discover_tests(DatabaseSqlite_Tests)

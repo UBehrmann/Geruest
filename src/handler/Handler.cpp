@@ -431,6 +431,65 @@ boost::asio::awaitable<std::optional<HTTPResponse>> Handler::checkPageGateDenial
     co_return redirectResponse;
 }
 
+boost::asio::awaitable<bool> Handler::enforcePageAccessAsync(const HTTPRequest& request,
+                                                             const std::string& pagePath,
+                                                             PageAccessDenyStyle denyStyle,
+                                                             const std::optional<ResolvedPageGate>& resolvedGate) {
+    const std::string canonPage = canonicalRequestPath(pagePath);
+
+    if (serverData.getBasicAuth().requiresAuth(canonPage)) {
+        if (!serverData.getBasicAuth().authenticate(canonPage, request.getHeader("authorization"))) {
+            const std::string header = buildAuthHeader();
+            if (!co_await sendSocketAsync(header.c_str(), header.size())) {
+                sendToLoggerError("Failed to send auth header");
+            }
+            co_return false;
+        }
+    }
+
+    const auto gate =
+        resolvedGate.has_value() ? resolvedGate : serverData.findResolvedPageGate(pagePath);
+    if (!gate.has_value()) {
+        co_return true;
+    }
+
+    bool allowed = false;
+    try {
+        if (gate->async) {
+            allowed = co_await gate->asyncHandler(request);
+        } else {
+            allowed = gate->syncHandler(request);
+        }
+    } catch (const std::exception& e) {
+        sendToLoggerError(std::string("Exception in page gate handler: ") + e.what());
+    } catch (...) {
+        sendToLoggerError("Unknown exception in page gate handler");
+    }
+
+    if (allowed) {
+        co_return true;
+    }
+
+    if (denyStyle == PageAccessDenyStyle::Forbidden) {
+        HTTPResponse forbidden = responseForbidden(&request);
+        forbidden.serializeTo(responseScratch_);
+        if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
+            sendToLoggerError("Failed to send merged asset gate denial for: " + pagePath);
+        }
+        co_return false;
+    }
+
+    HTTPResponse redirectResponse("302 Found");
+    redirectResponse.setHeader("Location",
+                               serverData.resolvePageGateRedirect(gate->redirectTo, request.getPathString()));
+    redirectResponse.setBody("");
+    redirectResponse.serializeTo(responseScratch_);
+    if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
+        sendToLoggerError("Failed to send page gate denial for: " + pagePath);
+    }
+    co_return false;
+}
+
 boost::asio::awaitable<std::optional<HTTPResponse>> Handler::checkRouteGateDenialAsync(
     const HTTPRequest& request) const {
     const auto gate = serverData.findResolvedRouteGate(request.getPathString());
@@ -1106,15 +1165,35 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
     if (contentType == "text/html" || contentType == "text/javascript" || contentType == "text/css") {
         const std::string cacheKey = textResponseCacheKey(contentType, contentPath);
         const std::string requestPath = httpRequest != nullptr ? httpRequest->getPathString() : std::string();
+        std::optional<std::string> mergedAssetOwnerPage;
+        if (httpRequest != nullptr &&
+            (contentType == "text/javascript" || contentType == "text/css")) {
+            mergedAssetOwnerPage = serverData.findMergedAssetOwnerPagePath(requestPath);
+        }
+
         const std::optional<ResolvedPageGate> resolvedPageGate =
             contentType == "text/html" && httpRequest != nullptr
                 ? serverData.findResolvedPageGate(requestPath)
                 : std::nullopt;
-        const bool perRequestHtml = contentType == "text/html" && httpRequest != nullptr &&
-                                    (serverData.getBasicAuth().requiresAuth(requestPath) ||
-                                     resolvedPageGate.has_value());
+        const bool perRequestText =
+            httpRequest != nullptr &&
+            ((contentType == "text/html" &&
+              (serverData.getBasicAuth().requiresAuth(requestPath) || resolvedPageGate.has_value())) ||
+             (mergedAssetOwnerPage.has_value() &&
+              serverData.pageRequiresAccessControl(*mergedAssetOwnerPage)));
 
-        if (!perRequestHtml) {
+        if (perRequestText && httpRequest) {
+            const std::string& accessPath =
+                contentType == "text/html" ? requestPath : *mergedAssetOwnerPage;
+            const PageAccessDenyStyle denyStyle = contentType == "text/html"
+                                                      ? PageAccessDenyStyle::Redirect
+                                                      : PageAccessDenyStyle::Forbidden;
+            if (!co_await enforcePageAccessAsync(*httpRequest, accessPath, denyStyle, resolvedPageGate)) {
+                co_return;
+            }
+        }
+
+        if (!perRequestText) {
             if (const std::shared_ptr<const std::string> cached = lookupTextResponseCache(
                     cacheKey, serverData.isDevMode(), serverData.getTextResponseCacheMaxEntryBytes(),
                     serverData.getTextResponseCacheMaxTotalBytes())) {
@@ -1128,28 +1207,6 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
         std::unique_ptr<ContentBuilder> contentBuilder;
 
         if (contentType == "text/html") {
-            if (httpRequest && serverData.getBasicAuth().requiresAuth(httpRequest->getPathString())) {
-                std::string authHeader = httpRequest->getHeader("authorization");
-
-                if (!serverData.getBasicAuth().authenticate(httpRequest->getPathString(), authHeader)) {
-                    std::string header = buildAuthHeader();
-                    if (!co_await sendSocketAsync(header.c_str(), header.size())) {
-                        sendToLoggerError("Failed to send auth header");
-                    }
-                    co_return;
-                }
-            }
-
-            if (httpRequest) {
-                if (auto denial = co_await checkPageGateDenialAsync(*httpRequest, resolvedPageGate)) {
-                    denial->serializeTo(responseScratch_);
-                    if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
-                        sendToLoggerError("Failed to send page gate denial for: " + httpRequest->getPathString());
-                    }
-                    co_return;
-                }
-            }
-
             contentBuilder = std::make_unique<HtmlBuilder>(contentPath, serverData);
 
         } else if (contentType == "text/javascript") {
@@ -1179,7 +1236,7 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
         htmlResponse.setBody(contentBuilder->file());
 
         htmlResponse.serializeTo(responseScratch_);
-        if (!perRequestHtml) {
+        if (!perRequestText) {
             storeTextResponseCache(cacheKey, contentPath, responseScratch_, serverData.isDevMode(),
                                    serverData.getTextResponseCacheMaxEntryBytes(),
                                    serverData.getTextResponseCacheMaxTotalBytes());

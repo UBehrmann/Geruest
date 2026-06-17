@@ -133,6 +133,7 @@ Both can apply to the same static page. Basic Auth runs first (`401` on failure)
 - Handler exceptions are treated as denial (redirect)
 - Gated pages skip the text-response cache so access is checked on every request
 - Use `addGatedPageAsync` when the gate needs `co_await` (database/session lookup)
+- With `mergeAssets=true`, **merged JS/CSS bundles** for a gated or Basic Auth page are protected automatically (same gate/auth as the HTML). Denied asset requests return **403** (not 302). Requires `mergeAssets=true`; individual shared scripts with merging disabled are not auto-protected.
 
 **API routes**
 

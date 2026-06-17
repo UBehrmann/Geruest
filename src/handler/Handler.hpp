@@ -30,6 +30,8 @@
 
 namespace geruest {
 
+enum class PageAccessDenyStyle { Redirect, Forbidden };
+
 class Handler {
    private:
     static unsigned clientCount;
@@ -68,6 +70,15 @@ class Handler {
     boost::asio::awaitable<std::optional<HTTPResponse>> checkPageGateDenialAsync(
         const HTTPRequest& request,
         const std::optional<ResolvedPageGate>& resolvedGate = std::nullopt) const;
+
+    /**
+     * Enforce Basic Auth + page gate for a logical page path.
+     * @return true when access is granted; false after a denial response was sent.
+     */
+    boost::asio::awaitable<bool> enforcePageAccessAsync(const HTTPRequest& request, const std::string& pagePath,
+                                                        PageAccessDenyStyle denyStyle,
+                                                        const std::optional<ResolvedPageGate>& resolvedGate =
+                                                            std::nullopt);
 
     /** Returns 403 when a route gate rejects access; empty when allowed or no gate. */
     boost::asio::awaitable<std::optional<HTTPResponse>> checkRouteGateDenialAsync(
