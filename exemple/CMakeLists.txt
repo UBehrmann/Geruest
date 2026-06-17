@@ -4,6 +4,12 @@ project(GeruestExample VERSION 0.0.1 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Generate version header used by ../src/Geruest.cpp
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/Version.hpp.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/geruest/Version.hpp"
+)
+
 # Windows-specific: Prevent min/max macros that conflict with std::min/std::max
 if(WIN32)
     add_compile_definitions(NOMINMAX)
@@ -17,6 +23,9 @@ endif()
 
 # Find required packages
 find_package(Threads REQUIRED)
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW)
+endif()
 find_package(Boost 1.75 REQUIRED COMPONENTS system)
 
 # Find CURL (optional for email functionality)
@@ -91,6 +100,7 @@ add_library(Geruest STATIC ${GERUEST_SOURCES})
 
 target_include_directories(Geruest PUBLIC
     ../src
+    ${CMAKE_CURRENT_BINARY_DIR}/include
 )
 
 # Add WebP compile definition and link library

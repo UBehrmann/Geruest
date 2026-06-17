@@ -339,6 +339,12 @@ int main(int argc, char* argv[]) {
 
     server->addBasicAuthUser("admin", "secret123");
     server->addProtectedPage("/devices/devices");
+
+    // Page gate example: token or Bearer header (stacks with Basic Auth above)
+    server->addGatedPage("/devices/devices", [](const HTTPRequest& req) {
+        return req.getParam("token") == "demo"
+            || req.getHeader("authorization") == "Bearer demo-token";
+    });
     
     // Get the absolute path to the website folder next to the executable
     std::filesystem::path executablePath = std::filesystem::canonical(std::filesystem::path(argv[0]).parent_path());

@@ -382,6 +382,141 @@ Handler::~Handler() {
     serverData.decrementActiveHandlers();
 }
 
+void Handler::record4xxMetric() const {
+    if (_countRequestInMetrics) {
+        serverData.record4xx();
+    }
+}
+
+void Handler::record5xxMetric() const {
+    if (_countRequestInMetrics) {
+        serverData.record5xx();
+    }
+}
+
+void Handler::recordErrorMetric() const {
+    if (_countRequestInMetrics) {
+        serverData.recordError();
+    }
+}
+
+boost::asio::awaitable<std::optional<HTTPResponse>> Handler::checkPageGateDenialAsync(
+    const HTTPRequest& request, const std::optional<ResolvedPageGate>& resolvedGate) const {
+    const auto gate = resolvedGate.has_value() ? resolvedGate : serverData.findResolvedPageGate(request.getPathString());
+    if (!gate.has_value()) {
+        co_return std::nullopt;
+    }
+
+    bool allowed = false;
+    try {
+        if (gate->async) {
+            allowed = co_await gate->asyncHandler(request);
+        } else {
+            allowed = gate->syncHandler(request);
+        }
+    } catch (const std::exception& e) {
+        sendToLoggerError(std::string("Exception in page gate handler: ") + e.what());
+    } catch (...) {
+        sendToLoggerError("Unknown exception in page gate handler");
+    }
+
+    if (allowed) {
+        co_return std::nullopt;
+    }
+
+    HTTPResponse redirectResponse("302 Found");
+    redirectResponse.setHeader("Location",
+                               serverData.resolvePageGateRedirect(gate->redirectTo, request.getPathString()));
+    redirectResponse.setBody("");
+    co_return redirectResponse;
+}
+
+boost::asio::awaitable<bool> Handler::enforcePageAccessAsync(const HTTPRequest& request,
+                                                             const std::string& pagePath,
+                                                             PageAccessDenyStyle denyStyle,
+                                                             const std::optional<ResolvedPageGate>& resolvedGate) {
+    const std::string canonPage = canonicalRequestPath(pagePath);
+
+    if (serverData.getBasicAuth().requiresAuth(canonPage)) {
+        if (!serverData.getBasicAuth().authenticate(canonPage, request.getHeader("authorization"))) {
+            const std::string header = buildAuthHeader();
+            if (!co_await sendSocketAsync(header.c_str(), header.size())) {
+                sendToLoggerError("Failed to send auth header");
+            }
+            co_return false;
+        }
+    }
+
+    const auto gate =
+        resolvedGate.has_value() ? resolvedGate : serverData.findResolvedPageGate(pagePath);
+    if (!gate.has_value()) {
+        co_return true;
+    }
+
+    bool allowed = false;
+    try {
+        if (gate->async) {
+            allowed = co_await gate->asyncHandler(request);
+        } else {
+            allowed = gate->syncHandler(request);
+        }
+    } catch (const std::exception& e) {
+        sendToLoggerError(std::string("Exception in page gate handler: ") + e.what());
+    } catch (...) {
+        sendToLoggerError("Unknown exception in page gate handler");
+    }
+
+    if (allowed) {
+        co_return true;
+    }
+
+    if (denyStyle == PageAccessDenyStyle::Forbidden) {
+        HTTPResponse forbidden = responseForbidden(&request);
+        forbidden.serializeTo(responseScratch_);
+        if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
+            sendToLoggerError("Failed to send merged asset gate denial for: " + pagePath);
+        }
+        co_return false;
+    }
+
+    HTTPResponse redirectResponse("302 Found");
+    redirectResponse.setHeader("Location",
+                               serverData.resolvePageGateRedirect(gate->redirectTo, request.getPathString()));
+    redirectResponse.setBody("");
+    redirectResponse.serializeTo(responseScratch_);
+    if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
+        sendToLoggerError("Failed to send page gate denial for: " + pagePath);
+    }
+    co_return false;
+}
+
+boost::asio::awaitable<std::optional<HTTPResponse>> Handler::checkRouteGateDenialAsync(
+    const HTTPRequest& request) const {
+    const auto gate = serverData.findResolvedRouteGate(request.getPathString());
+    if (!gate.has_value()) {
+        co_return std::nullopt;
+    }
+
+    bool allowed = false;
+    try {
+        if (gate->async) {
+            allowed = co_await gate->asyncHandler(request);
+        } else {
+            allowed = gate->syncHandler(request);
+        }
+    } catch (const std::exception& e) {
+        sendToLoggerError(std::string("Exception in route gate handler: ") + e.what());
+    } catch (...) {
+        sendToLoggerError("Unknown exception in route gate handler");
+    }
+
+    if (allowed) {
+        co_return std::nullopt;
+    }
+
+    co_return responseForbidden(&request);
+}
+
 boost::asio::awaitable<bool> Handler::readSocketAsync(char* bufferToUse, size_t size, std::string_view phase) {
     if (size > INT_MAX) {
         sendToLoggerError("Size of buffer is too big.");
@@ -657,19 +792,24 @@ boost::asio::awaitable<void> Handler::runAsync() {
         HTTPRequest hTTPRequest(std::move(messageBacking), IP, serverData.getRoot(), serverData.getDatabaseClient());
         requestStream = std::istringstream();
 
-        serverData.recordRequest();
+        _countRequestInMetrics = !ServerData::isMetricsExcludedPath(hTTPRequest.getPathString());
+        if (_countRequestInMetrics) {
+            serverData.recordRequest();
+        }
         {
             const auto _reqStart = std::chrono::steady_clock::now();
             co_await handleRequestAsync(&hTTPRequest);
             if (_upgraded) {
                 co_return;
             }
-            const auto _elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
-                                            std::chrono::steady_clock::now() - _reqStart)
-                                        .count();
-            serverData.recordLatency(_elapsedUs <= 0 ? 0u
-                                     : _elapsedUs > 0xFFFFFFFFLL ? 0xFFFFFFFFu
-                                                                 : static_cast<uint32_t>(_elapsedUs));
+            if (_countRequestInMetrics) {
+                const auto _elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                                                std::chrono::steady_clock::now() - _reqStart)
+                                            .count();
+                serverData.recordLatency(_elapsedUs <= 0 ? 0u
+                                         : _elapsedUs > 0xFFFFFFFFLL ? 0xFFFFFFFFu
+                                                                     : static_cast<uint32_t>(_elapsedUs));
+            }
         }
 
         if (httpShouldCloseAfterResponse(hTTPRequest.getRawRequestLine(), hTTPRequest.getHeaderView("connection"))) {
@@ -734,11 +874,11 @@ boost::asio::awaitable<bool> Handler::tryHandleWebSocketAsync(HTTPRequest* reque
         co_await (*wsHandler)(ws, *request);
     } catch (const std::exception& e) {
         handlerFailed = true;
-        serverData.record5xx();
+        record5xxMetric();
         sendToLoggerError(std::string("Exception in WebSocket handler: ") + e.what());
     } catch (...) {
         handlerFailed = true;
-        serverData.record5xx();
+        record5xxMetric();
         sendToLoggerError("Unknown exception in WebSocket handler");
     }
 
@@ -756,7 +896,7 @@ boost::asio::awaitable<bool> Handler::tryHandleWebSocketAsync(HTTPRequest* reque
 
 boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
     if (request == nullptr) {
-        serverData.recordError();
+        recordErrorMetric();
         sendToLoggerError("HTTPRequest is null.");
         std::string header = buildInternalServerErrorHeader();
         if (!co_await sendSocketAsync(header.c_str(), header.size())) {
@@ -787,9 +927,20 @@ boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
         co_return;
     }
 
+    std::string path = request->getPathString();
+
     // Priority rule 3+4: normal sync routes (exact route, then wildcard route)
-    auto routeHandler = serverData.findMatchingRoute(request->getPathString());
+    auto routeHandler = serverData.findMatchingRoute(path);
     if (routeHandler) {
+        if (auto denial = co_await checkRouteGateDenialAsync(*request)) {
+            record4xxMetric();
+            denial->serializeTo(responseScratch_);
+            if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
+                sendToLoggerError("Failed to send route gate denial for: " + path);
+            }
+            co_return;
+        }
+
         // co_await is not allowed inside catch clauses; build the body first, send once.
         const char* failLog = nullptr;
         try {
@@ -798,9 +949,9 @@ boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
             const std::string& _st = response.getStatus();
             if (!_st.empty()) {
                 if (_st[0] == '4') {
-                    serverData.record4xx();
+                    record4xxMetric();
                 } else if (_st[0] == '5') {
-                    serverData.record5xx();
+                    record5xxMetric();
                 }
             }
 
@@ -808,19 +959,19 @@ boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
             failLog = "Failed to send route response for: ";
         } catch (const method_not_allowed& e) {
             HTTPResponse response = responseMethodNotAllowed(request, e.allowMethods());
-            serverData.record4xx();
+            record4xxMetric();
             response.serializeTo(responseScratch_);
             failLog = "Failed to send 405 for: ";
         } catch (const std::exception& e) {
             sendToLoggerError(std::string("Exception in route handler: ") + e.what());
             HTTPResponse response = responseInternalServerError(request);
-            serverData.record5xx();
+            record5xxMetric();
             response.serializeTo(responseScratch_);
             failLog = "Failed to send 500 for: ";
         } catch (...) {
             sendToLoggerError("Unknown exception in route handler");
             HTTPResponse response = responseInternalServerError(request);
-            serverData.record5xx();
+            record5xxMetric();
             response.serializeTo(responseScratch_);
             failLog = "Failed to send 500 for: ";
         }
@@ -833,8 +984,17 @@ boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
     }
 
     // Priority rule 5+6: async routes (exact route, then wildcard route)
-    auto asyncRouteHandler = serverData.findMatchingAsyncRoute(request->getPathString());
+    auto asyncRouteHandler = serverData.findMatchingAsyncRoute(path);
     if (asyncRouteHandler) {
+        if (auto denial = co_await checkRouteGateDenialAsync(*request)) {
+            record4xxMetric();
+            denial->serializeTo(responseScratch_);
+            if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
+                sendToLoggerError("Failed to send route gate denial for: " + path);
+            }
+            co_return;
+        }
+
         const char* failLog = nullptr;
         try {
             HTTPResponse response = co_await (*asyncRouteHandler)(*request);
@@ -842,9 +1002,9 @@ boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
             const std::string& _st = response.getStatus();
             if (!_st.empty()) {
                 if (_st[0] == '4') {
-                    serverData.record4xx();
+                    record4xxMetric();
                 } else if (_st[0] == '5') {
-                    serverData.record5xx();
+                    record5xxMetric();
                 }
             }
 
@@ -852,19 +1012,19 @@ boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
             failLog = "Failed to send async route response for: ";
         } catch (const method_not_allowed& e) {
             HTTPResponse response = responseMethodNotAllowed(request, e.allowMethods());
-            serverData.record4xx();
+            record4xxMetric();
             response.serializeTo(responseScratch_);
             failLog = "Failed to send 405 for: ";
         } catch (const std::exception& e) {
             sendToLoggerError(std::string("Exception in async route handler: ") + e.what());
             HTTPResponse response = responseInternalServerError(request);
-            serverData.record5xx();
+            record5xxMetric();
             response.serializeTo(responseScratch_);
             failLog = "Failed to send 500 for: ";
         } catch (...) {
             sendToLoggerError("Unknown exception in async route handler");
             HTTPResponse response = responseInternalServerError(request);
-            serverData.record5xx();
+            record5xxMetric();
             response.serializeTo(responseScratch_);
             failLog = "Failed to send 500 for: ";
         }
@@ -876,7 +1036,6 @@ boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
         co_return;
     }
 
-    std::string path = request->getPathString();
     if (path.rfind("/api/", 0) == 0) {
         sendToLoggerError("No API route matched. path=" + path + " request_line=" + request->getRawRequestLine());
     }
@@ -912,7 +1071,7 @@ boost::asio::awaitable<void> Handler::sendResponseAsync(const std::string& statu
 }
 
 boost::asio::awaitable<void> Handler::sendNotFoundResponseAsync(HTTPRequest* httpRequest) {
-    serverData.record4xx();
+    record4xxMetric();
     if (httpRequest != nullptr) {
         sendToLoggerError("404 route miss. path=" + httpRequest->getPathString() +
                           " request_line=" + httpRequest->getRawRequestLine());
@@ -986,7 +1145,7 @@ boost::asio::awaitable<void> Handler::sendNotFoundResponseAsync(HTTPRequest* htt
 }
 
 boost::asio::awaitable<void> Handler::sendServiceUnavailableResponseAsync(const std::string& why) {
-    serverData.record5xx();
+    record5xxMetric();
     serverData.recordFileOpenFailure();
     sendToLoggerError("Service unavailable while serving file: " + why);
     co_await sendResponseAsync("503 Service Unavailable", "text/plain",
@@ -1005,30 +1164,49 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
 
     if (contentType == "text/html" || contentType == "text/javascript" || contentType == "text/css") {
         const std::string cacheKey = textResponseCacheKey(contentType, contentPath);
-        if (const std::shared_ptr<const std::string> cached = lookupTextResponseCache(
-                cacheKey, serverData.isDevMode(), serverData.getTextResponseCacheMaxEntryBytes(),
-                serverData.getTextResponseCacheMaxTotalBytes())) {
-            if (!co_await sendSocketAsync(cached->data(), cached->size())) {
-                sendToLoggerError("Failed to send cached file: " + contentPath);
+        const std::string requestPath = httpRequest != nullptr ? httpRequest->getPathString() : std::string();
+        std::optional<std::string> mergedAssetOwnerPage;
+        if (httpRequest != nullptr &&
+            (contentType == "text/javascript" || contentType == "text/css")) {
+            mergedAssetOwnerPage = serverData.findMergedAssetOwnerPagePath(requestPath);
+        }
+
+        const std::optional<ResolvedPageGate> resolvedPageGate =
+            contentType == "text/html" && httpRequest != nullptr
+                ? serverData.findResolvedPageGate(requestPath)
+                : std::nullopt;
+        const bool perRequestText =
+            httpRequest != nullptr &&
+            ((contentType == "text/html" &&
+              (serverData.getBasicAuth().requiresAuth(requestPath) || resolvedPageGate.has_value())) ||
+             (mergedAssetOwnerPage.has_value() &&
+              serverData.pageRequiresAccessControl(*mergedAssetOwnerPage)));
+
+        if (perRequestText && httpRequest) {
+            const std::string& accessPath =
+                contentType == "text/html" ? requestPath : *mergedAssetOwnerPage;
+            const PageAccessDenyStyle denyStyle = contentType == "text/html"
+                                                      ? PageAccessDenyStyle::Redirect
+                                                      : PageAccessDenyStyle::Forbidden;
+            if (!co_await enforcePageAccessAsync(*httpRequest, accessPath, denyStyle, resolvedPageGate)) {
+                co_return;
             }
-            co_return;
+        }
+
+        if (!perRequestText) {
+            if (const std::shared_ptr<const std::string> cached = lookupTextResponseCache(
+                    cacheKey, serverData.isDevMode(), serverData.getTextResponseCacheMaxEntryBytes(),
+                    serverData.getTextResponseCacheMaxTotalBytes())) {
+                if (!co_await sendSocketAsync(cached->data(), cached->size())) {
+                    sendToLoggerError("Failed to send cached file: " + contentPath);
+                }
+                co_return;
+            }
         }
 
         std::unique_ptr<ContentBuilder> contentBuilder;
 
         if (contentType == "text/html") {
-            if (httpRequest && serverData.getBasicAuth().requiresAuth(httpRequest->getPathString())) {
-                std::string authHeader = httpRequest->getHeader("authorization");
-
-                if (!serverData.getBasicAuth().authenticate(httpRequest->getPathString(), authHeader)) {
-                    std::string header = buildAuthHeader();
-                    if (!co_await sendSocketAsync(header.c_str(), header.size())) {
-                        sendToLoggerError("Failed to send auth header");
-                    }
-                    co_return;
-                }
-            }
-
             contentBuilder = std::make_unique<HtmlBuilder>(contentPath, serverData);
 
         } else if (contentType == "text/javascript") {
@@ -1058,9 +1236,11 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
         htmlResponse.setBody(contentBuilder->file());
 
         htmlResponse.serializeTo(responseScratch_);
-        storeTextResponseCache(cacheKey, contentPath, responseScratch_, serverData.isDevMode(),
-                               serverData.getTextResponseCacheMaxEntryBytes(),
-                               serverData.getTextResponseCacheMaxTotalBytes());
+        if (!perRequestText) {
+            storeTextResponseCache(cacheKey, contentPath, responseScratch_, serverData.isDevMode(),
+                                   serverData.getTextResponseCacheMaxEntryBytes(),
+                                   serverData.getTextResponseCacheMaxTotalBytes());
+        }
 
         if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
             sendToLoggerError("Failed to send file: " + contentPath);

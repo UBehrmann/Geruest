@@ -420,9 +420,91 @@ void Geruest::clearBasicAuthUsers()  {
     sendToLogger("Cleared all Basic Auth users"); 
 }
 
-void Geruest::clearProtectedPages()  { 
-    serverData.getBasicAuth().clearProtectedPages();  
-    sendToLogger("Cleared all protected pages"); 
+void Geruest::clearProtectedPages()  {
+    serverData.getBasicAuth().clearProtectedPages();
+    sendToLogger("Cleared all protected pages");
+}
+
+// ========== Page Gates ==========
+
+void Geruest::addGatedPage(const std::string& path, PageGateHandler gate, const std::string& redirectTo) {
+    if (serverData.addPageGate(path, std::move(gate), redirectTo)) {
+        sendToLogger("Added gated page: " + path);
+    } else {
+        sendToLoggerError("Failed to add gated page (path/handler invalid): " + path);
+    }
+}
+
+void Geruest::addGatedPageAsync(const std::string& path, AsyncPageGateHandler gate, const std::string& redirectTo) {
+    if (serverData.addAsyncPageGate(path, std::move(gate), redirectTo)) {
+        sendToLogger("Added gated page (async): " + path);
+    } else {
+        sendToLoggerError("Failed to add gated page (async) (path/handler invalid): " + path);
+    }
+}
+
+bool Geruest::removeGatedPage(const std::string& path) {
+    bool removed = serverData.removePageGate(path);
+    if (removed) sendToLogger("Removed gated page: " + path);
+    return removed;
+}
+
+void Geruest::clearGatedPages() {
+    serverData.clearPageGates();
+    sendToLogger("Cleared all gated pages");
+}
+
+// ========== Route Gates ==========
+
+void Geruest::addGatedRoute(const std::string& path, RouteHandler handler, RouteGateHandler gate) {
+    if (path.empty() || !handler || !gate) {
+        sendToLoggerError("Failed to add gated route (path/handler/gate invalid): " + path);
+        return;
+    }
+    serverData.addRoute(path, std::move(handler));
+    serverData.addRouteGate(path, std::move(gate));
+    sendToLogger("Added gated route: " + path);
+}
+
+void Geruest::addGatedRoute(const std::string& path, RouteHandler handler, AsyncRouteGateHandler gate) {
+    if (path.empty() || !handler || !gate) {
+        sendToLoggerError("Failed to add gated route with async gate (path/handler/gate invalid): " + path);
+        return;
+    }
+    serverData.addRoute(path, std::move(handler));
+    serverData.addAsyncRouteGate(path, std::move(gate));
+    sendToLogger("Added gated route (async gate): " + path);
+}
+
+void Geruest::addGatedRouteAsync(const std::string& path, AsyncRouteHandler handler, RouteGateHandler gate) {
+    if (path.empty() || !handler || !gate) {
+        sendToLoggerError("Failed to add gated async route (path/handler/gate invalid): " + path);
+        return;
+    }
+    serverData.addRouteAsync(path, std::move(handler));
+    serverData.addRouteGate(path, std::move(gate));
+    sendToLogger("Added gated async route: " + path);
+}
+
+void Geruest::addGatedRouteAsync(const std::string& path, AsyncRouteHandler handler, AsyncRouteGateHandler gate) {
+    if (path.empty() || !handler || !gate) {
+        sendToLoggerError("Failed to add gated async route with async gate (path/handler/gate invalid): " + path);
+        return;
+    }
+    serverData.addRouteAsync(path, std::move(handler));
+    serverData.addAsyncRouteGate(path, std::move(gate));
+    sendToLogger("Added gated async route (async gate): " + path);
+}
+
+bool Geruest::removeGatedRoute(const std::string& path) {
+    bool removed = serverData.removeRouteGate(path);
+    if (removed) sendToLogger("Removed gated route: " + path);
+    return removed;
+}
+
+void Geruest::clearGatedRoutes() {
+    serverData.clearRouteGates();
+    sendToLogger("Cleared all gated routes");
 }
 
 // ========== Email Configuration ==========

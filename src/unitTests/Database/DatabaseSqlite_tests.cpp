@@ -12,6 +12,7 @@
 #include <algorithm>
 
 #include "database/DatabaseClient.hpp"
+#include "parser/JSONParser.hpp"
 
 namespace {
 
@@ -39,6 +40,11 @@ boost::asio::awaitable<void> insertBob(const std::shared_ptr<geruest::db::Databa
 boost::asio::awaitable<geruest::db::QueryResult> queryUsersById(
     const std::shared_ptr<geruest::db::DatabaseClient>& client) {
     co_return co_await client->queryAsync("SELECT name FROM users ORDER BY id ASC", {});
+}
+
+boost::asio::awaitable<geruest::JSONParser> queryUsersJson(
+    const std::shared_ptr<geruest::db::DatabaseClient>& client) {
+    co_return co_await client->queryJsonAsync("SELECT name FROM users ORDER BY id ASC", {});
 }
 
 }  // namespace
@@ -84,6 +90,56 @@ TEST(DatabaseSqlite, QueryAndConcurrentInsert) {
     std::sort(names.begin(), names.end());
     EXPECT_EQ(names[0], "alice");
     EXPECT_EQ(names[1], "bob");
+
+    std::remove(dbPath.c_str());
+#else
+    GTEST_SKIP() << "SQLite backend not enabled";
+#endif
+}
+
+TEST(DatabaseSqlite, QueryJsonAsyncAndToJSONParser) {
+#if GERUEST_HAS_SQLITE
+    const std::string dbPath = tempSqlitePath();
+
+    geruest::db::SqliteConfig cfg;
+    cfg.path = dbPath;
+    cfg.busyTimeoutMs = 4000;
+
+    geruest::db::CommonConfig common;
+    common.poolSize = 1;
+    common.sqliteExecutorThreads = 1;
+
+    auto client = geruest::db::createSqliteClient(cfg, common);
+    ASSERT_NE(client, nullptr);
+
+    boost::asio::io_context io;
+    auto setupFuture = boost::asio::co_spawn(io, createUsersTable(client), boost::asio::use_future);
+    io.run();
+    setupFuture.get();
+
+    io.restart();
+    auto insertFuture = boost::asio::co_spawn(io, insertAlice(client), boost::asio::use_future);
+    io.run();
+    insertFuture.get();
+
+    io.restart();
+    auto queryFuture = boost::asio::co_spawn(io, queryUsersById(client), boost::asio::use_future);
+    io.run();
+    geruest::db::QueryResult result = queryFuture.get();
+
+    geruest::JSONParser fromResult = geruest::db::toJSONParser(result);
+    EXPECT_TRUE(fromResult.hasKey("affectedRows"));
+    auto fromResultRows = fromResult.getArrayOfJSON("rows");
+    ASSERT_EQ(fromResultRows.size(), 1u);
+    EXPECT_EQ(fromResultRows[0].getString("name"), "alice");
+
+    io.restart();
+    auto jsonFuture = boost::asio::co_spawn(io, queryUsersJson(client), boost::asio::use_future);
+    io.run();
+    geruest::JSONParser json = jsonFuture.get();
+    auto jsonRows = json.getArrayOfJSON("rows");
+    ASSERT_EQ(jsonRows.size(), 1u);
+    EXPECT_EQ(jsonRows[0].getString("name"), "alice");
 
     std::remove(dbPath.c_str());
 #else

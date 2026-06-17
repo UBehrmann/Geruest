@@ -453,6 +453,85 @@ class Geruest {
      */
     void clearProtectedPages();
 
+    // ========== Page Gate Methods ==========
+
+    /**
+     * @brief Register a custom access check for a static HTML page
+     * @param path Page path to gate (supports asterisk wildcard, e.g. /admin/...)
+     * @param gate Handler returning true to allow access, false to redirect
+     * @param redirectTo Optional redirect target on denial (empty = language-aware index)
+     */
+    void addGatedPage(const std::string& path, PageGateHandler gate, const std::string& redirectTo = "");
+
+    /**
+     * @brief Register an async access check for a static HTML page (for DB/session co_await)
+     * @note Unlike addGatedRouteAsync, **async here refers to the gate**, not the page handler.
+     * @param path Page path to gate (supports asterisk wildcard, e.g. /admin/...)
+     * @param gate Coroutine handler returning true to allow access, false to redirect
+     * @param redirectTo Optional redirect target on denial (empty = language-aware index)
+     */
+    void addGatedPageAsync(const std::string& path, AsyncPageGateHandler gate, const std::string& redirectTo = "");
+
+    /**
+     * @brief Remove a page gate
+     * @param path The gated path pattern to remove
+     * @return true if a gate was removed
+     */
+    bool removeGatedPage(const std::string& path);
+
+    /**
+     * @brief Clear all page gates
+     */
+    void clearGatedPages();
+
+    // ========== Route Gate Methods ==========
+
+    /**
+     * @brief Register a sync API route with an access gate (same as addRoute plus gate check)
+     * @param path Route path (supports asterisk wildcard)
+     * @param handler Route handler invoked when the gate allows access
+     * @param gate Sync gate handler returning true to allow access, false to return 403 Forbidden
+     */
+    void addGatedRoute(const std::string& path, RouteHandler handler, RouteGateHandler gate);
+
+    /**
+     * @brief Register a sync API route with an async access gate (gate may co_await DB/session)
+     * @param path Route path (supports asterisk wildcard)
+     * @param handler Route handler invoked when the gate allows access
+     * @param gate Async gate handler returning true to allow access, false to return 403 Forbidden
+     */
+    void addGatedRoute(const std::string& path, RouteHandler handler, AsyncRouteGateHandler gate);
+
+    /**
+     * @brief Register an async API route with a sync access gate (same as addRouteAsync plus gate check)
+     * @note The third parameter is the **gate**, not the route handler. Gate is always sync here.
+     *       Use the AsyncRouteGateHandler overload when the gate needs co_await.
+     * @param path Route path (supports asterisk wildcard)
+     * @param handler Async route handler invoked when the gate allows access
+     * @param gate Sync gate handler returning true to allow access, false to return 403 Forbidden
+     */
+    void addGatedRouteAsync(const std::string& path, AsyncRouteHandler handler, RouteGateHandler gate);
+
+    /**
+     * @brief Register an async API route with an async access gate
+     * @param path Route path (supports asterisk wildcard)
+     * @param handler Async route handler invoked when the gate allows access
+     * @param gate Async gate handler returning true to allow access, false to return 403 Forbidden
+     */
+    void addGatedRouteAsync(const std::string& path, AsyncRouteHandler handler, AsyncRouteGateHandler gate);
+
+    /**
+     * @brief Remove a route gate (the route handler remains registered)
+     * @param path The gated path pattern to remove
+     * @return true if a gate was removed
+     */
+    bool removeGatedRoute(const std::string& path);
+
+    /**
+     * @brief Clear all route gates (route handlers remain registered)
+     */
+    void clearGatedRoutes();
+
     // ========== Email Configuration Methods ==========
 #if GERUEST_HAS_CURL    /**
      * @brief Initialize the email sender with SMTP configuration

@@ -12,6 +12,7 @@
 #include <sstream>
 #include <algorithm>
 #include <filesystem>
+#include <limits>
 #include <unordered_map>
 
 namespace fs = std::filesystem;
@@ -544,6 +545,128 @@ JsMergeDiscovery AssetMerger::discoverJsMergeInputs(const std::string& htmlConte
     }
     d.hasJs = d.localJsAbsolutePaths.size() >= 1;
     return d;
+}
+
+CssMergeDiscovery AssetMerger::discoverCssMergeInputs(const std::string& htmlContent) {
+    CssMergeDiscovery d;
+    auto cssRefs = extractCssReferences(htmlContent);
+    for (const auto& ref : cssRefs) {
+        if (ref.isExternal) {
+            continue;
+        }
+        if (isExcluded(ref.href)) {
+            continue;
+        }
+        std::string filePath = resolveAssetPath(ref.href, "css");
+        if (fs::exists(filePath)) {
+            d.localCssAbsolutePaths.push_back(std::move(filePath));
+            d.cssHrefs.push_back(ref.href);
+            if (d.cssSubdir.empty()) {
+                size_t lastSlash = ref.href.find_last_of('/');
+                if (lastSlash != std::string::npos) {
+                    d.cssSubdir = ref.href.substr(0, lastSlash);
+                }
+            }
+        }
+    }
+    d.hasCss = d.localCssAbsolutePaths.size() >= 1;
+    return d;
+}
+
+std::vector<std::string> AssetMerger::predictMergedAssetUrls(const std::string& htmlContent,
+                                                             const std::string& pageName) {
+    std::vector<std::string> urls;
+    const JsMergeDiscovery jsDisc = discoverJsMergeInputs(htmlContent);
+    if (jsDisc.hasJs) {
+        urls.push_back(jsDisc.jsSubdir.empty() ? "/" + pageName + ".js"
+                                               : "/" + jsDisc.jsSubdir + "/" + pageName + ".js");
+    }
+    const CssMergeDiscovery cssDisc = discoverCssMergeInputs(htmlContent);
+    if (cssDisc.hasCss) {
+        urls.push_back(cssDisc.cssSubdir.empty() ? "/" + pageName + ".css"
+                                                 : "/" + cssDisc.cssSubdir + "/" + pageName + ".css");
+    }
+    return urls;
+}
+
+std::string AssetMerger::pageNameFromHtmlPath(const std::string& htmlFilePath) {
+    size_t lastSlash = htmlFilePath.find_last_of('/');
+    std::string filename = (lastSlash != std::string::npos) ? htmlFilePath.substr(lastSlash + 1) : htmlFilePath;
+    const size_t lastDot = filename.find_last_of('.');
+    if (lastDot != std::string::npos) {
+        filename = filename.substr(0, lastDot);
+    }
+    return filename;
+}
+
+std::string AssetMerger::sitePathFromHtmlFile(const std::string& htmlRootDir,
+                                              const std::string& htmlAbsolutePath) {
+    std::error_code ec;
+    const fs::path rel = fs::relative(htmlAbsolutePath, fs::path(htmlRootDir), ec);
+    if (ec || rel.empty()) {
+        return {};
+    }
+    std::string sitePath = "/";
+    for (auto it = rel.begin(); it != rel.end(); ++it) {
+        if (it != rel.begin()) {
+            sitePath += '/';
+        }
+        sitePath += it->string();
+    }
+    constexpr std::string_view kHtmlSuffix = ".html";
+    if (sitePath.size() > kHtmlSuffix.size() &&
+        sitePath.compare(sitePath.size() - kHtmlSuffix.size(), kHtmlSuffix.size(), kHtmlSuffix) == 0) {
+        sitePath.resize(sitePath.size() - kHtmlSuffix.size());
+    }
+    if (sitePath == "/index") {
+        return "/";
+    }
+    return sitePath;
+}
+
+std::string AssetMerger::findHtmlTemplateByPageName(const std::string& htmlRootDir,
+                                                    const std::string& pageName) {
+    const std::string target = pageName + ".html";
+    const std::string direct = htmlRootDir + "/" + target;
+    if (fs::exists(direct)) {
+        return direct;
+    }
+
+    std::vector<std::string> matches;
+    std::error_code ec;
+    const fs::path rootPath(htmlRootDir);
+    for (const auto& entry : fs::recursive_directory_iterator(htmlRootDir, ec)) {
+        if (ec) {
+            break;
+        }
+        if (!entry.is_regular_file()) {
+            continue;
+        }
+        if (entry.path().filename() == target) {
+            matches.push_back(entry.path().string());
+        }
+    }
+    if (matches.empty()) {
+        return {};
+    }
+
+    auto best = matches.begin();
+    size_t bestDepth = std::numeric_limits<size_t>::max();
+    for (auto it = matches.begin(); it != matches.end(); ++it) {
+        ec.clear();
+        const fs::path rel = fs::relative(*it, rootPath, ec);
+        if (ec) {
+            continue;
+        }
+        const size_t depth = static_cast<size_t>(std::distance(rel.begin(), rel.end()));
+        if (depth < bestDepth) {
+            bestDepth = depth;
+            best = it;
+        } else if (depth == bestDepth && *it < *best) {
+            best = it;
+        }
+    }
+    return *best;
 }
 
 MergeResult AssetMerger::processHtml(const std::string& htmlContent, const std::string& pageName) {

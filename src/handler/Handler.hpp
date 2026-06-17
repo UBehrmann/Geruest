@@ -17,6 +17,7 @@
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 
@@ -28,6 +29,8 @@
 #define BUFFER_SIZE 8192
 
 namespace geruest {
+
+enum class PageAccessDenyStyle { Redirect, Forbidden };
 
 class Handler {
    private:
@@ -53,8 +56,33 @@ class Handler {
 
     bool _upgraded = false;
 
+    /** False for /status and other monitoring paths excluded from metrics. */
+    bool _countRequestInMetrics = true;
+
     /** Reused for HTTPResponse::serializeTo and similar to reduce per-send allocations. */
     std::string responseScratch_;
+
+    void record4xxMetric() const;
+    void record5xxMetric() const;
+    void recordErrorMetric() const;
+
+    /** Returns denial response when a page gate rejects access; empty when allowed or no gate. */
+    boost::asio::awaitable<std::optional<HTTPResponse>> checkPageGateDenialAsync(
+        const HTTPRequest& request,
+        const std::optional<ResolvedPageGate>& resolvedGate = std::nullopt) const;
+
+    /**
+     * Enforce Basic Auth + page gate for a logical page path.
+     * @return true when access is granted; false after a denial response was sent.
+     */
+    boost::asio::awaitable<bool> enforcePageAccessAsync(const HTTPRequest& request, const std::string& pagePath,
+                                                        PageAccessDenyStyle denyStyle,
+                                                        const std::optional<ResolvedPageGate>& resolvedGate =
+                                                            std::nullopt);
+
+    /** Returns 403 when a route gate rejects access; empty when allowed or no gate. */
+    boost::asio::awaitable<std::optional<HTTPResponse>> checkRouteGateDenialAsync(
+        const HTTPRequest& request) const;
 
     boost::asio::awaitable<bool> readSocketAsync(std::string_view phase = {});
     boost::asio::awaitable<bool> readSocketAsync(char* bufferToUse, size_t size, std::string_view phase = {});

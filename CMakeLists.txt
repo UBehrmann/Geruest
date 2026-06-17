@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.11)
 
 # Define the project name and version
-project(GeruestLibrary VERSION 0.10.7 LANGUAGES CXX)
+project(GeruestLibrary VERSION 0.11.7 LANGUAGES CXX)
 
 # Configure version header
 configure_file(
@@ -27,6 +27,9 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 # Required packages
 find_package(Threads REQUIRED)
 
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW)
+endif()
 find_package(Boost 1.75 REQUIRED COMPONENTS system)
 
 option(GERUEST_ENABLE_POSTGRESQL "Enable PostgreSQL backend support" OFF)

@@ -12,6 +12,7 @@
 | **Translations** | Multi-language with JSON files | `setAvailableLanguages()` |
 | **CORS** | Preflight/CORS headers | Manual headers |
 | **Basic Auth** | SHA-256 password protection | `BasicAuth` |
+| **Gated Pages & Routes** | Custom access checks for HTML pages (302) and API routes (403) | `addGatedPage()`, `addGatedPageAsync()`, `addGatedRoute()`, `addGatedRouteAsync()` |
 | **Email/SMTP** | Send emails via SMTP (with TLS) | `EmailService` |
 | **JSON Parsing** | String-based JSON handling | `JSONParser` |
 | **WebP Conversion** | Auto-convert images to WebP | `WebPConverter` |
@@ -162,6 +163,28 @@ server.addRoute("/admin", [&auth](const HTTPRequest& req) {
 ```
 
 **Note:** This framework does not provide built-in HTTPS/TLS support. For production deployments with authentication, use a reverse proxy (nginx, Apache, Caddy) to handle TLS termination.
+
+## Gated Pages & Routes
+
+Custom access checks for static HTML pages and API routes. Page gates deny with **302**; route gates deny with **403**.
+
+```cpp
+server.addGatedPage("/devices/devices", [](const HTTPRequest& req) {
+    return req.getParam("token") == "secret";
+}, "/login");  // pages: optional redirect; omit for language-aware index
+
+server.addGatedPageAsync("/admin", checkSessionAsync, "/login");  // async gate (co_await)
+
+server.addGatedRoute("/v1/secret", handleSecret, checkSession);  // sync API + sync gate
+
+server.addGatedRouteAsync("/v1/profile", handleProfileAsync, checkSession);  // async route + sync gate
+
+server.addGatedRouteAsync("/v1/profile", handleProfileAsync, checkSessionAsync);  // async route + async gate
+```
+
+> `addGatedPageAsync` = async **gate**. `addGatedRouteAsync` = async **route**; pass `AsyncRouteGateHandler` when the gate needs `co_await`.
+
+See [GATED_ROUTES_PAGES.md](GATED_ROUTES_PAGES.md) for full API.
 
 ## Email Service
 

@@ -28,6 +28,7 @@ Welcome to the Geruest documentation! This guide will help you get started with 
 
 - [**Security Utilities**](SECURITY.md) - SQL injection, XSS, JSON injection, path traversal
 - [**Basic Authentication**](BASIC_AUTH.md) - HTTP Basic Auth for protected pages
+- [**Gated Routes & Pages**](GATED_ROUTES_PAGES.md) - `addGatedPage()`, `addGatedPageAsync()`, `addGatedRoute()`, `addGatedRouteAsync()`
 
 ### Development
 
@@ -82,13 +83,16 @@ int main() {
 | **Basic Auth** | HTTP authentication | [Basic Auth](BASIC_AUTH.md) |
 | **Dev Mode** | Verbose logs, no file caching | [Dev Mode](DEV_MODE.md) |
 | **JSON Parser** | Built-in JSON handling | [Data Classes](DATA_CLASSES.md#jsonparser) |
+| **Async routes** | C++20 coroutines via `addRouteAsync` | [Features](FEATURES.md#routing) |
+| **Database** | Optional PostgreSQL/SQLite async backends | [Database](DATABASE.md) |
+| **WebSockets** | RFC 6455 persistent connections | [WebSockets](WEBSOCKETS.md) |
 
 ## Requirements
 
 - **C++20** compatible compiler (GCC 10+, Clang 11+)
 - **CMake** 3.10+
 - **Boost** (1.75+): Asio + Boost.System for the HTTP server (see [Getting Started](GETTING_STARTED.md#requirements))
-- Optional: **libcurl**, **libwebp** (for email and WebP features)
+- Optional: **libpq** / **libsqlite3** (database backends), **libcurl** (email), **libwebp** (WebP conversion)
 
 See [Getting Started](GETTING_STARTED.md) for detailed requirements.
 

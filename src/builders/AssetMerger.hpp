@@ -57,6 +57,14 @@ struct JsMergeDiscovery {
     std::vector<AssetReference> allJsRefs;
 };
 
+/** Local CSS merge inputs from HTML (same rules as processHtml); no merge I/O. */
+struct CssMergeDiscovery {
+    bool hasCss = false;
+    std::vector<std::string> cssHrefs;
+    std::vector<std::string> localCssAbsolutePaths;
+    std::string cssSubdir;
+};
+
 class AssetMerger {
 public:
     /**
@@ -81,6 +89,34 @@ public:
      * Does not read file bodies or write merged output.
      */
     JsMergeDiscovery discoverJsMergeInputs(const std::string& htmlContent);
+
+    /**
+     * Discover local stylesheet hrefs for CSS merging (same filtering as processHtml).
+     */
+    CssMergeDiscovery discoverCssMergeInputs(const std::string& htmlContent);
+
+    /**
+     * Predict public URL paths of merged JS/CSS bundles for a page template (no disk I/O).
+     */
+    std::vector<std::string> predictMergedAssetUrls(const std::string& htmlContent,
+                                                    const std::string& pageName);
+
+    /**
+     * Extract the page name (filename without extension) from an HTML filesystem path.
+     */
+    static std::string pageNameFromHtmlPath(const std::string& htmlFilePath);
+
+    /**
+     * Map an HTML template file under htmlRoot to its site path (e.g. html/devices/x.html -> /devices/x).
+     */
+    static std::string sitePathFromHtmlFile(const std::string& htmlRootDir,
+                                            const std::string& htmlAbsolutePath);
+
+    /**
+     * Find the shallowest html/{...}/pageName.html under htmlRootDir.
+     */
+    static std::string findHtmlTemplateByPageName(const std::string& htmlRootDir,
+                                                  const std::string& pageName);
 
     /**
      * Extract all CSS <link> references from HTML

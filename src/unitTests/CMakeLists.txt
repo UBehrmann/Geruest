@@ -47,6 +47,9 @@ else()
     add_compile_definitions(GERUEST_HAS_CURL=0)
 endif()
 
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW)
+endif()
 find_package(Boost 1.75 REQUIRED COMPONENTS system)
 
 option(GERUEST_ENABLE_POSTGRESQL "Enable PostgreSQL backend support in tests" OFF)
@@ -234,6 +237,7 @@ add_executable(WebSocketServerData_Tests
     ../parser/JSONParser.cpp
     ../auth/BasicAuth.cpp
     ../security/Security.cpp
+    ../builders/AssetMerger.cpp
 )
 target_link_libraries(WebSocketServerData_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
@@ -258,6 +262,7 @@ add_executable(ServerDataMetricsPersistence_Tests
     ../parser/JSONParser.cpp
     ../auth/BasicAuth.cpp
     ../security/Security.cpp
+    ../builders/AssetMerger.cpp
 )
 target_link_libraries(ServerDataMetricsPersistence_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
@@ -267,8 +272,43 @@ add_executable(ServerDataRedirectLanguage_Tests
     ../parser/JSONParser.cpp
     ../auth/BasicAuth.cpp
     ../security/Security.cpp
+    ../builders/AssetMerger.cpp
 )
 target_link_libraries(ServerDataRedirectLanguage_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+
+add_executable(ServerDataPageGate_Tests
+    ServerData/ServerDataPageGate_tests.cpp
+    ../data/ServerData.cpp
+    ../data/HTTPRequest.cpp
+    ../parser/JSONParser.cpp
+    ../auth/BasicAuth.cpp
+    ../security/Security.cpp
+    ../builders/AssetMerger.cpp
+)
+target_link_libraries(ServerDataPageGate_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+
+add_executable(ServerDataRouteGate_Tests
+    ServerData/ServerDataRouteGate_tests.cpp
+    ../data/ServerData.cpp
+    ../data/HTTPRequest.cpp
+    ../data/HTTPResponse.cpp
+    ../parser/JSONParser.cpp
+    ../auth/BasicAuth.cpp
+    ../security/Security.cpp
+    ../builders/AssetMerger.cpp
+)
+target_link_libraries(ServerDataRouteGate_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+
+add_executable(ServerDataMergedAsset_Tests
+    ServerData/ServerDataMergedAsset_tests.cpp
+    ../data/ServerData.cpp
+    ../data/HTTPRequest.cpp
+    ../parser/JSONParser.cpp
+    ../auth/BasicAuth.cpp
+    ../security/Security.cpp
+    ../builders/AssetMerger.cpp
+)
+target_link_libraries(ServerDataMergedAsset_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
 add_executable(GeruestLifecycle_Tests
     Geruest/GeruestLifecycle_tests.cpp
@@ -290,6 +330,8 @@ if(GERUEST_HAS_SQLITE)
         Database/DatabaseSqlite_tests.cpp
         ../database/DatabaseClient.cpp
         ../database/DbExecutor.cpp
+        ../parser/JSONParser.cpp
+        ../security/Security.cpp
     )
     # Work around GCC 13 internal compiler error in coroutine lowering for this test TU.
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 13 AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 14)
@@ -306,6 +348,8 @@ if(GERUEST_HAS_LIBPQ)
         Database/DatabasePostgres_tests.cpp
         ../database/DatabaseClient.cpp
         ../database/DbExecutor.cpp
+        ../parser/JSONParser.cpp
+        ../security/Security.cpp
     )
     # Work around GCC 13 internal compiler error in coroutine lowering for this test TU.
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 13 AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 14)
@@ -335,6 +379,9 @@ gtest_discover_tests(WebSocketServerData_Tests)
 gtest_discover_tests(WebSocketIntegration_Tests)
 gtest_discover_tests(ServerDataMetricsPersistence_Tests)
 gtest_discover_tests(ServerDataRedirectLanguage_Tests)
+gtest_discover_tests(ServerDataPageGate_Tests)
+gtest_discover_tests(ServerDataRouteGate_Tests)
+gtest_discover_tests(ServerDataMergedAsset_Tests)
 gtest_discover_tests(GeruestLifecycle_Tests)
 if(GERUEST_HAS_SQLITE)
     gtest_discover_tests(DatabaseSqlite_Tests)
@@ -364,13 +411,13 @@ exit $rc
 ]=])
     add_custom_target(run_tests
         COMMAND bash "${CMAKE_CURRENT_BINARY_DIR}/run_tests_pg.sh" "${CMAKE_CTEST_COMMAND}"
-        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests GeruestLifecycle_Tests DatabasePostgres_Tests
+        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests ServerDataPageGate_Tests ServerDataRouteGate_Tests GeruestLifecycle_Tests DatabasePostgres_Tests
         COMMENT "Running all unit tests via CTest (with PostgreSQL container)"
     )
 else()
     add_custom_target(run_tests
         COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests GeruestLifecycle_Tests
+        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests ServerDataPageGate_Tests ServerDataRouteGate_Tests GeruestLifecycle_Tests
         COMMENT "Running all unit tests via CTest"
     )
 endif()
