@@ -486,6 +486,14 @@ class Geruest {
     void addGatedRoute(const std::string& path, RouteHandler handler, RouteGateHandler gate);
 
     /**
+     * @brief Register an async API route with an access gate (same as addRouteAsync plus gate check)
+     * @param path Route path (supports asterisk wildcard)
+     * @param handler Async route handler invoked when the gate allows access
+     * @param gate Handler returning true to allow access, false to return 403 Forbidden
+     */
+    void addGatedRouteAsync(const std::string& path, AsyncRouteHandler handler, RouteGateHandler gate);
+
+    /**
      * @brief Remove a route gate (the route handler remains registered)
      * @param path The gated path pattern to remove
      * @return true if a gate was removed

@@ -12,7 +12,7 @@
 | **Translations** | Multi-language with JSON files | `setAvailableLanguages()` |
 | **CORS** | Preflight/CORS headers | Manual headers |
 | **Basic Auth** | SHA-256 password protection | `BasicAuth` |
-| **Gated Pages & Routes** | Custom access checks for HTML pages (302) and API routes (403) | `addGatedPage()`, `addGatedRoute()` |
+| **Gated Pages & Routes** | Custom access checks for HTML pages (302) and API routes (403) | `addGatedPage()`, `addGatedRoute()`, `addGatedRouteAsync()` |
 | **Email/SMTP** | Send emails via SMTP (with TLS) | `EmailService` |
 | **JSON Parsing** | String-based JSON handling | `JSONParser` |
 | **WebP Conversion** | Auto-convert images to WebP | `WebPConverter` |
@@ -173,7 +173,9 @@ server.addGatedPage("/devices/devices", [](const HTTPRequest& req) {
     return req.getParam("token") == "secret";
 }, "/login");  // pages: optional redirect; omit for language-aware index
 
-server.addGatedRoute("/v1/secret", handleSecret, checkSession);  // API: deny → 403
+server.addGatedRoute("/v1/secret", handleSecret, checkSession);  // sync API: deny → 403
+
+server.addGatedRouteAsync("/v1/profile", handleProfileAsync, checkSession);  // async API: deny → 403
 ```
 
 See [GATED_ROUTES_PAGES.md](GATED_ROUTES_PAGES.md) for full API.

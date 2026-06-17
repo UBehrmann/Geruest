@@ -1,12 +1,12 @@
 # Gated Routes & Pages
 
-Custom `bool(const HTTPRequest&)` access checks for static HTML pages and sync API routes. Unlike [Basic Authentication](BASIC_AUTH.md) (username/password + `401`), gates run your own logic and deny when the handler returns `false`.
+Custom `bool(const HTTPRequest&)` access checks for static HTML pages and API routes. Unlike [Basic Authentication](BASIC_AUTH.md) (username/password + `401`), gates run your own logic and deny when the handler returns `false`.
 
-| | Pages (`addGatedPage`) | API routes (`addGatedRoute`) |
-|---|------------------------|------------------------------|
-| Target | Static HTML from `addRoot()` | Sync handlers from `addRoute` |
-| On deny | **302 Found** redirect | **403 Forbidden** |
-| Registers handler | No (page already on disk) | Yes (`addRoute` + gate in one call) |
+| | Pages (`addGatedPage`) | Sync API (`addGatedRoute`) | Async API (`addGatedRouteAsync`) |
+|---|------------------------|----------------------------|----------------------------------|
+| Target | Static HTML from `addRoot()` | Sync `addRoute` handlers | Async `addRouteAsync` handlers |
+| On deny | **302 Found** redirect | **403 Forbidden** | **403 Forbidden** |
+| Registers handler | No (page already on disk) | Yes | Yes |
 
 ## Quick Start
 
@@ -24,10 +24,13 @@ server->addGatedPage("/devices/devices", [](const HTTPRequest& req) {
 
 server->addGatedPage("/admin/dashboard", checkAdminSession, "/login");
 
-// API route: deny → 403 Forbidden
+// Sync API route: deny → 403 Forbidden
 server->addGatedRoute("/v1/admin", handleAdmin, [](const HTTPRequest& req) {
     return req.getHeader("authorization") == "Bearer mytoken";
 });
+
+// Async API route: deny → 403 Forbidden
+server->addGatedRouteAsync("/v1/profile", handleProfileAsync, checkSession);
 ```
 
 ## API
@@ -59,6 +62,7 @@ Targets that already include a language prefix (e.g. `/en/login`) or an external
 
 ```cpp
 void addGatedRoute(const std::string& path, RouteHandler handler, RouteGateHandler gate);
+void addGatedRouteAsync(const std::string& path, AsyncRouteHandler handler, RouteGateHandler gate);
 bool removeGatedRoute(const std::string& path);
 void clearGatedRoutes();
 ```
@@ -86,14 +90,13 @@ Both can apply to the same static page. Basic Auth runs first (`401` on failure)
 - Gate runs after Basic Auth when serving HTML
 - Handler exceptions are treated as denial (redirect)
 - Gated pages skip the text-response cache so access is checked on every request
-- For database/session checks that need `co_await`, use `addAsyncRoute` to serve the page instead
+- For database/session checks that need `co_await`, use `addGatedRouteAsync` or `addRouteAsync` and check access inside the handler
 
 **API routes**
 
-- Gate runs before the route handler on every matching request
+- Gate runs before the route handler on every matching request (sync and async)
 - Handler exceptions are treated as denial (`403`)
 - `removeGatedRoute` removes only the gate; the route handler stays registered
-- For async routes, use `addRouteAsync` and check access inside the handler
 
 ## See Also
 
