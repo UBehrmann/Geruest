@@ -457,7 +457,7 @@ class Geruest {
 
     /**
      * @brief Register a custom access check for a static HTML page
-     * @param path Page path to gate (supports `*` wildcard, e.g. `/admin/...`)
+     * @param path Page path to gate (supports asterisk wildcard, e.g. /admin/...)
      * @param gate Handler returning true to allow access, false to redirect
      * @param redirectTo Optional redirect target on denial (empty = language-aware index)
      */
@@ -474,6 +474,28 @@ class Geruest {
      * @brief Clear all page gates
      */
     void clearGatedPages();
+
+    // ========== Route Gate Methods ==========
+
+    /**
+     * @brief Register a sync API route with an access gate (same as addRoute plus gate check)
+     * @param path Route path (supports asterisk wildcard)
+     * @param handler Route handler invoked when the gate allows access
+     * @param gate Handler returning true to allow access, false to return 403 Forbidden
+     */
+    void addGatedRoute(const std::string& path, RouteHandler handler, RouteGateHandler gate);
+
+    /**
+     * @brief Remove a route gate (the route handler remains registered)
+     * @param path The gated path pattern to remove
+     * @return true if a gate was removed
+     */
+    bool removeGatedRoute(const std::string& path);
+
+    /**
+     * @brief Clear all route gates (route handlers remain registered)
+     */
+    void clearGatedRoutes();
 
     // ========== Email Configuration Methods ==========
 #if GERUEST_HAS_CURL    /**

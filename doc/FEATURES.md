@@ -12,7 +12,7 @@
 | **Translations** | Multi-language with JSON files | `setAvailableLanguages()` |
 | **CORS** | Preflight/CORS headers | Manual headers |
 | **Basic Auth** | SHA-256 password protection | `BasicAuth` |
-| **Page Gates** | Custom access check + redirect for HTML pages | `addGatedPage()` |
+| **Gated Pages & Routes** | Custom access checks for HTML pages (302) and API routes (403) | `addGatedPage()`, `addGatedRoute()` |
 | **Email/SMTP** | Send emails via SMTP (with TLS) | `EmailService` |
 | **JSON Parsing** | String-based JSON handling | `JSONParser` |
 | **WebP Conversion** | Auto-convert images to WebP | `WebPConverter` |
@@ -164,17 +164,19 @@ server.addRoute("/admin", [&auth](const HTTPRequest& req) {
 
 **Note:** This framework does not provide built-in HTTPS/TLS support. For production deployments with authentication, use a reverse proxy (nginx, Apache, Caddy) to handle TLS termination.
 
-## Page Gates
+## Gated Pages & Routes
 
-Custom `bool(const HTTPRequest&)` checks on static HTML pages. Deny → `302` redirect (default: language-aware index).
+Custom `bool(const HTTPRequest&)` checks for static HTML pages and sync API routes.
 
 ```cpp
 server.addGatedPage("/devices/devices", [](const HTTPRequest& req) {
     return req.getParam("token") == "secret";
-}, "/login");  // optional redirect; omit for index
+}, "/login");  // pages: optional redirect; omit for language-aware index
+
+server.addGatedRoute("/v1/secret", handleSecret, checkSession);  // API: deny → 403
 ```
 
-See [PAGE_GATES.md](PAGE_GATES.md) for full API.
+See [GATED_ROUTES_PAGES.md](GATED_ROUTES_PAGES.md) for full API.
 
 ## Email Service
 

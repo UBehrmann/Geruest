@@ -60,12 +60,17 @@ using AsyncRouteHandler = std::function<AsyncResponse(const HTTPRequest&)>;
 using WebSocketHandler =
     std::function<boost::asio::awaitable<void>(WebSocketConnection&, const HTTPRequest&)>;
 
-/** Returns true when access to the page should be granted. */
+/** Returns true when access should be granted. */
 using PageGateHandler = std::function<bool(const HTTPRequest&)>;
+using RouteGateHandler = PageGateHandler;
 
 struct PageGateRule {
     PageGateHandler handler;
     std::string redirectTo;
+};
+
+struct RouteGateRule {
+    RouteGateHandler handler;
 };
 
 /** Default redirect when a page gate denies access and no custom target is set. */
@@ -98,6 +103,8 @@ class ServerData {
     std::unordered_map<std::string, RedirectRule> _wildcardRedirects;
     std::unordered_map<std::string, PageGateRule> _pageGates;
     std::unordered_map<std::string, PageGateRule> _wildcardPageGates;
+    std::unordered_map<std::string, RouteGateRule> _routeGates;
+    std::unordered_map<std::string, RouteGateRule> _wildcardRouteGates;
     std::string _root;
     bool _removeComments = true;    // Remove comments from built files
     bool _mergeAssets = false;      // Automatic CSS/JS merging per page
@@ -345,6 +352,76 @@ class ServerData {
         return "/" + *requestLang + target;
     }
 
+    template<typename Rule>
+    std::optional<Rule> findMatchingGateImpl(const std::unordered_map<std::string, Rule>& exactGates,
+                                             const std::unordered_map<std::string, Rule>& wildcardGates,
+                                             const std::string& path) const {
+        auto exactMatch = exactGates.find(path);
+        if (exactMatch != exactGates.end()) {
+            return exactMatch->second;
+        }
+
+        size_t bestPatternLength = 0;
+        std::optional<std::string> bestPattern;
+        std::optional<Rule> bestMatch;
+        for (const auto& gate : wildcardGates) {
+            const std::string& pattern = gate.first;
+            if (!matchesWildcardPattern(pattern, path)) {
+                continue;
+            }
+            const bool better = !bestMatch.has_value() || pattern.size() > bestPatternLength ||
+                                (pattern.size() == bestPatternLength && bestPattern.has_value() &&
+                                 pattern < *bestPattern);
+            if (better) {
+                bestPatternLength = pattern.size();
+                bestPattern = pattern;
+                bestMatch = gate.second;
+            }
+        }
+        if (bestMatch.has_value()) {
+            return bestMatch;
+        }
+
+        const auto strippedPath = stripSupportedLanguagePrefix(path);
+        if (!strippedPath.has_value()) {
+            return std::nullopt;
+        }
+
+        exactMatch = exactGates.find(*strippedPath);
+        if (exactMatch != exactGates.end()) {
+            return exactMatch->second;
+        }
+
+        bestPatternLength = 0;
+        bestPattern.reset();
+        bestMatch.reset();
+        for (const auto& gate : wildcardGates) {
+            const std::string& pattern = gate.first;
+            if (!matchesWildcardPattern(pattern, *strippedPath)) {
+                continue;
+            }
+            const bool better = !bestMatch.has_value() || pattern.size() > bestPatternLength ||
+                                (pattern.size() == bestPatternLength && bestPattern.has_value() &&
+                                 pattern < *bestPattern);
+            if (better) {
+                bestPatternLength = pattern.size();
+                bestPattern = pattern;
+                bestMatch = gate.second;
+            }
+        }
+        return bestMatch;
+    }
+
+    template<typename Rule>
+    void storeGateRule(const std::string& path, Rule rule, std::unordered_map<std::string, Rule>& exactGates,
+                       std::unordered_map<std::string, Rule>& wildcardGates) {
+        if (path.find('*') != std::string::npos) {
+            wildcardGates[path] = std::move(rule);
+        } else {
+            exactGates[path] = std::move(rule);
+        }
+    }
+
     std::optional<std::pair<std::string, int>> findMatchingWildcardRedirect(const std::string& path,
                                                                             const std::string& requestPath) const {
         size_t bestPatternLength = 0;
@@ -442,6 +519,8 @@ class ServerData {
           _wildcardRedirects(other._wildcardRedirects),
           _pageGates(other._pageGates),
           _wildcardPageGates(other._wildcardPageGates),
+          _routeGates(other._routeGates),
+          _wildcardRouteGates(other._wildcardRouteGates),
           _root(other._root),
           _removeComments(other._removeComments),
           _mergeAssets(other._mergeAssets),
@@ -482,6 +561,8 @@ class ServerData {
             _wildcardRedirects = other._wildcardRedirects;
             _pageGates = other._pageGates;
             _wildcardPageGates = other._wildcardPageGates;
+            _routeGates = other._routeGates;
+            _wildcardRouteGates = other._wildcardRouteGates;
             _root = other._root;
             _removeComments = other._removeComments;
             _mergeAssets = other._mergeAssets;
@@ -635,12 +716,7 @@ class ServerData {
         if (path.empty() || !handler) {
             return false;
         }
-        PageGateRule rule{std::move(handler), redirectTo};
-        if (path.find('*') != std::string::npos) {
-            _wildcardPageGates[path] = std::move(rule);
-        } else {
-            _pageGates[path] = std::move(rule);
-        }
+        storeGateRule(path, PageGateRule{std::move(handler), redirectTo}, _pageGates, _wildcardPageGates);
         return true;
     }
 
@@ -657,62 +733,42 @@ class ServerData {
     }
 
     std::optional<PageGateRule> findMatchingPageGate(const std::string& path) const {
-        auto exactMatch = _pageGates.find(path);
-        if (exactMatch != _pageGates.end()) {
-            return exactMatch->second;
-        }
+        return findMatchingGateImpl(_pageGates, _wildcardPageGates, path);
+    }
 
-        size_t bestPatternLength = 0;
-        std::optional<std::string> bestPattern;
-        std::optional<PageGateRule> bestMatch;
-        for (const auto& gate : _wildcardPageGates) {
-            const std::string& pattern = gate.first;
-            if (!matchesWildcardPattern(pattern, path)) {
-                continue;
+    /** Resolve redirect target for a denied page gate (language-aware when languages are configured). */
+    std::string resolvePageGateRedirect(const std::string& redirectTo, const std::string& requestPath) const {
+        if (redirectTo.empty()) {
+            if (hasLanguages()) {
+                return normalizeRedirectTargetLanguage("/", requestPath);
             }
-            const bool better = !bestMatch.has_value() ||
-                                pattern.size() > bestPatternLength ||
-                                (pattern.size() == bestPatternLength && bestPattern.has_value() &&
-                                 pattern < *bestPattern);
-            if (better) {
-                bestPatternLength = pattern.size();
-                bestPattern = pattern;
-                bestMatch = gate.second;
-            }
+            return defaultPageGateRedirect(requestPath);
         }
-        if (bestMatch.has_value()) {
-            return bestMatch;
-        }
+        return normalizeRedirectTargetLanguage(redirectTo, requestPath);
+    }
 
-        const auto strippedPath = stripSupportedLanguagePrefix(path);
-        if (!strippedPath.has_value()) {
-            return std::nullopt;
+    bool addRouteGate(const std::string& path, RouteGateHandler handler) {
+        if (path.empty() || !handler) {
+            return false;
         }
+        storeGateRule(path, RouteGateRule{std::move(handler)}, _routeGates, _wildcardRouteGates);
+        return true;
+    }
 
-        exactMatch = _pageGates.find(*strippedPath);
-        if (exactMatch != _pageGates.end()) {
-            return exactMatch->second;
+    bool removeRouteGate(const std::string& path) {
+        if (path.find('*') != std::string::npos) {
+            return _wildcardRouteGates.erase(path) > 0;
         }
+        return _routeGates.erase(path) > 0;
+    }
 
-        bestPatternLength = 0;
-        bestPattern.reset();
-        bestMatch.reset();
-        for (const auto& gate : _wildcardPageGates) {
-            const std::string& pattern = gate.first;
-            if (!matchesWildcardPattern(pattern, *strippedPath)) {
-                continue;
-            }
-            const bool better = !bestMatch.has_value() ||
-                                pattern.size() > bestPatternLength ||
-                                (pattern.size() == bestPatternLength && bestPattern.has_value() &&
-                                 pattern < *bestPattern);
-            if (better) {
-                bestPatternLength = pattern.size();
-                bestPattern = pattern;
-                bestMatch = gate.second;
-            }
-        }
-        return bestMatch;
+    void clearRouteGates() {
+        _routeGates.clear();
+        _wildcardRouteGates.clear();
+    }
+
+    std::optional<RouteGateRule> findMatchingRouteGate(const std::string& path) const {
+        return findMatchingGateImpl(_routeGates, _wildcardRouteGates, path);
     }
 
     /**
@@ -1112,6 +1168,11 @@ class ServerData {
     }
 
     // ========== Metrics Methods ==========
+
+    /** Built-in monitoring paths (e.g. /status) must not inflate request counters. */
+    static bool isMetricsExcludedPath(const std::string& path) {
+        return path == "/status";
+    }
 
     void recordRequest() const {
         _totalRequests.fetch_add(1, std::memory_order_relaxed);

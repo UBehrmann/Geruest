@@ -446,6 +446,29 @@ void Geruest::clearGatedPages() {
     sendToLogger("Cleared all gated pages");
 }
 
+// ========== Route Gates ==========
+
+void Geruest::addGatedRoute(const std::string& path, RouteHandler handler, RouteGateHandler gate) {
+    if (path.empty() || !handler || !gate) {
+        sendToLoggerError("Failed to add gated route (path/handler/gate invalid): " + path);
+        return;
+    }
+    serverData.addRoute(path, std::move(handler));
+    serverData.addRouteGate(path, std::move(gate));
+    sendToLogger("Added gated route: " + path);
+}
+
+bool Geruest::removeGatedRoute(const std::string& path) {
+    bool removed = serverData.removeRouteGate(path);
+    if (removed) sendToLogger("Removed gated route: " + path);
+    return removed;
+}
+
+void Geruest::clearGatedRoutes() {
+    serverData.clearRouteGates();
+    sendToLogger("Cleared all gated routes");
+}
+
 // ========== Email Configuration ==========
 
 #if GERUEST_HAS_CURL

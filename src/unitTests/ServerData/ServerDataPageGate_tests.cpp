@@ -89,6 +89,18 @@ TEST(ServerDataPageGate, DefaultRedirectHelper) {
     EXPECT_EQ(defaultPageGateRedirect("/"), "/");
 }
 
+TEST(ServerDataPageGate, ResolveRedirectPreservesRequestLanguage) {
+    ServerData sd;
+    sd.setAvailableLanguages({"en", "de"});
+
+    EXPECT_EQ(sd.resolvePageGateRedirect("", "/de/secret"), "/de/");
+    EXPECT_EQ(sd.resolvePageGateRedirect("/login", "/de/admin"), "/de/login");
+    EXPECT_EQ(sd.resolvePageGateRedirect("/login", "/admin"), "/login");
+    EXPECT_EQ(sd.resolvePageGateRedirect("/en/login", "/de/admin"), "/en/login");
+    EXPECT_EQ(sd.resolvePageGateRedirect("https://example.com/login", "/de/admin"),
+              "https://example.com/login");
+}
+
 TEST(ServerDataPageGate, CopyPreservesGates) {
     ServerData sd;
     ASSERT_TRUE(sd.addPageGate("/admin", [](const HTTPRequest&) { return true; }, "/"));

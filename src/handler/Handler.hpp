@@ -17,6 +17,7 @@
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 
@@ -53,8 +54,21 @@ class Handler {
 
     bool _upgraded = false;
 
+    /** False for /status and other monitoring paths excluded from metrics. */
+    bool _countRequestInMetrics = true;
+
     /** Reused for HTTPResponse::serializeTo and similar to reduce per-send allocations. */
     std::string responseScratch_;
+
+    void record4xxMetric() const;
+    void record5xxMetric() const;
+    void recordErrorMetric() const;
+
+    /** Returns denial response when a page gate rejects access; empty when allowed or no gate. */
+    std::optional<HTTPResponse> checkPageGateDenial(const HTTPRequest& request) const;
+
+    /** Returns 403 when a route gate rejects access; empty when allowed or no gate. */
+    std::optional<HTTPResponse> checkRouteGateDenial(const HTTPRequest& request) const;
 
     boost::asio::awaitable<bool> readSocketAsync(std::string_view phase = {});
     boost::asio::awaitable<bool> readSocketAsync(char* bufferToUse, size_t size, std::string_view phase = {});
