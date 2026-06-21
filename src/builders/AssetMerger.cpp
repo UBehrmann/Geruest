@@ -220,10 +220,6 @@ std::string AssetMerger::loadFile(const std::string& filePath) {
     return content;
 }
 
-bool AssetMerger::isExternalUrl(const std::string& url) {
-    return url.find("http://") == 0 || url.find("https://") == 0 || url.find("//") == 0;
-}
-
 std::string AssetMerger::removeCssComments(const std::string& content) {
     std::string result = content;
     size_t start = 0;
@@ -306,68 +302,6 @@ std::string AssetMerger::resolveAssetPath(const std::string& href, const std::st
     
     // Otherwise, assume it's relative to the asset directory
     return _serverRoot + assetDir + cleanHref;
-}
-
-std::vector<AssetReference> AssetMerger::extractCssReferences(const std::string& htmlContent) {
-    std::vector<AssetReference> references;
-    
-    // Pattern to match <link rel="stylesheet" href="...">
-    // Handles various attribute orderings and quote styles
-    std::regex linkPattern(
-        R"(<link\s+[^>]*rel\s*=\s*["']stylesheet["'][^>]*href\s*=\s*["']([^"']+)["'][^>]*>|)"
-        R"(<link\s+[^>]*href\s*=\s*["']([^"']+)["'][^>]*rel\s*=\s*["']stylesheet["'][^>]*>)",
-        std::regex::icase
-    );
-    
-    std::string::const_iterator searchStart(htmlContent.cbegin());
-    std::smatch match;
-    
-    while (std::regex_search(searchStart, htmlContent.cend(), match, linkPattern)) {
-        AssetReference ref;
-        
-        // Get the href from whichever group matched
-        ref.href = match[1].matched ? match[1].str() : match[2].str();
-        ref.startPos = static_cast<size_t>(match.position()) + 
-                       static_cast<size_t>(std::distance(htmlContent.cbegin(), searchStart));
-        ref.endPos = ref.startPos + match.length();
-        ref.isExternal = isExternalUrl(ref.href);
-        
-        references.push_back(ref);
-        searchStart = match.suffix().first;
-    }
-    
-    return references;
-}
-
-std::vector<AssetReference> AssetMerger::extractJsReferences(const std::string& htmlContent) {
-    std::vector<AssetReference> references;
-    
-    // Pattern to match <script src="..."></script> or <script src="..."/>
-    // Only matches external scripts (with src attribute), not inline scripts
-    std::regex scriptPattern(
-        R"(<script\s+[^>]*src\s*=\s*["']([^"']+)["'][^>]*>\s*</script>|)"
-        R"(<script\s+[^>]*src\s*=\s*["']([^"']+)["'][^>]*/>)",
-        std::regex::icase
-    );
-    
-    std::string::const_iterator searchStart(htmlContent.cbegin());
-    std::smatch match;
-    
-    while (std::regex_search(searchStart, htmlContent.cend(), match, scriptPattern)) {
-        AssetReference ref;
-        
-        // Get the src from whichever group matched
-        ref.href = match[1].matched ? match[1].str() : match[2].str();
-        ref.startPos = static_cast<size_t>(match.position()) + 
-                       static_cast<size_t>(std::distance(htmlContent.cbegin(), searchStart));
-        ref.endPos = ref.startPos + match.length();
-        ref.isExternal = isExternalUrl(ref.href);
-        
-        references.push_back(ref);
-        searchStart = match.suffix().first;
-    }
-    
-    return references;
 }
 
 std::string AssetMerger::mergeCssFiles(const std::vector<std::string>& cssFiles) {
@@ -522,55 +456,21 @@ std::string mergeJsFilesResolvingBundleWriteback(AssetMerger& merger,
 }  // namespace
 
 JsMergeDiscovery AssetMerger::discoverJsMergeInputs(const std::string& htmlContent) {
-    JsMergeDiscovery d;
-    d.allJsRefs = extractJsReferences(htmlContent);
-    for (const auto& ref : d.allJsRefs) {
-        if (ref.isExternal) {
-            continue;
-        }
-        if (isExcluded(ref.href)) {
-            continue;
-        }
-        std::string filePath = resolveAssetPath(ref.href, "js");
-        if (fs::exists(filePath)) {
-            d.localJsAbsolutePaths.push_back(std::move(filePath));
-            d.jsHrefs.push_back(ref.href);
-            if (d.jsSubdir.empty()) {
-                size_t lastSlash = ref.href.find_last_of('/');
-                if (lastSlash != std::string::npos) {
-                    d.jsSubdir = ref.href.substr(0, lastSlash);
-                }
-            }
-        }
-    }
-    d.hasJs = d.localJsAbsolutePaths.size() >= 1;
-    return d;
+    const auto refs = AssetHtmlDiscovery::extractJsReferences(htmlContent);
+    return AssetHtmlDiscovery::filterLocalJsRefs(
+        refs,
+        [this](const std::string& href) { return resolveAssetPath(href, "js"); },
+        [](const std::string& path) { return fs::exists(path); },
+        [this](const std::string& href) { return isExcluded(href); });
 }
 
 CssMergeDiscovery AssetMerger::discoverCssMergeInputs(const std::string& htmlContent) {
-    CssMergeDiscovery d;
-    auto cssRefs = extractCssReferences(htmlContent);
-    for (const auto& ref : cssRefs) {
-        if (ref.isExternal) {
-            continue;
-        }
-        if (isExcluded(ref.href)) {
-            continue;
-        }
-        std::string filePath = resolveAssetPath(ref.href, "css");
-        if (fs::exists(filePath)) {
-            d.localCssAbsolutePaths.push_back(std::move(filePath));
-            d.cssHrefs.push_back(ref.href);
-            if (d.cssSubdir.empty()) {
-                size_t lastSlash = ref.href.find_last_of('/');
-                if (lastSlash != std::string::npos) {
-                    d.cssSubdir = ref.href.substr(0, lastSlash);
-                }
-            }
-        }
-    }
-    d.hasCss = d.localCssAbsolutePaths.size() >= 1;
-    return d;
+    const auto refs = AssetHtmlDiscovery::extractCssReferences(htmlContent);
+    return AssetHtmlDiscovery::filterLocalCssRefs(
+        refs,
+        [this](const std::string& href) { return resolveAssetPath(href, "css"); },
+        [](const std::string& path) { return fs::exists(path); },
+        [this](const std::string& href) { return isExcluded(href); });
 }
 
 std::vector<std::string> AssetMerger::predictMergedAssetUrls(const std::string& htmlContent,
@@ -578,13 +478,11 @@ std::vector<std::string> AssetMerger::predictMergedAssetUrls(const std::string& 
     std::vector<std::string> urls;
     const JsMergeDiscovery jsDisc = discoverJsMergeInputs(htmlContent);
     if (jsDisc.hasJs) {
-        urls.push_back(jsDisc.jsSubdir.empty() ? "/" + pageName + ".js"
-                                               : "/" + jsDisc.jsSubdir + "/" + pageName + ".js");
+        urls.push_back(AssetHtmlDiscovery::mergedAssetSitePath(pageName, jsDisc.jsSubdir, ".js"));
     }
     const CssMergeDiscovery cssDisc = discoverCssMergeInputs(htmlContent);
     if (cssDisc.hasCss) {
-        urls.push_back(cssDisc.cssSubdir.empty() ? "/" + pageName + ".css"
-                                                 : "/" + cssDisc.cssSubdir + "/" + pageName + ".css");
+        urls.push_back(AssetHtmlDiscovery::mergedAssetSitePath(pageName, cssDisc.cssSubdir, ".css"));
     }
     return urls;
 }
@@ -675,35 +573,11 @@ MergeResult AssetMerger::processHtml(const std::string& htmlContent, const std::
     result.hasCss = false;
     result.hasJs = false;
     
-    // Extract CSS references
-    auto cssRefs = extractCssReferences(htmlContent);
-    
-    // Collect local CSS files (skip external URLs and excluded files)
-    std::vector<std::string> localCssFiles;
-    for (const auto& ref : cssRefs) {
-        if (!ref.isExternal) {
-            // Check if file is excluded
-            if (isExcluded(ref.href)) {
-                continue;  // Skip excluded files
-            }
-            
-            std::string filePath = resolveAssetPath(ref.href, "css");
-            if (fs::exists(filePath)) {
-                localCssFiles.push_back(filePath);
-                result.cssFiles.push_back(ref.href);
-                
-                // Extract subdirectory from first CSS file (full nested path)
-                if (result.cssSubdir.empty()) {
-                    // href format: "subdir/subdir2/file.css" or "file.css"
-                    // Extract everything before the filename
-                    size_t lastSlash = ref.href.find_last_of('/');
-                    if (lastSlash != std::string::npos) {
-                        result.cssSubdir = ref.href.substr(0, lastSlash);
-                    }
-                }
-            }
-        }
-    }
+    CssMergeDiscovery cssDisc = discoverCssMergeInputs(htmlContent);
+    result.cssFiles = std::move(cssDisc.cssHrefs);
+    result.cssSubdir = std::move(cssDisc.cssSubdir);
+    std::vector<std::string> localCssFiles = std::move(cssDisc.localCssAbsolutePaths);
+    auto cssRefs = std::move(cssDisc.allCssRefs);
 
     JsMergeDiscovery jsDisc = discoverJsMergeInputs(htmlContent);
     result.jsFiles = std::move(jsDisc.jsHrefs);
@@ -795,9 +669,8 @@ MergeResult AssetMerger::processHtml(const std::string& htmlContent, const std::
             
             // First CSS tag: insert merged CSS link, skip all others
             if (!mergedCssInserted) {
-                std::string cssHref = result.cssSubdir.empty() ? 
-                    "/" + pageName + ".css" : 
-                    "/" + result.cssSubdir + "/" + pageName + ".css";
+                const std::string cssHref =
+                    AssetHtmlDiscovery::mergedAssetSitePath(pageName, result.cssSubdir, ".css");
                 std::string mergedCssLink = "<link rel=\"stylesheet\" href=\"" + cssHref + "\">";
                 newHtml += mergedCssLink;
                 mergedCssInserted = true;
@@ -819,9 +692,8 @@ MergeResult AssetMerger::processHtml(const std::string& htmlContent, const std::
             
             // First JS tag: insert merged JS script, skip all others
             if (!mergedJsInserted) {
-                std::string jsHref = result.jsSubdir.empty() ? 
-                    "/" + pageName + ".js" : 
-                    "/" + result.jsSubdir + "/" + pageName + ".js";
+                const std::string jsHref =
+                    AssetHtmlDiscovery::mergedAssetSitePath(pageName, result.jsSubdir, ".js");
                 std::string mergedJsScript = "<script src=\"" + jsHref + "\"></script>";
                 newHtml += mergedJsScript;
                 mergedJsInserted = true;

@@ -95,6 +95,11 @@ set(SERVERDATA_SOURCES
     ../data/WildcardMatch.cpp
 )
 
+set(ASSET_MERGER_SOURCES
+    ../builders/AssetHtmlDiscovery.cpp
+    ../builders/AssetMerger.cpp
+)
+
 # Collect all source files from the main Geruest library
 set(GERUEST_SOURCES
     ../Geruest.cpp
@@ -112,7 +117,7 @@ set(GERUEST_SOURCES
     ${SERVERDATA_SOURCES}
     ../parser/JSONParser.cpp
     ../FileManagement/FileManagement.cpp
-    ../builders/AssetMerger.cpp
+    ${ASSET_MERGER_SOURCES}
     ../builders/ContentBuilder.cpp
     ../builders/HTMLBuilder.cpp
     ../builders/CSSBuilder.cpp
@@ -180,7 +185,7 @@ add_executable(ContentBuilder_Tests
     ContentBuilder/ContentBuilder_tests.cpp 
     ../auth/BasicAuth.cpp
     ${SERVERDATA_SOURCES}
-    ../builders/AssetMerger.cpp
+    ${ASSET_MERGER_SOURCES}
     ../builders/ContentBuilder.cpp
     ../builders/HTMLBuilder.cpp
     ../builders/CSSBuilder.cpp
@@ -216,11 +221,17 @@ target_link_libraries(ConfigLoader_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
 add_executable(AssetMerger_Tests 
     AssetMerger/AssetMerger_tests.cpp 
-    ../builders/AssetMerger.cpp
+    ${ASSET_MERGER_SOURCES}
     ../builders/WebPConverter.cpp
     ../FileManagement/FileManagement.cpp
 )
 target_link_libraries(AssetMerger_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+
+add_executable(AssetHtmlDiscovery_Tests
+    AssetHtmlDiscovery/AssetHtmlDiscovery_tests.cpp
+    ../builders/AssetHtmlDiscovery.cpp
+)
+target_link_libraries(AssetHtmlDiscovery_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
 add_executable(Security_Tests
     Security/Security_tests.cpp
@@ -258,7 +269,7 @@ add_executable(WebSocketServerData_Tests
     ../parser/JSONParser.cpp
     ../auth/BasicAuth.cpp
     ../security/Security.cpp
-    ../builders/AssetMerger.cpp
+    ${ASSET_MERGER_SOURCES}
 )
 target_link_libraries(WebSocketServerData_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
@@ -283,7 +294,7 @@ add_executable(ServerDataMetricsPersistence_Tests
     ../parser/JSONParser.cpp
     ../auth/BasicAuth.cpp
     ../security/Security.cpp
-    ../builders/AssetMerger.cpp
+    ${ASSET_MERGER_SOURCES}
 )
 target_link_libraries(ServerDataMetricsPersistence_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
@@ -293,7 +304,7 @@ add_executable(ServerDataRedirectLanguage_Tests
     ../parser/JSONParser.cpp
     ../auth/BasicAuth.cpp
     ../security/Security.cpp
-    ../builders/AssetMerger.cpp
+    ${ASSET_MERGER_SOURCES}
 )
 target_link_libraries(ServerDataRedirectLanguage_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
@@ -305,7 +316,7 @@ add_executable(StaticFileResolver_Tests
     ../parser/JSONParser.cpp
     ../auth/BasicAuth.cpp
     ../security/Security.cpp
-    ../builders/AssetMerger.cpp
+    ${ASSET_MERGER_SOURCES}
 )
 target_link_libraries(StaticFileResolver_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
@@ -316,7 +327,7 @@ add_executable(ServerDataPageGate_Tests
     ../parser/JSONParser.cpp
     ../auth/BasicAuth.cpp
     ../security/Security.cpp
-    ../builders/AssetMerger.cpp
+    ${ASSET_MERGER_SOURCES}
 )
 target_link_libraries(ServerDataPageGate_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
@@ -328,7 +339,7 @@ add_executable(ServerDataRouteGate_Tests
     ../parser/JSONParser.cpp
     ../auth/BasicAuth.cpp
     ../security/Security.cpp
-    ../builders/AssetMerger.cpp
+    ${ASSET_MERGER_SOURCES}
 )
 target_link_libraries(ServerDataRouteGate_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
@@ -339,7 +350,7 @@ add_executable(ServerDataMergedAsset_Tests
     ../parser/JSONParser.cpp
     ../auth/BasicAuth.cpp
     ../security/Security.cpp
-    ../builders/AssetMerger.cpp
+    ${ASSET_MERGER_SOURCES}
 )
 target_link_libraries(ServerDataMergedAsset_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
@@ -406,6 +417,7 @@ gtest_discover_tests(JSObfuscator_Tests)
 gtest_discover_tests(BasicAuth_Tests)
 gtest_discover_tests(ConfigLoader_Tests)
 gtest_discover_tests(AssetMerger_Tests)
+gtest_discover_tests(AssetHtmlDiscovery_Tests)
 gtest_discover_tests(Security_Tests)
 gtest_discover_tests(WebSocketCodec_Tests)
 gtest_discover_tests(WebSocketHandshake_Tests)

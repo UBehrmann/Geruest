@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <filesystem>
+#include <regex>
 
 namespace geruest {
 
@@ -410,31 +411,30 @@ void HtmlBuilder::processAssetMerging(const std::string& pageName) {
         const DevAssetCache& cache = _serverData.devAssetCache();
 
         if (result.hasCss && !result.mergedCss.empty()) {
-            std::string cssPath = result.cssSubdir.empty() ?
-                "/assets/css/" + pageName + ".css" :
-                "/assets/css/" + result.cssSubdir + "/" + pageName + ".css";
+            const std::string cssPath =
+                "/assets/css/" +
+                AssetHtmlDiscovery::mergedAssetBundleRelPath(pageName, result.cssSubdir, ".css");
             cache.putMergedAsset(cssPath, result.mergedCss);
         }
 
         if (result.hasJs && !result.mergedJs.empty()) {
-            std::string jsPath = result.jsSubdir.empty() ?
-                "/assets/js/" + pageName + ".js" :
-                "/assets/js/" + result.jsSubdir + "/" + pageName + ".js";
+            const std::string jsPath =
+                "/assets/js/" +
+                AssetHtmlDiscovery::mergedAssetBundleRelPath(pageName, result.jsSubdir, ".js");
             cache.putMergedAsset(jsPath, result.mergedJs);
         }
     } else {
-        // Production mode: Save to disk
         if (result.hasCss && !result.mergedCss.empty()) {
-            std::string cssPath = result.cssSubdir.empty() ?
-                root + "/assets/css/" + pageName + ".css" :
-                root + "/assets/css/" + result.cssSubdir + "/" + pageName + ".css";
+            const std::string cssPath =
+                root + "/assets/css/" +
+                AssetHtmlDiscovery::mergedAssetBundleRelPath(pageName, result.cssSubdir, ".css");
             FileManagement::saveFile(cssPath, result.mergedCss);
         }
-        
+
         if (result.hasJs && !result.mergedJs.empty()) {
-            std::string jsPath = result.jsSubdir.empty() ?
-                root + "/assets/js/" + pageName + ".js" :
-                root + "/assets/js/" + result.jsSubdir + "/" + pageName + ".js";
+            const std::string jsPath =
+                root + "/assets/js/" +
+                AssetHtmlDiscovery::mergedAssetBundleRelPath(pageName, result.jsSubdir, ".js");
             FileManagement::saveFile(jsPath, result.mergedJs);
         }
     }
