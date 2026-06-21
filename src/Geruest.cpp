@@ -119,16 +119,6 @@ void Geruest::addRoute(const std::string& path, RouteHandler handler, AsyncRoute
     sendToLogger("Added route with async gate: " + path);
 }
 
-void Geruest::addRoute(const std::string& path, AsyncRouteHandler handler, RouteGateHandler gate) {
-    if (path.empty() || !handler || !gate) {
-        sendToLoggerError("Failed to add async route with gate (path/handler/gate invalid): " + path);
-        return;
-    }
-    serverData.addRoute(path, std::move(handler));
-    serverData.addRouteGate(path, std::move(gate));
-    sendToLogger("Added async route with gate: " + path);
-}
-
 void Geruest::addRoute(const std::string& path, AsyncRouteHandler handler, AsyncRouteGateHandler gate) {
     if (path.empty() || !handler || !gate) {
         sendToLoggerError("Failed to add async route with async gate (path/handler/gate invalid): " + path);

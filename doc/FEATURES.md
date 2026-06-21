@@ -257,8 +257,6 @@ server.addGatedPage("/admin", checkSessionAsync, "/login");  // async gate overl
 
 server.addRoute("/v1/secret", handleSecret, checkSession);
 
-server.addRoute("/v1/profile", handleProfileAsync, checkSession);
-
 server.addRoute("/v1/profile", handleProfileAsync, checkSessionAsync);
 ```
 

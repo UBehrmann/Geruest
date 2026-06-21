@@ -10,6 +10,8 @@
 #ifndef GERUEST_GERUEST_HPP
 #define GERUEST_GERUEST_HPP
 
+#include "geruest/BuildConfig.hpp"
+
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>  // For close
@@ -70,14 +72,14 @@ class Geruest {
      * @brief Register an HTTP route handler (sync or async), optionally with an access gate.
      * @param path Route path (supports '*' wildcard)
      * @param handler Sync handler returning HTTPResponse, or async coroutine handler (AsyncResponse)
-     * @param gate Optional gate returning true to allow access, false for 403 Forbidden (sync or async)
+     * @param gate Optional gate returning true to allow access, false for 403 Forbidden.
+     *             Sync routes: sync or async gate. Async routes: async gate only (`AsyncRouteGateHandler`).
      * @note When sync and async handlers share the same path pattern, the async handler wins at dispatch.
      */
     void addRoute(const std::string& path, RouteHandler handler);
     void addRoute(const std::string& path, AsyncRouteHandler handler);
     void addRoute(const std::string& path, RouteHandler handler, RouteGateHandler gate);
     void addRoute(const std::string& path, RouteHandler handler, AsyncRouteGateHandler gate);
-    void addRoute(const std::string& path, AsyncRouteHandler handler, RouteGateHandler gate);
     void addRoute(const std::string& path, AsyncRouteHandler handler, AsyncRouteGateHandler gate);
     void addRouteWebSocket(const std::string& path, WebSocketHandler handler);
     void addRouteWebSocket(const std::string& path, WebSocketRoute route);

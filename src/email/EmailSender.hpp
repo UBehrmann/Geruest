@@ -10,6 +10,8 @@
 #ifndef GERUEST_EMAILSENDER_HPP
 #define GERUEST_EMAILSENDER_HPP
 
+#include "geruest/BuildConfig.hpp"
+
 #if GERUEST_HAS_CURL
 
 #include <atomic>

@@ -81,6 +81,21 @@ else()
     add_compile_definitions(GERUEST_HAS_SQLITE=0)
 endif()
 
+foreach(_geruest_flag CURL LIBPQ SQLITE)
+    if(GERUEST_HAS_${_geruest_flag})
+        set(GERUEST_HAS_${_geruest_flag}_NUM 1)
+    else()
+        set(GERUEST_HAS_${_geruest_flag}_NUM 0)
+    endif()
+endforeach()
+unset(_geruest_flag)
+set(GERUEST_HAS_WEBP_NUM 0)
+
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/../geruest/BuildConfig.hpp.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/geruest/BuildConfig.hpp"
+)
+
 # Linux/Unix settings
 set(PLATFORM_LIBS pthread Boost::system)
 
@@ -128,6 +143,7 @@ set(GERUEST_SOURCES
     ../builders/JSObfuscatorScope.cpp
     ../builders/WebPConverter.cpp
     ../handler/Handler.cpp
+    ../handler/SyncGateExecutor.cpp
     ../handler/HttpFraming.cpp
     ../handler/ResponseWriter.cpp
     ../handler/StaticFileResolver.cpp
@@ -364,6 +380,16 @@ add_executable(ServerDataRouteGate_Tests
 )
 target_link_libraries(ServerDataRouteGate_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
+add_executable(GateEvaluation_Tests
+    GateEvaluation/GateEvaluation_tests.cpp
+    ../handler/SyncGateExecutor.cpp
+    ../data/HTTPRequest.cpp
+    ../data/HTTPResponse.cpp
+    ../parser/JSONParser.cpp
+    ../security/Security.cpp
+)
+target_link_libraries(GateEvaluation_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+
 add_executable(RouteRegistry_Tests
     RouteRegistry/RouteRegistry_tests.cpp
     ${SERVERDATA_SOURCES}
@@ -463,6 +489,7 @@ gtest_discover_tests(ServerDataRedirectLanguage_Tests)
 gtest_discover_tests(StaticFileResolver_Tests)
 gtest_discover_tests(ServerDataPageGate_Tests)
 gtest_discover_tests(ServerDataRouteGate_Tests)
+gtest_discover_tests(GateEvaluation_Tests)
 gtest_discover_tests(RouteRegistry_Tests)
 gtest_discover_tests(ServerDataMergedAsset_Tests)
 gtest_discover_tests(GeruestLifecycle_Tests)
@@ -494,13 +521,13 @@ exit $rc
 ]=])
     add_custom_target(run_tests
         COMMAND bash "${CMAKE_CURRENT_BINARY_DIR}/run_tests_pg.sh" "${CMAKE_CTEST_COMMAND}"
-        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests StaticFileResolver_Tests ServerDataPageGate_Tests ServerDataRouteGate_Tests RouteRegistry_Tests GeruestLifecycle_Tests DatabasePostgres_Tests
+        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests StaticFileResolver_Tests ServerDataPageGate_Tests ServerDataRouteGate_Tests GateEvaluation_Tests RouteRegistry_Tests GeruestLifecycle_Tests DatabasePostgres_Tests
         COMMENT "Running all unit tests via CTest (with PostgreSQL container)"
     )
 else()
     add_custom_target(run_tests
         COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests StaticFileResolver_Tests ServerDataPageGate_Tests ServerDataRouteGate_Tests RouteRegistry_Tests GeruestLifecycle_Tests
+        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests StaticFileResolver_Tests ServerDataPageGate_Tests ServerDataRouteGate_Tests GateEvaluation_Tests RouteRegistry_Tests GeruestLifecycle_Tests
         COMMENT "Running all unit tests via CTest"
     )
 endif()

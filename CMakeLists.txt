@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.11)
 
 # Define the project name and version
-project(GeruestLibrary VERSION 0.12.8 LANGUAGES CXX)
+project(GeruestLibrary VERSION 0.12.9 LANGUAGES CXX)
 
 # Configure version header
 configure_file(
@@ -97,6 +97,20 @@ else()
     endif()
 endif()
 
+foreach(_geruest_flag CURL LIBPQ SQLITE WEBP)
+    if(GERUEST_HAS_${_geruest_flag})
+        set(GERUEST_HAS_${_geruest_flag}_NUM 1)
+    else()
+        set(GERUEST_HAS_${_geruest_flag}_NUM 0)
+    endif()
+endforeach()
+unset(_geruest_flag)
+
+configure_file(
+    "${PROJECT_SOURCE_DIR}/src/geruest/BuildConfig.hpp.in"
+    "${PROJECT_BINARY_DIR}/include/geruest/BuildConfig.hpp"
+)
+
 # Create the static library
 add_library(Geruest STATIC
     src/Geruest.cpp
@@ -133,6 +147,7 @@ add_library(Geruest STATIC
     src/email/EmailSender.cpp
     src/FileManagement/FileManagement.cpp
     src/handler/Handler.cpp
+    src/handler/SyncGateExecutor.cpp
     src/handler/HttpFraming.cpp
     src/handler/ResponseWriter.cpp
     src/handler/StaticFileResolver.cpp
@@ -161,23 +176,14 @@ target_link_libraries(Geruest PUBLIC Boost::system)
 # Link CURL library if found (PUBLIC because EmailSender needs it)
 if(GERUEST_HAS_CURL)
     target_link_libraries(Geruest PUBLIC CURL::libcurl)
-    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_CURL=1)
-else()
-    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_CURL=0)
 endif()
 
 if(GERUEST_HAS_LIBPQ)
     target_link_libraries(Geruest PUBLIC PostgreSQL::PostgreSQL)
-    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_LIBPQ=1)
-else()
-    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_LIBPQ=0)
 endif()
 
 if(GERUEST_HAS_SQLITE)
     target_link_libraries(Geruest PUBLIC SQLite::SQLite3)
-    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_SQLITE=1)
-else()
-    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_SQLITE=0)
 endif()
 
 # Link WebP library if found (PRIVATE to avoid leaking to consumers)
@@ -191,9 +197,17 @@ if(GERUEST_HAS_WEBP)
         target_link_libraries(Geruest PRIVATE ${LIBWEBP_LIBRARIES})
         target_link_directories(Geruest PRIVATE ${LIBWEBP_LIBRARY_DIRS})
     endif()
-    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_WEBP=1)
-else()
-    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_WEBP=0)
+endif()
+
+set(GERUEST_CMAKE_FIND_DEPS "find_dependency(Threads REQUIRED)\nfind_dependency(Boost 1.75 REQUIRED COMPONENTS system)\n")
+if(GERUEST_HAS_CURL)
+    string(APPEND GERUEST_CMAKE_FIND_DEPS "find_dependency(CURL REQUIRED)\n")
+endif()
+if(GERUEST_HAS_LIBPQ)
+    string(APPEND GERUEST_CMAKE_FIND_DEPS "find_dependency(PostgreSQL REQUIRED)\n")
+endif()
+if(GERUEST_HAS_SQLITE)
+    string(APPEND GERUEST_CMAKE_FIND_DEPS "find_dependency(SQLite3 REQUIRED)\n")
 endif()
 
 # -------------------
@@ -216,7 +230,9 @@ install(DIRECTORY src/
 )
 
 # Install generated version header
-install(FILES "${PROJECT_BINARY_DIR}/include/geruest/Version.hpp"
+install(FILES
+    "${PROJECT_BINARY_DIR}/include/geruest/Version.hpp"
+    "${PROJECT_BINARY_DIR}/include/geruest/BuildConfig.hpp"
     DESTINATION include/geruest
 )
 

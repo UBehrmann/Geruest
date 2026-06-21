@@ -7,10 +7,13 @@
 #define GERUEST_GATEEVALUATION_HPP
 
 #include <boost/asio/awaitable.hpp>
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/use_awaitable.hpp>
 #include <functional>
 #include <string>
 #include <string_view>
 
+#include "SyncGateExecutor.hpp"
 #include "data/HTTPRequest.hpp"
 #include "data/ServerTypes.hpp"
 
@@ -26,7 +29,11 @@ boost::asio::awaitable<bool> evaluateResolvedGateAsync(
         if (gate.async) {
             allowed = co_await gate.asyncHandler(request);
         } else {
-            allowed = gate.syncHandler(request);
+            auto handler = gate.syncHandler;
+            allowed = co_await boost::asio::co_spawn(
+                syncGateThreadPool().get_executor(),
+                [handler, &request]() -> boost::asio::awaitable<bool> { co_return handler(request); },
+                boost::asio::use_awaitable);
         }
     } catch (const std::exception& e) {
         logError(std::string("Exception in ") + std::string(gateKind) + " gate handler: " + e.what());

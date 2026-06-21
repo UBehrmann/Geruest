@@ -10,6 +10,7 @@
  */
 
 #include "WebPConverter.hpp"
+#include "geruest/BuildConfig.hpp"
 #include "data/DevAssetCache.hpp"
 #include "FileManagement/FileManagement.hpp"
 

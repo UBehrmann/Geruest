@@ -36,12 +36,31 @@ server->addRoute("/v1/admin", handleAdmin, [](const HTTPRequest& req) {
     return req.getHeader("authorization") == "Bearer mytoken";
 });
 
-// Async route + sync gate
-server->addRoute("/v1/profile", handleProfileAsync, checkSession);
-
-// Async route + async gate (DB/session lookup in gate)
+// Async route + async gate (required for DB/session lookup in gate)
 server->addRoute("/v1/profile", handleProfileAsync, checkSessionAsync);
 ```
+
+## Async routes require async gates
+
+Async route handlers run on **io_context worker threads** (connection coroutines). There is **no** `addRoute(AsyncRouteHandler, RouteGateHandler)` overload — sync gates on async routes were removed because blocking the worker thread (DB, mutex, `future::get()`) can stall the whole server under load.
+
+Use **`AsyncRouteGateHandler`** and `co_await` for database or session checks:
+
+```cpp
+server->addRoute("/v1/profile", handleProfileAsync, [](const HTTPRequest& req) -> AsyncRouteGateAccess {
+    auto db = req.database();
+    if (!db) {
+        co_return false;
+    }
+    auto rows = co_await db->queryAsync("SELECT 1 FROM sessions WHERE token = $1",
+                                        {req.getHeader("authorization")});
+    co_return !rows.rows.empty();
+});
+```
+
+Sync routes may still use sync gates for trivial header checks. Offloading sync gate work to a dedicated pool does **not** apply to app code that blocks inside the route handler itself — use async handlers and `co_await` for I/O there too.
+
+Wrapping a DB call in an app-side `thread_pool` and calling `.get()` from an async route or gate **still blocks** the connection coroutine; use `co_await` on framework async APIs instead.
 
 ## API
 
@@ -79,7 +98,6 @@ void addRoute(const std::string& path, RouteHandler handler);
 void addRoute(const std::string& path, AsyncRouteHandler handler);
 void addRoute(const std::string& path, RouteHandler handler, RouteGateHandler gate);
 void addRoute(const std::string& path, RouteHandler handler, AsyncRouteGateHandler gate);
-void addRoute(const std::string& path, AsyncRouteHandler handler, RouteGateHandler gate);
 void addRoute(const std::string& path, AsyncRouteHandler handler, AsyncRouteGateHandler gate);
 bool removeGatedRoute(const std::string& path);
 void clearGatedRoutes();
@@ -94,7 +112,9 @@ Omit the third argument for an ungated route. Handler and gate types are resolve
 - Return `true` → route handler runs
 - Return `false` → **403 Forbidden** (handler is not called)
 
-Sync gates must not block on I/O (no `co_await`). Use `AsyncRouteGateHandler` for database or session lookups.
+Sync gates are for fast, non-blocking checks (headers, tokens in memory). Use `AsyncRouteGateHandler` for database or session lookups. Sync gates run on a dedicated gate thread pool so they do not block io_context workers, but they still cannot `co_await` — use the async gate overload for that.
+
+**Worker threads:** `setWorkerThreadCount` / `WORKER_THREADS` is the number of io_context threads handling connections. Prefer async gates (and async route handlers) for I/O instead of raising the worker count to absorb blocking work.
 
 ## Path matching
 
@@ -149,7 +169,8 @@ Both can apply to the same static page. Basic Auth runs first (`401` on failure)
 - Gate runs before the route handler on every matching request (sync and async)
 - Handler exceptions are treated as denial (`403`)
 - `removeGatedRoute` removes only the gate; the route handler stays registered
-- Sync route gates block the connection coroutine — keep them fast or use `AsyncRouteGateHandler`
+- Sync route gates run on a gate thread pool (not the connection coroutine); keep them fast or use `AsyncRouteGateHandler` for DB/session work
+- Async routes accept only `AsyncRouteGateHandler` (no sync gate overload)
 
 ## See Also
 
