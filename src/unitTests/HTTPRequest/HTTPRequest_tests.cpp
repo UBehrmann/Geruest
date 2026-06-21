@@ -157,3 +157,50 @@ TEST(HTTPRequestTest, SplitHttpHeadersCr) {
 TEST(HTTPRequestTest, SplitHttpHeadersNotFound) {
     EXPECT_FALSE(splitHttpHeaders("GET / HTTP/1.1\r\nHost: x").has_value());
 }
+
+TEST(HTTPRequestTest, ParseHeaderPreflight) {
+    const std::string raw =
+        "POST / HTTP/1.1\r\n"
+        "Expect: 100-continue\r\n"
+        "Content-Length: 42\r\n"
+        "Transfer-Encoding: chunked\r\n"
+        "\r\n";
+    const auto split = splitHttpHeaders(raw);
+    ASSERT_TRUE(split.has_value());
+    const HeaderPreflight preflight = parseHeaderPreflight(std::string_view(raw.data(), split->headerSectionEnd));
+    EXPECT_EQ(preflight.expect, "100-continue");
+    EXPECT_EQ(preflight.contentLength, "42");
+    EXPECT_EQ(preflight.transferEncoding, "chunked");
+}
+
+TEST(HTTPRequestTest, HttpConnectionHeaderHasChunkedToken) {
+    EXPECT_TRUE(httpConnectionHeaderHasToken("chunked", "chunked"));
+    EXPECT_TRUE(httpConnectionHeaderHasToken("gzip, chunked", "chunked"));
+    EXPECT_FALSE(httpConnectionHeaderHasToken("gzip", "chunked"));
+}
+
+TEST(HTTPRequestTest, ParseContentLengthBytes) {
+    size_t bytes = 0;
+    EXPECT_TRUE(parseContentLengthBytes("0", &bytes));
+    EXPECT_EQ(bytes, 0u);
+    EXPECT_TRUE(parseContentLengthBytes("12345", &bytes));
+    EXPECT_EQ(bytes, 12345u);
+    EXPECT_FALSE(parseContentLengthBytes("", &bytes));
+    EXPECT_FALSE(parseContentLengthBytes("12x", &bytes));
+}
+
+TEST(HTTPRequestTest, FindChunkedBodyEndZeroChunk) {
+    const std::string raw = "POST / HTTP/1.1\r\nHost: x\r\n\r\n0\r\n\r\n";
+    const auto split = splitHttpHeaders(raw);
+    ASSERT_TRUE(split.has_value());
+    const size_t end = findChunkedBodyEnd(raw, split->headerSectionEnd);
+    EXPECT_EQ(end, raw.size());
+}
+
+TEST(HTTPRequestTest, FindChunkedBodyEndOneChunk) {
+    const std::string raw = "POST / HTTP/1.1\r\nHost: x\r\n\r\n5\r\nhello\r\n0\r\n\r\n";
+    const auto split = splitHttpHeaders(raw);
+    ASSERT_TRUE(split.has_value());
+    const size_t end = findChunkedBodyEnd(raw, split->headerSectionEnd);
+    EXPECT_EQ(end, raw.size());
+}

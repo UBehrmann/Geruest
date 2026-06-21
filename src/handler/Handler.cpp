@@ -15,7 +15,6 @@
 #include <boost/asio/read.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/asio/write.hpp>
-#include <charconv>
 #include <chrono>
 #include <climits>
 #include <cstddef>
@@ -26,11 +25,9 @@
 #include <fstream>
 #include <atomic>
 #include <memory>
-#include <mutex>
 #include <sstream>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
 #ifdef __linux__
 #include <fcntl.h>
@@ -39,107 +36,19 @@
 #include <unistd.h>
 #endif
 
+#include "TextResponseCache.hpp"
 #include "builders/AssetMerger.hpp"
 #include "builders/ContentBuilder.hpp"
 #include "builders/HTMLBuilder.hpp"
 #include "builders/WebPConverter.hpp"
 #include "data/HTTPResponse.hpp"
-#include "data/MethodNotAllowed.hpp"
 #include "security/Security.hpp"
 #include "server/WebSocket.hpp"
 
 namespace {
 
-constexpr size_t kMaxHttpHeaderBytes = 65536;
-constexpr size_t kMaxHttpBodyBytes = 16 * 1024 * 1024;
-
-struct TextResponseCacheEntry {
-    std::shared_ptr<const std::string> payload;
-    std::filesystem::file_time_type mtime{};
-    bool hasMtime = false;
-    size_t sizeBytes = 0;
-};
-
-std::mutex gTextResponseCacheMutex;
-std::unordered_map<std::string, TextResponseCacheEntry> gTextResponseCache;
-size_t gTextResponseCacheBytes = 0;
 std::atomic<uint64_t> gSendfileHitCount{0};
 std::atomic<uint64_t> gSendfileFallbackCount{0};
-
-[[nodiscard]] std::string textResponseCacheKey(const std::string& contentType, const std::string& contentPath) {
-    return contentType + "|" + contentPath;
-}
-
-[[nodiscard]] std::shared_ptr<const std::string> lookupTextResponseCache(const std::string& key,
-                                                                          bool devMode,
-                                                                          size_t maxEntryBytes,
-                                                                          size_t maxTotalBytes) {
-    if (devMode || maxEntryBytes == 0 || maxTotalBytes == 0) {
-        return {};
-    }
-    std::lock_guard<std::mutex> lock(gTextResponseCacheMutex);
-    auto it = gTextResponseCache.find(key);
-    if (it == gTextResponseCache.end()) {
-        return {};
-    }
-    return it->second.payload;
-}
-
-void storeTextResponseCache(const std::string& key, const std::string& contentPath, const std::string& payload,
-                            bool devMode, size_t maxEntryBytes, size_t maxTotalBytes) {
-    if (devMode || payload.empty() || maxEntryBytes == 0 || maxTotalBytes == 0 || payload.size() > maxEntryBytes) {
-        return;
-    }
-
-    TextResponseCacheEntry entry;
-    entry.payload = std::make_shared<const std::string>(payload);
-    entry.sizeBytes = payload.size();
-    std::error_code ec;
-    entry.mtime = std::filesystem::last_write_time(contentPath, ec);
-    entry.hasMtime = !ec;
-
-    std::lock_guard<std::mutex> lock(gTextResponseCacheMutex);
-    auto existing = gTextResponseCache.find(key);
-    if (existing != gTextResponseCache.end()) {
-        gTextResponseCacheBytes -= existing->second.sizeBytes;
-        gTextResponseCache.erase(existing);
-    }
-    while (gTextResponseCacheBytes + entry.sizeBytes > maxTotalBytes && !gTextResponseCache.empty()) {
-        auto victim = gTextResponseCache.begin();
-        gTextResponseCacheBytes -= victim->second.sizeBytes;
-        gTextResponseCache.erase(victim);
-    }
-    gTextResponseCacheBytes += entry.sizeBytes;
-    gTextResponseCache.emplace(key, std::move(entry));
-}
-
-[[nodiscard]] inline unsigned char asciiLower(unsigned char c) noexcept {
-    return (c >= 'A' && c <= 'Z') ? static_cast<unsigned char>(c + ('a' - 'A')) : c;
-}
-
-[[nodiscard]] bool iequalsAsciiNoSpace(std::string_view a, std::string_view b) {
-    size_t i = 0;
-    size_t j = 0;
-    while (i < a.size() && j < b.size()) {
-        while (i < a.size() && std::isspace(static_cast<unsigned char>(a[i]))) ++i;
-        while (j < b.size() && std::isspace(static_cast<unsigned char>(b[j]))) ++j;
-        if (i >= a.size() || j >= b.size()) break;
-        if (asciiLower(static_cast<unsigned char>(a[i])) != asciiLower(static_cast<unsigned char>(b[j]))) {
-            return false;
-        }
-        ++i;
-        ++j;
-    }
-    while (i < a.size() && std::isspace(static_cast<unsigned char>(a[i]))) ++i;
-    while (j < b.size() && std::isspace(static_cast<unsigned char>(b[j]))) ++j;
-    return i == a.size() && j == b.size();
-}
-
-[[nodiscard]] std::string_view trimSv(std::string_view s) {
-    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) s.remove_prefix(1);
-    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.remove_suffix(1);
-    return s;
-}
 
 [[nodiscard]] bool isExpectedKeepAliveTeardown(const boost::system::error_code& ec, std::string_view phase) {
     if (phase != "waiting_for_request") {
@@ -175,179 +84,6 @@ void storeTextResponseCache(const std::string& key, const std::string& contentPa
     return nullptr;
 }
 
-struct HeaderPreflight {
-    std::string_view expect;
-    std::string_view contentLength;
-    std::string_view transferEncoding;
-};
-
-[[nodiscard]] HeaderPreflight parseHeaderPreflight(std::string_view headerPrefix) {
-    HeaderPreflight out{};
-    const size_t firstNl = headerPrefix.find('\n');
-    if (firstNl == std::string_view::npos) {
-        return out;
-    }
-    std::string_view rest = headerPrefix.substr(firstNl + 1);
-    while (!rest.empty()) {
-        const size_t lineEnd = rest.find('\n');
-        std::string_view line = rest.substr(0, lineEnd);
-        if (lineEnd == std::string_view::npos) {
-            rest = {};
-        } else {
-            rest.remove_prefix(lineEnd + 1);
-        }
-        if (!line.empty() && line.back() == '\r') {
-            line.remove_suffix(1);
-        }
-        const size_t colon = line.find(':');
-        if (colon == std::string_view::npos) {
-            continue;
-        }
-        const std::string_view key = line.substr(0, colon);
-        const std::string_view value = trimSv(line.substr(colon + 1));
-        if (out.expect.empty() && iequalsAsciiNoSpace(key, "expect")) {
-            out.expect = value;
-        } else if (out.contentLength.empty() && iequalsAsciiNoSpace(key, "content-length")) {
-            out.contentLength = value;
-        } else if (out.transferEncoding.empty() && iequalsAsciiNoSpace(key, "transfer-encoding")) {
-            out.transferEncoding = value;
-        }
-        if (!out.expect.empty() && !out.contentLength.empty() && !out.transferEncoding.empty()) {
-            break;
-        }
-    }
-    return out;
-}
-
-[[nodiscard]] bool containsChunkedToken(std::string_view v) {
-    size_t i = 0;
-    while (i < v.size()) {
-        while (i < v.size() && (v[i] == ' ' || v[i] == '\t' || v[i] == ',')) ++i;
-        size_t j = i;
-        while (j < v.size() && v[j] != ',') ++j;
-        std::string_view token = trimSv(v.substr(i, j - i));
-        if (iequalsAsciiNoSpace(token, "chunked")) {
-            return true;
-        }
-        i = j;
-    }
-    return false;
-}
-
-[[nodiscard]] size_t findChunkedBodyEnd(const std::string& raw, size_t bodyStart) {
-    size_t pos = bodyStart;
-    while (true) {
-        const size_t lineEnd = raw.find("\r\n", pos);
-        if (lineEnd == std::string::npos) {
-            return std::string::npos;
-        }
-
-        std::string_view sizeLine(raw.data() + pos, lineEnd - pos);
-        const size_t semi = sizeLine.find(';');
-        if (semi != std::string_view::npos) {
-            sizeLine = sizeLine.substr(0, semi);
-        }
-        sizeLine = trimSv(sizeLine);
-        if (sizeLine.empty()) {
-            return std::string::npos;
-        }
-
-        unsigned long long chunkSize = 0;
-        const char* begin = sizeLine.data();
-        const char* end = sizeLine.data() + sizeLine.size();
-        const std::from_chars_result parsed = std::from_chars(begin, end, chunkSize, 16);
-        if (parsed.ec != std::errc() || parsed.ptr != end) {
-            return std::string::npos;
-        }
-
-        pos = lineEnd + 2;
-        if (chunkSize == 0) {
-            // No trailers case: "0\\r\\n\\r\\n" => immediate CRLF terminator.
-            if (pos + 2 <= raw.size() && raw.compare(pos, 2, "\r\n") == 0) {
-                return pos + 2;
-            }
-            const size_t trailerEnd = raw.find("\r\n\r\n", pos);
-            if (trailerEnd == std::string::npos) {
-                return std::string::npos;
-            }
-            return trailerEnd + 4;
-        }
-
-        const size_t chunkDataEnd = pos + static_cast<size_t>(chunkSize);
-        if (chunkDataEnd + 2 > raw.size()) {
-            return std::string::npos;
-        }
-        if (raw.compare(chunkDataEnd, 2, "\r\n") != 0) {
-            return std::string::npos;
-        }
-        pos = chunkDataEnd + 2;
-    }
-}
-
-bool parseContentLengthBytes(std::string_view cl, size_t* out) {
-    if (cl.empty()) {
-        return false;
-    }
-    unsigned long long v = 0;
-    const char* begin = cl.data();
-    const char* end = cl.data() + cl.size();
-    const std::from_chars_result result = std::from_chars(begin, end, v);
-    if (result.ec != std::errc() || result.ptr != end) {
-        return false;
-    }
-    *out = static_cast<size_t>(v);
-    return true;
-}
-
-/** Extension -> site-relative root (without html/htm; those use htmlMount in buildPath). */
-const std::unordered_map<std::string, std::string>& handlerAssetRootByExtension() {
-    static const std::unordered_map<std::string, std::string> m = {
-        {"css", "/assets/css"},
-        {"js", "/assets/js"},
-        {"jpg", "/assets/images"},
-        {"jpeg", "/assets/images"},
-        {"png", "/assets/images"},
-        {"gif", "/assets/images"},
-        {"svg", "/assets/images"},
-        {"ico", "/assets/images"},
-        {"webp", "/assets/images"},
-        {"JSON", "/assets/JSONs"},
-        {"pdf", "/assets/docs"},
-        {"zip", "/assets/docs"},
-        {"mp3", "/assets/audio"},
-        {"mp4", "/assets/video"},
-        {"xml", "/assets/docs"},
-        {"csv", "/assets/docs"},
-        {"txt", "/assets/docs"},
-    };
-    return m;
-}
-
-const std::unordered_map<std::string, std::string>& handlerContentTypeByExtension() {
-    static const std::unordered_map<std::string, std::string> m = {
-        {"html", "text/html"},
-        {"htm", "text/html"},
-        {"css", "text/css"},
-        {"js", "text/javascript"},
-        {"jpg", "image/jpeg"},
-        {"jpeg", "image/jpeg"},
-        {"png", "image/png"},
-        {"gif", "image/gif"},
-        {"webp", "image/webp"},
-        {"svg", "image/svg+xml"},
-        {"ico", "image/x-icon"},
-        {"JSON", "application/JSON"},
-        {"pdf", "application/pdf"},
-        {"zip", "application/zip"},
-        {"mp3", "audio/mpeg"},
-        {"mp4", "video/mp4"},
-        {"xml", "application/xml"},
-        {"csv", "text/csv"},
-        {"txt", "text/plain"},
-    };
-    return m;
-}
-
 }  // namespace
 
 namespace geruest {
@@ -355,7 +91,12 @@ namespace geruest {
 unsigned Handler::clientCount = 0;
 
 Handler::Handler(boost::asio::ip::tcp::socket& socket, std::string clientIP, const ServerData& serverDataRef)
-    : clientSocket(socket), serverData(serverDataRef), IP(std::move(clientIP)), buffer(std::make_unique<char[]>(BUFFER_SIZE)) {
+    : clientSocket(socket),
+      serverData(serverDataRef),
+      IP(std::move(clientIP)),
+      buffer(std::make_unique<char[]>(BUFFER_SIZE)),
+      fileResolver_(serverDataRef, [this](const std::string& msg) { sendToLoggerError(msg); }),
+      routeDispatcher_(serverDataRef, fileResolver_) {
     serverData.incrementActiveHandlers();
 }
 
@@ -496,53 +237,6 @@ boost::asio::awaitable<std::optional<HTTPResponse>> Handler::checkRouteGateDenia
     }
 
     co_return responseForbidden(&request);
-}
-
-boost::asio::awaitable<void> Handler::dispatchRouteAndSendAsync(HTTPRequest* request, const std::string& /*path*/,
-                                                                boost::asio::awaitable<HTTPResponse> produced,
-                                                                std::string_view handlerLabel) {
-    const std::string handlerKind(handlerLabel);
-    const char* failLog = nullptr;
-    try {
-        HTTPResponse response = co_await std::move(produced);
-
-        const std::string& status = response.getStatus();
-        if (!status.empty()) {
-            if (status[0] == '4') {
-                record4xxMetric();
-            } else if (status[0] == '5') {
-                record5xxMetric();
-            }
-        }
-
-        response.serializeTo(responseScratch_);
-        failLog = "Failed to send route response for: ";
-        if (handlerKind == "async route") {
-            failLog = "Failed to send async route response for: ";
-        }
-    } catch (const method_not_allowed& e) {
-        HTTPResponse response = responseMethodNotAllowed(request, e.allowMethods());
-        record4xxMetric();
-        response.serializeTo(responseScratch_);
-        failLog = "Failed to send 405 for: ";
-    } catch (const std::exception& e) {
-        sendToLoggerError("Exception in " + handlerKind + " handler: " + e.what());
-        HTTPResponse response = responseInternalServerError(request);
-        record5xxMetric();
-        response.serializeTo(responseScratch_);
-        failLog = "Failed to send 500 for: ";
-    } catch (...) {
-        sendToLoggerError("Unknown exception in " + handlerKind + " handler");
-        HTTPResponse response = responseInternalServerError(request);
-        record5xxMetric();
-        response.serializeTo(responseScratch_);
-        failLog = "Failed to send 500 for: ";
-    }
-
-    if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
-        sendToLoggerError(std::string(failLog) + request->getPathString());
-    }
-    co_return;
 }
 
 boost::asio::awaitable<bool> Handler::readSocketAsync(char* bufferToUse, size_t size, std::string_view phase) {
@@ -759,7 +453,7 @@ boost::asio::awaitable<void> Handler::runAsync() {
             hasCL = true;
         }
         if (!preflight.transferEncoding.empty()) {
-            hasChunked = containsChunkedToken(preflight.transferEncoding);
+            hasChunked = httpConnectionHeaderHasToken(preflight.transferEncoding, "chunked");
         }
 
         if (hasCL && bodyExpected > kMaxHttpBodyBytes) {
@@ -937,77 +631,7 @@ boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
         co_return;
     }
 
-    // Priority rule 1+2: redirects first (exact redirect, then wildcard redirect)
-    auto redirectMatch = serverData.findMatchingRedirect(request->getPathString());
-    if (redirectMatch.has_value()) {
-        const std::string& target = redirectMatch->first;
-        const int statusCode = redirectMatch->second;
-        const std::string statusText = (statusCode == 302) ? "302 Found" : "301 Moved Permanently";
-
-        HTTPResponse redirectResponse(statusText);
-        redirectResponse.setHeader("Location", target);
-        redirectResponse.setBody("");
-
-        redirectResponse.serializeTo(responseScratch_);
-        if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
-            sendToLoggerError("Failed to send redirect response for: " + request->getPathString());
-        }
-        co_return;
-    }
-
-    std::string path = request->getPathString();
-
-    // Priority rule 3+4: normal sync routes (exact route, then wildcard route)
-    if (auto routeHandler = serverData.findMatchingRoute(path)) {
-        if (auto denial = co_await checkRouteGateDenialAsync(*request)) {
-            record4xxMetric();
-            denial->serializeTo(responseScratch_);
-            if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
-                sendToLoggerError("Failed to send route gate denial for: " + path);
-            }
-            co_return;
-        }
-
-        co_await dispatchRouteAndSendAsync(
-            request, path,
-            [routeHandler, request]() -> boost::asio::awaitable<HTTPResponse> {
-                co_return (*routeHandler)(*request);
-            }(),
-            "route");
-        co_return;
-    }
-
-    // Priority rule 5+6: async routes (exact route, then wildcard route)
-    if (auto asyncRouteHandler = serverData.findMatchingAsyncRoute(path)) {
-        if (auto denial = co_await checkRouteGateDenialAsync(*request)) {
-            record4xxMetric();
-            denial->serializeTo(responseScratch_);
-            if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
-                sendToLoggerError("Failed to send route gate denial for: " + path);
-            }
-            co_return;
-        }
-
-        co_await dispatchRouteAndSendAsync(
-            request, path,
-            [asyncRouteHandler, request]() -> boost::asio::awaitable<HTTPResponse> {
-                co_return co_await (*asyncRouteHandler)(*request);
-            }(),
-            "async route");
-        co_return;
-    }
-
-    if (path.rfind("/api/", 0) == 0) {
-        sendToLoggerError("No API route matched. path=" + path + " request_line=" + request->getRawRequestLine());
-    }
-
-    // Here html logic should be added
-    std::string extension = getExtension(path);
-    std::string content_type = getContentType(extension);
-    std::string contentPath = buildPath(path, extension, request);
-
-    co_await sendFileAsync(content_type, contentPath, request);
-    co_return;
+    co_await routeDispatcher_.dispatchAsync(request, *this);
 }
 
 // TODO : Redo with HTTPResponse
@@ -1051,13 +675,13 @@ boost::asio::awaitable<void> Handler::sendNotFoundResponseAsync(HTTPRequest* htt
             notFoundPath = serverData.localizePathWithRequestLanguage(notFoundPath, httpRequest->getPathString());
         }
 
-        const std::string extension = getExtension(notFoundPath);
-        const std::string contentType = getContentType(extension);
+        const std::string extension = StaticFileResolver::getExtension(notFoundPath);
+        const std::string contentType = StaticFileResolver::getContentType(extension);
         std::string resolvedNotFoundPath = notFoundPath;
 
         // Support both framework-relative paths (e.g. /404.html) and absolute filesystem paths.
         if (!(std::filesystem::path(resolvedNotFoundPath).is_absolute() && std::filesystem::exists(resolvedNotFoundPath))) {
-            resolvedNotFoundPath = buildPath(notFoundPath, extension, httpRequest);
+            resolvedNotFoundPath = fileResolver_.buildPath(notFoundPath, extension, *httpRequest);
         }
 
         if (!resolvedNotFoundPath.empty()) {
@@ -1105,7 +729,7 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
     char bufferToSend[BUFFER_SIZE];
 
     if (contentType == "text/html" || contentType == "text/javascript" || contentType == "text/css") {
-        const std::string cacheKey = textResponseCacheKey(contentType, contentPath);
+        const std::string cacheKey = TextResponseCache::makeKey(contentType, contentPath);
         const std::string requestPath = httpRequest != nullptr ? httpRequest->getPathString() : std::string();
         std::optional<std::string> mergedAssetOwnerPage;
         if (httpRequest != nullptr &&
@@ -1136,7 +760,7 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
         }
 
         if (!perRequestText) {
-            if (const std::shared_ptr<const std::string> cached = lookupTextResponseCache(
+            if (const std::shared_ptr<const std::string> cached = TextResponseCache::instance().lookup(
                     cacheKey, serverData.isDevMode(), serverData.getTextResponseCacheMaxEntryBytes(),
                     serverData.getTextResponseCacheMaxTotalBytes())) {
                 if (!co_await sendSocketAsync(cached->data(), cached->size())) {
@@ -1170,9 +794,9 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
 
         htmlResponse.serializeTo(responseScratch_);
         if (!perRequestText) {
-            storeTextResponseCache(cacheKey, contentPath, responseScratch_, serverData.isDevMode(),
-                                   serverData.getTextResponseCacheMaxEntryBytes(),
-                                   serverData.getTextResponseCacheMaxTotalBytes());
+            TextResponseCache::instance().store(cacheKey, contentPath, responseScratch_, serverData.isDevMode(),
+                                                serverData.getTextResponseCacheMaxEntryBytes(),
+                                                serverData.getTextResponseCacheMaxTotalBytes());
         }
 
         if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
@@ -1281,7 +905,8 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
                             size_t origSize = static_cast<size_t>(origFile.tellg());
                             origFile.seekg(0, std::ios::beg);
 
-                            const std::string origType = getContentType(getExtension(sourcePath));
+                            const std::string origType =
+                                StaticFileResolver::getContentType(StaticFileResolver::getExtension(sourcePath));
                             HTTPResponse      origResp("200 OK");
                             origResp.setHeader("Content-Type", origType);
                             origResp.setHeader("Content-Length", std::to_string(origSize));
@@ -1346,154 +971,6 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
         file.close();
     }
     co_return;
-}
-
-std::string Handler::getExtension(const std::string& path) const {
-    // Check if path is for a file or a page
-    if (path.find('.') == std::string::npos) {
-        return "html";
-    } else {
-        // Get the extension of the file
-        return path.substr(path.find('.') + 1);
-    }
-}
-
-std::string Handler::buildPath(std::string& pathReceived, const std::string& Extension, HTTPRequest* httpRequest) const {
-    // Block directory-traversal attempts before any path manipulation.
-    if (!Security::isSafePath(serverData.getRoot(), pathReceived)) {
-        sendToLoggerError("Path traversal attempt blocked: " + pathReceived);
-        return "";
-    }
-
-    std::string htmlMount = "/html";
-
-    const std::string_view language = httpRequest->getHeaderView("accept-language");
-
-    if (Extension == "jpg" || Extension == "jpeg" || Extension == "png" || Extension == "gif" || Extension == "svg" ||
-        Extension == "ico" || Extension == "webp") {
-        // For image files with /assets/ prefix, use path as-is (already normalized)
-        if (pathReceived.find("/assets/") == 0) {
-            // Assets are stored without language prefix, use direct path
-            return serverData.getRoot() + pathReceived;
-        }
-        
-        // For other image files, use the Referer header to determine the correct relative path
-
-        // Try to get the context from the Referer header
-        const std::string_view refererSv = httpRequest->getHeaderView("referer");
-        if (!refererSv.empty()) {
-            std::string referer(refererSv);
-
-            // Remove everything after the last '/' from referer to get base path
-            size_t lastSlashInReferer = referer.find_last_of('/');
-            if (lastSlashInReferer != std::string::npos) {
-                std::string refererBase = referer.substr(0, lastSlashInReferer + 1);  // Keep the trailing '/'
-
-                // Build the full request URL for comparison using the Host header
-                std::string host = "localhost";
-                const std::string_view hostSv = httpRequest->getHeaderView("host");
-                if (!hostSv.empty()) {
-                    host.assign(hostSv);
-                }
-                std::string scheme = "http";
-                const std::string_view forwardedProto = httpRequest->getHeaderView("x-forwarded-proto");
-                if (!forwardedProto.empty()) {
-                    scheme.assign(forwardedProto);
-                    // Defensive: only allow "http" or "https"
-                    for (char& ch : scheme) {
-                        if (ch >= 'A' && ch <= 'Z') {
-                            ch = static_cast<char>(ch + ('a' - 'A'));
-                        }
-                    }
-                    if (scheme != "http" && scheme != "https") {
-                        scheme = "http";
-                    }
-                }
-                std::string fullRequestUrl = scheme + "://" + host + pathReceived;
-
-                // Remove the referer base from the request URL to get relative path
-                if (fullRequestUrl.find(refererBase) == 0) {
-                    std::string relativePath = fullRequestUrl.substr(refererBase.length());
-                    pathReceived = "/" + relativePath;
-                } else {
-                    // Fallback: if pattern doesn't match, return path as-is
-                    // This preserves the original path structure including language prefixes
-                    // pathReceived remains unchanged
-                }
-            } else {
-                // Fallback: extract just filename
-                // This preserves the original path structure including language prefixes
-                // pathReceived remains unchanged
-            }
-        } else {
-            // Remove the language prefix from the path
-
-            size_t lastSlash = pathReceived.find_last_of('/');
-            pathReceived = (lastSlash != std::string::npos) ? pathReceived.substr(lastSlash) : "/" + pathReceived;
-        }
-    } else if (!serverData.languagePrefixFromPath(pathReceived).has_value()) {
-        if (pathReceived.size() == 1) {
-            // if the size of the pathReceived is only 1 character long
-            // then we can assume that the path is a language indicator for the index page
-
-            if (serverData.hasLanguages()) {
-                const std::string preferredLang = serverData.resolvePreferredLanguage(language);
-                return serverData.getRoot() + "/html/" + preferredLang + "/index.html";
-            }
-
-            return serverData.getRoot() + "/html/index.html";
-        }
-
-        if (serverData.hasLanguages()) {
-            const std::string preferredLang = serverData.resolvePreferredLanguage(language);
-            htmlMount = "/html/" + preferredLang;
-        } else {
-            htmlMount = "/html";
-        }
-    } else if (pathReceived.size() == 4) {
-        // if the size of the pathReceived has a language indicator and is only 4 characters long
-        // then we can assume that the path is a language indicator for the index page
-
-        pathReceived += "/index";
-
-    } else if (Extension != "html" && Extension != "htm") {
-        // Remove the language prefix from the path
-        pathReceived = pathReceived.substr(3);
-    }
-
-    if (pathReceived.find('.') == std::string::npos) {
-        pathReceived += ".html";
-    }
-
-    std::string mount;
-    if (Extension == "html" || Extension == "htm") {
-        mount = htmlMount;
-    } else {
-        const auto& roots = handlerAssetRootByExtension();
-        auto        it    = roots.find(Extension);
-        if (it == roots.end()) {
-            return "";
-        }
-        mount = it->second;
-    }
-
-    std::string finalPath = serverData.getRoot() + mount + pathReceived;
-    if (!Security::isSafePath(serverData.getRoot(), mount + pathReceived)) {
-        sendToLoggerError("Path traversal attempt blocked after assembly: " + finalPath);
-        return "";
-    }
-    return finalPath;
-}
-
-/**
- * Get the content type for a file extension
- * @param extension
- * @return
- */
-std::string Handler::getContentType(const std::string& extension) {
-    const auto& types = handlerContentTypeByExtension();
-    auto        it    = types.find(extension);
-    return it != types.end() ? it->second : "application/octet-stream";
 }
 
 }  // namespace geruest

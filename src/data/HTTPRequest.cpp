@@ -9,6 +9,7 @@
 
 #include "HTTPRequest.hpp"
 
+#include <charconv>
 #include <cstdlib>
 #include <string>
 
@@ -97,6 +98,34 @@ void appendLowerNoWhitespace(std::string& out, std::string_view input) {
     }
 }
 
+[[nodiscard]] bool iequalsAsciiNoSpace(std::string_view a, std::string_view b) {
+    size_t i = 0;
+    size_t j = 0;
+    while (i < a.size() && j < b.size()) {
+        while (i < a.size() && std::isspace(static_cast<unsigned char>(a[i]))) {
+            ++i;
+        }
+        while (j < b.size() && std::isspace(static_cast<unsigned char>(b[j]))) {
+            ++j;
+        }
+        if (i >= a.size() || j >= b.size()) {
+            break;
+        }
+        if (asciiLower(static_cast<unsigned char>(a[i])) != asciiLower(static_cast<unsigned char>(b[j]))) {
+            return false;
+        }
+        ++i;
+        ++j;
+    }
+    while (i < a.size() && std::isspace(static_cast<unsigned char>(a[i]))) {
+        ++i;
+    }
+    while (j < b.size() && std::isspace(static_cast<unsigned char>(b[j]))) {
+        ++j;
+    }
+    return i == a.size() && j == b.size();
+}
+
 }  // namespace
 
 namespace geruest {
@@ -129,6 +158,108 @@ std::optional<HttpHeaderSplit> splitHttpHeaders(std::string_view raw) {
     }
 
     return HttpHeaderSplit{pos + delimLen, delimLen};
+}
+
+HeaderPreflight parseHeaderPreflight(std::string_view headerPrefix) {
+    HeaderPreflight out{};
+    const size_t firstNl = headerPrefix.find('\n');
+    if (firstNl == std::string_view::npos) {
+        return out;
+    }
+    std::string_view rest = headerPrefix.substr(firstNl + 1);
+    while (!rest.empty()) {
+        const size_t lineEnd = rest.find('\n');
+        std::string_view line = rest.substr(0, lineEnd);
+        if (lineEnd == std::string_view::npos) {
+            rest = {};
+        } else {
+            rest.remove_prefix(lineEnd + 1);
+        }
+        if (!line.empty() && line.back() == '\r') {
+            line.remove_suffix(1);
+        }
+        const size_t colon = line.find(':');
+        if (colon == std::string_view::npos) {
+            continue;
+        }
+        const std::string_view key = line.substr(0, colon);
+        const std::string_view value = trimSv(line.substr(colon + 1));
+        if (out.expect.empty() && iequalsAsciiNoSpace(key, "expect")) {
+            out.expect = value;
+        } else if (out.contentLength.empty() && iequalsAsciiNoSpace(key, "content-length")) {
+            out.contentLength = value;
+        } else if (out.transferEncoding.empty() && iequalsAsciiNoSpace(key, "transfer-encoding")) {
+            out.transferEncoding = value;
+        }
+        if (!out.expect.empty() && !out.contentLength.empty() && !out.transferEncoding.empty()) {
+            break;
+        }
+    }
+    return out;
+}
+
+size_t findChunkedBodyEnd(const std::string& raw, size_t bodyStart) {
+    size_t pos = bodyStart;
+    while (true) {
+        const size_t lineEnd = raw.find("\r\n", pos);
+        if (lineEnd == std::string::npos) {
+            return std::string::npos;
+        }
+
+        std::string_view sizeLine(raw.data() + pos, lineEnd - pos);
+        const size_t semi = sizeLine.find(';');
+        if (semi != std::string_view::npos) {
+            sizeLine = sizeLine.substr(0, semi);
+        }
+        sizeLine = trimSv(sizeLine);
+        if (sizeLine.empty()) {
+            return std::string::npos;
+        }
+
+        unsigned long long chunkSize = 0;
+        const char* begin = sizeLine.data();
+        const char* end = sizeLine.data() + sizeLine.size();
+        const std::from_chars_result parsed = std::from_chars(begin, end, chunkSize, 16);
+        if (parsed.ec != std::errc() || parsed.ptr != end) {
+            return std::string::npos;
+        }
+
+        pos = lineEnd + 2;
+        if (chunkSize == 0) {
+            if (pos + 2 <= raw.size() && raw.compare(pos, 2, "\r\n") == 0) {
+                return pos + 2;
+            }
+            const size_t trailerEnd = raw.find("\r\n\r\n", pos);
+            if (trailerEnd == std::string::npos) {
+                return std::string::npos;
+            }
+            return trailerEnd + 4;
+        }
+
+        const size_t chunkDataEnd = pos + static_cast<size_t>(chunkSize);
+        if (chunkDataEnd + 2 > raw.size()) {
+            return std::string::npos;
+        }
+        if (raw.compare(chunkDataEnd, 2, "\r\n") != 0) {
+            return std::string::npos;
+        }
+        pos = chunkDataEnd + 2;
+    }
+}
+
+bool parseContentLengthBytes(std::string_view cl, size_t* out) {
+    if (cl.empty()) {
+        return false;
+    }
+    unsigned long long v = 0;
+    const char* begin = cl.data();
+    const char* end = cl.data() + cl.size();
+    const std::from_chars_result result = std::from_chars(begin, end, v);
+    if (result.ec != std::errc() || result.ptr != end) {
+        return false;
+    }
+    *out = static_cast<size_t>(v);
+    return true;
 }
 
 std::size_t HeaderMapHash::operator()(std::string_view sv) const noexcept { return hashLowerFnv1a(sv); }

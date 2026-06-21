@@ -24,6 +24,9 @@
 
 namespace geruest {
 
+constexpr size_t kMaxHttpHeaderBytes = 65536;
+constexpr size_t kMaxHttpBodyBytes = 16 * 1024 * 1024;
+
 std::string urlDecode(std::string_view str);
 inline std::string urlDecode(const std::string& str) { return urlDecode(std::string_view(str)); }
 
@@ -37,6 +40,20 @@ struct HttpHeaderSplit {
 
 /** Find header/body split; delimiter precedence: \\r\\n\\r\\n, \\n\\n, \\r\\r. */
 std::optional<HttpHeaderSplit> splitHttpHeaders(std::string_view raw);
+
+/** Selected headers needed before the full body is available. */
+struct HeaderPreflight {
+    std::string_view expect;
+    std::string_view contentLength;
+    std::string_view transferEncoding;
+};
+
+HeaderPreflight parseHeaderPreflight(std::string_view headerPrefix);
+
+/** Returns byte index after the final chunked terminator, or npos if incomplete/invalid. */
+size_t findChunkedBodyEnd(const std::string& raw, size_t bodyStart);
+
+bool parseContentLengthBytes(std::string_view contentLength, size_t* out);
 
 /** Tag: parse only headers + request line from a prefix view (caller must keep storage alive for ctor duration). */
 struct HttpHeadersOnlyTag {

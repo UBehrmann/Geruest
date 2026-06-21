@@ -22,6 +22,8 @@
 #include <string>
 #include <string_view>
 
+#include "RouteDispatcher.hpp"
+#include "StaticFileResolver.hpp"
 #include "data/HTTPRequest.hpp"
 #include "data/HTTPResponse.hpp"
 #include "data/ServerData.hpp"
@@ -34,6 +36,8 @@ namespace geruest {
 enum class PageAccessDenyStyle { Redirect, Forbidden };
 
 class Handler {
+    friend class RouteDispatcher;
+
    private:
     static unsigned clientCount;
 
@@ -62,6 +66,9 @@ class Handler {
 
     /** Reused for HTTPResponse::serializeTo and similar to reduce per-send allocations. */
     std::string responseScratch_;
+
+    StaticFileResolver fileResolver_;
+    RouteDispatcher    routeDispatcher_;
 
     void record4xxMetric() const;
     void record5xxMetric() const;
@@ -115,16 +122,6 @@ class Handler {
 
     boost::asio::awaitable<void> sendNotFoundResponseAsync(HTTPRequest* httpRequest);
     boost::asio::awaitable<void> sendServiceUnavailableResponseAsync(const std::string& why);
-
-    boost::asio::awaitable<void> dispatchRouteAndSendAsync(HTTPRequest* request, const std::string& path,
-                                                           boost::asio::awaitable<HTTPResponse> produced,
-                                                           std::string_view handlerLabel);
-
-    std::string getExtension(const std::string& path) const;
-
-    std::string buildPath(std::string& pathReceived, const std::string& Extension, HTTPRequest* httpRequest) const;
-
-    static std::string getContentType(const std::string& extension);
 
    public:
     Handler(boost::asio::ip::tcp::socket& socket, std::string clientIP, const ServerData& serverDataRef);
