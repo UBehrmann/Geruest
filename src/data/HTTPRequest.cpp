@@ -101,6 +101,36 @@ void appendLowerNoWhitespace(std::string& out, std::string_view input) {
 
 namespace geruest {
 
+std::optional<HttpHeaderSplit> splitHttpHeaders(std::string_view raw) {
+    static constexpr std::string_view kDelim0 = "\r\n\r\n";
+    static constexpr std::string_view kDelim1 = "\n\n";
+    static constexpr std::string_view kDelim2 = "\r\r";
+
+    std::size_t pos = std::string_view::npos;
+    std::size_t delimLen = 0;
+
+    pos = raw.find(kDelim0);
+    if (pos != std::string_view::npos) {
+        delimLen = kDelim0.size();
+    } else {
+        pos = raw.find(kDelim1);
+        if (pos != std::string_view::npos) {
+            delimLen = kDelim1.size();
+        } else {
+            pos = raw.find(kDelim2);
+            if (pos != std::string_view::npos) {
+                delimLen = kDelim2.size();
+            }
+        }
+    }
+
+    if (pos == std::string_view::npos) {
+        return std::nullopt;
+    }
+
+    return HttpHeaderSplit{pos + delimLen, delimLen};
+}
+
 std::size_t HeaderMapHash::operator()(std::string_view sv) const noexcept { return hashLowerFnv1a(sv); }
 
 bool HeaderMapEq::operator()(std::string_view a, std::string_view b) const noexcept { return iequalsAscii(a, b); }
@@ -279,31 +309,10 @@ void HTTPRequest::parsePathAndParams(std::string_view pathWithQuery) {
 }
 
 void HTTPRequest::parseHeadersAndBody(std::string_view rawRequest) {
-    static constexpr std::string_view kDelim0 = "\r\n\r\n";
-    static constexpr std::string_view kDelim1 = "\n\n";
-    static constexpr std::string_view kDelim2 = "\r\r";
-
-    std::size_t pos = std::string_view::npos;
-    std::size_t delimLen = 0;
-
-    pos = rawRequest.find(kDelim0);
-    if (pos != std::string_view::npos) {
-        delimLen = kDelim0.size();
-    } else {
-        pos = rawRequest.find(kDelim1);
-        if (pos != std::string_view::npos) {
-            delimLen = kDelim1.size();
-        } else {
-            pos = rawRequest.find(kDelim2);
-            if (pos != std::string_view::npos) {
-                delimLen = kDelim2.size();
-            }
-        }
-    }
-
-    if (pos != std::string_view::npos) {
-        _bodyView = rawRequest.substr(pos + delimLen);
-        parseHeaders(rawRequest.substr(0, pos));
+    const auto split = splitHttpHeaders(rawRequest);
+    if (split.has_value()) {
+        _bodyView = rawRequest.substr(split->headerSectionEnd);
+        parseHeaders(rawRequest.substr(0, split->headerSectionEnd - split->delimiterLength));
     } else {
         _bodyView = {};
         parseHeaders(rawRequest);

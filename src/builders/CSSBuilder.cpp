@@ -22,19 +22,8 @@ CSSBuilder::CSSBuilder(const std::string &inputPath, const ServerData& serverDat
 }
 
 void CSSBuilder::builCSS() {
-    // In dev mode with merging, check if content is in cache first
-    if (_serverData.isDevMode() && _serverData.getMergeAssets()) {
-        // Extract relative path from full path (remove root)
-        std::string relativePath = path;
-        size_t rootPos = relativePath.find("/assets/");
-        if (rootPos != std::string::npos) {
-            relativePath = relativePath.substr(rootPos);
-            
-            if (HtmlBuilder::hasMergedAssetInCache(relativePath)) {
-                builtFile = HtmlBuilder::getMergedAssetFromCache(relativePath);
-                return;
-            }
-        }
+    if (tryLoadMergedAssetDevCache(path, _serverData, builtFile)) {
+        return;
     }
     
     // File is already loaded by ContentBuilder base class via loadFile(path)

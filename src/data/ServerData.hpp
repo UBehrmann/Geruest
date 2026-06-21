@@ -460,12 +460,18 @@ class ServerData {
         return bestMatch;
     }
 
-    std::optional<ResolvedRouteGate> findBestWildcardRouteGate(const std::string& path) const {
+    template<typename Resolved, typename AsyncRule, typename SyncRule, typename FromAsync, typename FromSync>
+    std::optional<Resolved> findBestWildcardGate(
+        const std::string& path,
+        const std::unordered_map<std::string, AsyncRule>& asyncWild,
+        const std::unordered_map<std::string, SyncRule>& syncWild,
+        FromAsync&& fromAsync,
+        FromSync&& fromSync) const {
         size_t bestPatternLength = 0;
         std::optional<std::string> bestPattern;
-        std::optional<ResolvedRouteGate> bestMatch;
+        std::optional<Resolved> bestMatch;
 
-        auto consider = [&](const std::string& pattern, ResolvedRouteGate resolved) {
+        auto consider = [&](const std::string& pattern, Resolved resolved) {
             const bool better = !bestMatch.has_value() || pattern.size() > bestPatternLength ||
                                 (pattern.size() == bestPatternLength && bestPattern.has_value() &&
                                  pattern < *bestPattern);
@@ -476,20 +482,31 @@ class ServerData {
             }
         };
 
-        for (const auto& gate : _wildcardAsyncRouteGates) {
+        for (const auto& gate : asyncWild) {
             const std::string& pattern = gate.first;
             if (matchesWildcardPattern(pattern, path)) {
-                consider(pattern, ResolvedRouteGate{true, {}, gate.second.handler});
+                consider(pattern, fromAsync(gate.second));
             }
         }
-        for (const auto& gate : _wildcardRouteGates) {
+        for (const auto& gate : syncWild) {
             const std::string& pattern = gate.first;
             if (matchesWildcardPattern(pattern, path)) {
-                consider(pattern, ResolvedRouteGate{false, gate.second.handler, {}});
+                consider(pattern, fromSync(gate.second));
             }
         }
 
         return bestMatch;
+    }
+
+    std::optional<ResolvedRouteGate> findBestWildcardRouteGate(const std::string& path) const {
+        return findBestWildcardGate<ResolvedRouteGate>(
+            path, _wildcardAsyncRouteGates, _wildcardRouteGates,
+            [](const AsyncRouteGateRule& rule) {
+                return ResolvedRouteGate{true, {}, rule.handler};
+            },
+            [](const RouteGateRule& rule) {
+                return ResolvedRouteGate{false, rule.handler, {}};
+            });
     }
 
     std::optional<ResolvedRouteGate> resolveExactRouteGate(const std::string& lookupPath) const {
@@ -515,35 +532,14 @@ class ServerData {
     }
 
     std::optional<ResolvedPageGate> findBestWildcardPageGate(const std::string& path) const {
-        size_t bestPatternLength = 0;
-        std::optional<std::string> bestPattern;
-        std::optional<ResolvedPageGate> bestMatch;
-
-        auto consider = [&](const std::string& pattern, ResolvedPageGate resolved) {
-            const bool better = !bestMatch.has_value() || pattern.size() > bestPatternLength ||
-                                (pattern.size() == bestPatternLength && bestPattern.has_value() &&
-                                 pattern < *bestPattern);
-            if (better) {
-                bestPatternLength = pattern.size();
-                bestPattern = pattern;
-                bestMatch = std::move(resolved);
-            }
-        };
-
-        for (const auto& gate : _wildcardAsyncPageGates) {
-            const std::string& pattern = gate.first;
-            if (matchesWildcardPattern(pattern, path)) {
-                consider(pattern, ResolvedPageGate{true, {}, gate.second.handler, gate.second.redirectTo});
-            }
-        }
-        for (const auto& gate : _wildcardPageGates) {
-            const std::string& pattern = gate.first;
-            if (matchesWildcardPattern(pattern, path)) {
-                consider(pattern, ResolvedPageGate{false, gate.second.handler, {}, gate.second.redirectTo});
-            }
-        }
-
-        return bestMatch;
+        return findBestWildcardGate<ResolvedPageGate>(
+            path, _wildcardAsyncPageGates, _wildcardPageGates,
+            [](const AsyncPageGateRule& rule) {
+                return ResolvedPageGate{true, {}, rule.handler, rule.redirectTo};
+            },
+            [](const PageGateRule& rule) {
+                return ResolvedPageGate{false, rule.handler, {}, rule.redirectTo};
+            });
     }
 
     std::optional<ResolvedPageGate> resolveExactPageGate(const std::string& lookupPath) const {
@@ -1199,6 +1195,45 @@ class ServerData {
      * @return true if at least one language is configured
      */
     bool hasLanguages() const { return !_availableLanguages.empty(); }
+
+    /** Supported two-letter language code from URL path prefix (e.g. /de/page → "de"), or nullopt. */
+    std::optional<std::string> languagePrefixFromPath(const std::string& path) const {
+        return extractSupportedLanguagePrefix(path);
+    }
+
+    /** Pick language from Accept-Language header; falls back to default when none match. */
+    std::string resolvePreferredLanguage(std::string_view acceptLanguage) const {
+        std::string preferredLang = _defaultLanguage;
+        if (!hasLanguages() || acceptLanguage.empty()) {
+            return preferredLang;
+        }
+        for (const auto& lang : _availableLanguages) {
+            if (acceptLanguage.find(lang) != std::string_view::npos) {
+                preferredLang = lang;
+                break;
+            }
+        }
+        return preferredLang;
+    }
+
+    /** Prepend request language to path when request has a supported prefix and path does not. */
+    std::string localizePathWithRequestLanguage(const std::string& path, const std::string& requestPath) const {
+        if (!hasLanguages()) {
+            return path;
+        }
+        const auto requestLang = extractSupportedLanguagePrefix(requestPath);
+        if (!requestLang.has_value()) {
+            return path;
+        }
+        if (hasSupportedLanguagePrefixInTarget(path)) {
+            return path;
+        }
+        std::string localized = path;
+        if (!localized.empty() && localized[0] != '/') {
+            localized = "/" + localized;
+        }
+        return "/" + *requestLang + localized;
+    }
 
     /**
      * Set custom page path for 404 responses (e.g. "/404.html")

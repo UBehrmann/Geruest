@@ -9,6 +9,9 @@
 
 #include "ContentBuilder.hpp"
 #include "AssetMerger.hpp"
+#include "CSSBuilder.hpp"
+#include "HTMLBuilder.hpp"
+#include "JSBuilder.hpp"
 
 namespace geruest {
 
@@ -22,6 +25,38 @@ std::string ContentBuilder::sizeString() const { return std::to_string(builtFile
 size_t ContentBuilder::size() const { return builtFile.size(); }
 
 std::string ContentBuilder::file() const { return builtFile; }
+
+std::unique_ptr<ContentBuilder> ContentBuilder::create(const std::string& contentType,
+                                                       const std::string& absolutePath,
+                                                       const ServerData& serverData) {
+    if (contentType == "text/html") {
+        return std::make_unique<HtmlBuilder>(absolutePath, serverData);
+    }
+    if (contentType == "text/javascript") {
+        return std::make_unique<JSBuilder>(absolutePath, serverData);
+    }
+    if (contentType == "text/css") {
+        return std::make_unique<CSSBuilder>(absolutePath, serverData);
+    }
+    return nullptr;
+}
+
+bool ContentBuilder::tryLoadMergedAssetDevCache(const std::string& absolutePath, const ServerData& serverData,
+                                                std::string& out) {
+    if (!serverData.isDevMode() || !serverData.getMergeAssets()) {
+        return false;
+    }
+    const size_t rootPos = absolutePath.find("/assets/");
+    if (rootPos == std::string::npos) {
+        return false;
+    }
+    const std::string relativePath = absolutePath.substr(rootPos);
+    if (!HtmlBuilder::hasMergedAssetInCache(relativePath)) {
+        return false;
+    }
+    out = HtmlBuilder::getMergedAssetFromCache(relativePath);
+    return true;
+}
 
 std::string ContentBuilder::loadFile(const std::string& pathReceived) {
     std::ifstream fileStream(pathReceived, std::ios::binary | std::ios::ate);

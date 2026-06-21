@@ -27,6 +27,17 @@ namespace geruest {
 std::string urlDecode(std::string_view str);
 inline std::string urlDecode(const std::string& str) { return urlDecode(std::string_view(str)); }
 
+/** Result of locating the header/body boundary in a raw HTTP message prefix. */
+struct HttpHeaderSplit {
+    /** Byte index where the body starts (immediately after the header delimiter). */
+    size_t headerSectionEnd = 0;
+    /** Length of the delimiter that precedes the body. */
+    size_t delimiterLength = 0;
+};
+
+/** Find header/body split; delimiter precedence: \\r\\n\\r\\n, \\n\\n, \\r\\r. */
+std::optional<HttpHeaderSplit> splitHttpHeaders(std::string_view raw);
+
 /** Tag: parse only headers + request line from a prefix view (caller must keep storage alive for ctor duration). */
 struct HttpHeadersOnlyTag {
     explicit HttpHeadersOnlyTag() = default;

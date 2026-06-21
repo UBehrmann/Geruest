@@ -20,6 +20,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <string_view>
 
 #include "data/HTTPRequest.hpp"
 #include "data/HTTPResponse.hpp"
@@ -114,6 +115,10 @@ class Handler {
 
     boost::asio::awaitable<void> sendNotFoundResponseAsync(HTTPRequest* httpRequest);
     boost::asio::awaitable<void> sendServiceUnavailableResponseAsync(const std::string& why);
+
+    boost::asio::awaitable<void> dispatchRouteAndSendAsync(HTTPRequest* request, const std::string& path,
+                                                           boost::asio::awaitable<HTTPResponse> produced,
+                                                           std::string_view handlerLabel);
 
     std::string getExtension(const std::string& path) const;
 

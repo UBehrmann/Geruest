@@ -40,10 +40,8 @@
 #endif
 
 #include "builders/AssetMerger.hpp"
-#include "builders/CSSBuilder.hpp"
 #include "builders/ContentBuilder.hpp"
 #include "builders/HTMLBuilder.hpp"
-#include "builders/JSBuilder.hpp"
 #include "builders/WebPConverter.hpp"
 #include "data/HTTPResponse.hpp"
 #include "data/MethodNotAllowed.hpp"
@@ -113,23 +111,6 @@ void storeTextResponseCache(const std::string& key, const std::string& contentPa
     }
     gTextResponseCacheBytes += entry.sizeBytes;
     gTextResponseCache.emplace(key, std::move(entry));
-}
-
-// Same delimiter precedence as HTTPRequest::parseHeadersAndBody ("\\r\\n\\r\\n", "\\n\\n", "\\r\\r").
-size_t findHeaderEndPos(const std::string& raw) {
-    size_t p = raw.find("\r\n\r\n");
-    if (p != std::string::npos) {
-        return p + 4;
-    }
-    p = raw.find("\n\n");
-    if (p != std::string::npos) {
-        return p + 2;
-    }
-    p = raw.find("\r\r");
-    if (p != std::string::npos) {
-        return p + 2;
-    }
-    return std::string::npos;
 }
 
 [[nodiscard]] inline unsigned char asciiLower(unsigned char c) noexcept {
@@ -517,6 +498,53 @@ boost::asio::awaitable<std::optional<HTTPResponse>> Handler::checkRouteGateDenia
     co_return responseForbidden(&request);
 }
 
+boost::asio::awaitable<void> Handler::dispatchRouteAndSendAsync(HTTPRequest* request, const std::string& /*path*/,
+                                                                boost::asio::awaitable<HTTPResponse> produced,
+                                                                std::string_view handlerLabel) {
+    const std::string handlerKind(handlerLabel);
+    const char* failLog = nullptr;
+    try {
+        HTTPResponse response = co_await std::move(produced);
+
+        const std::string& status = response.getStatus();
+        if (!status.empty()) {
+            if (status[0] == '4') {
+                record4xxMetric();
+            } else if (status[0] == '5') {
+                record5xxMetric();
+            }
+        }
+
+        response.serializeTo(responseScratch_);
+        failLog = "Failed to send route response for: ";
+        if (handlerKind == "async route") {
+            failLog = "Failed to send async route response for: ";
+        }
+    } catch (const method_not_allowed& e) {
+        HTTPResponse response = responseMethodNotAllowed(request, e.allowMethods());
+        record4xxMetric();
+        response.serializeTo(responseScratch_);
+        failLog = "Failed to send 405 for: ";
+    } catch (const std::exception& e) {
+        sendToLoggerError("Exception in " + handlerKind + " handler: " + e.what());
+        HTTPResponse response = responseInternalServerError(request);
+        record5xxMetric();
+        response.serializeTo(responseScratch_);
+        failLog = "Failed to send 500 for: ";
+    } catch (...) {
+        sendToLoggerError("Unknown exception in " + handlerKind + " handler");
+        HTTPResponse response = responseInternalServerError(request);
+        record5xxMetric();
+        response.serializeTo(responseScratch_);
+        failLog = "Failed to send 500 for: ";
+    }
+
+    if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
+        sendToLoggerError(std::string(failLog) + request->getPathString());
+    }
+    co_return;
+}
+
 boost::asio::awaitable<bool> Handler::readSocketAsync(char* bufferToUse, size_t size, std::string_view phase) {
     if (size > INT_MAX) {
         sendToLoggerError("Size of buffer is too big.");
@@ -690,7 +718,7 @@ boost::asio::awaitable<void> Handler::runAsync() {
             raw.assign(buffer.get(), static_cast<size_t>(bufferLength));
         }
 
-        while (findHeaderEndPos(raw) == std::string::npos) {
+        while (!splitHttpHeaders(raw).has_value()) {
             if (raw.size() >= kMaxHttpHeaderBytes) {
                 sendToLoggerError("HTTP headers exceed maximum size.");
                 co_return;
@@ -705,7 +733,7 @@ boost::asio::awaitable<void> Handler::runAsync() {
             raw.append(buffer.get(), static_cast<size_t>(bufferLength));
         }
 
-        const size_t headerEnd = findHeaderEndPos(raw);
+        const size_t headerEnd = splitHttpHeaders(raw)->headerSectionEnd;
 
         bool hasCL = false;
         bool hasChunked = false;
@@ -930,8 +958,7 @@ boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
     std::string path = request->getPathString();
 
     // Priority rule 3+4: normal sync routes (exact route, then wildcard route)
-    auto routeHandler = serverData.findMatchingRoute(path);
-    if (routeHandler) {
+    if (auto routeHandler = serverData.findMatchingRoute(path)) {
         if (auto denial = co_await checkRouteGateDenialAsync(*request)) {
             record4xxMetric();
             denial->serializeTo(responseScratch_);
@@ -941,51 +968,17 @@ boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
             co_return;
         }
 
-        // co_await is not allowed inside catch clauses; build the body first, send once.
-        const char* failLog = nullptr;
-        try {
-            HTTPResponse response = (*routeHandler)(*request);
-
-            const std::string& _st = response.getStatus();
-            if (!_st.empty()) {
-                if (_st[0] == '4') {
-                    record4xxMetric();
-                } else if (_st[0] == '5') {
-                    record5xxMetric();
-                }
-            }
-
-            response.serializeTo(responseScratch_);
-            failLog = "Failed to send route response for: ";
-        } catch (const method_not_allowed& e) {
-            HTTPResponse response = responseMethodNotAllowed(request, e.allowMethods());
-            record4xxMetric();
-            response.serializeTo(responseScratch_);
-            failLog = "Failed to send 405 for: ";
-        } catch (const std::exception& e) {
-            sendToLoggerError(std::string("Exception in route handler: ") + e.what());
-            HTTPResponse response = responseInternalServerError(request);
-            record5xxMetric();
-            response.serializeTo(responseScratch_);
-            failLog = "Failed to send 500 for: ";
-        } catch (...) {
-            sendToLoggerError("Unknown exception in route handler");
-            HTTPResponse response = responseInternalServerError(request);
-            record5xxMetric();
-            response.serializeTo(responseScratch_);
-            failLog = "Failed to send 500 for: ";
-        }
-
-        if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
-            sendToLoggerError(std::string(failLog) + request->getPathString());
-        }
-
+        co_await dispatchRouteAndSendAsync(
+            request, path,
+            [routeHandler, request]() -> boost::asio::awaitable<HTTPResponse> {
+                co_return (*routeHandler)(*request);
+            }(),
+            "route");
         co_return;
     }
 
     // Priority rule 5+6: async routes (exact route, then wildcard route)
-    auto asyncRouteHandler = serverData.findMatchingAsyncRoute(path);
-    if (asyncRouteHandler) {
+    if (auto asyncRouteHandler = serverData.findMatchingAsyncRoute(path)) {
         if (auto denial = co_await checkRouteGateDenialAsync(*request)) {
             record4xxMetric();
             denial->serializeTo(responseScratch_);
@@ -995,44 +988,12 @@ boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
             co_return;
         }
 
-        const char* failLog = nullptr;
-        try {
-            HTTPResponse response = co_await (*asyncRouteHandler)(*request);
-
-            const std::string& _st = response.getStatus();
-            if (!_st.empty()) {
-                if (_st[0] == '4') {
-                    record4xxMetric();
-                } else if (_st[0] == '5') {
-                    record5xxMetric();
-                }
-            }
-
-            response.serializeTo(responseScratch_);
-            failLog = "Failed to send async route response for: ";
-        } catch (const method_not_allowed& e) {
-            HTTPResponse response = responseMethodNotAllowed(request, e.allowMethods());
-            record4xxMetric();
-            response.serializeTo(responseScratch_);
-            failLog = "Failed to send 405 for: ";
-        } catch (const std::exception& e) {
-            sendToLoggerError(std::string("Exception in async route handler: ") + e.what());
-            HTTPResponse response = responseInternalServerError(request);
-            record5xxMetric();
-            response.serializeTo(responseScratch_);
-            failLog = "Failed to send 500 for: ";
-        } catch (...) {
-            sendToLoggerError("Unknown exception in async route handler");
-            HTTPResponse response = responseInternalServerError(request);
-            record5xxMetric();
-            response.serializeTo(responseScratch_);
-            failLog = "Failed to send 500 for: ";
-        }
-
-        if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
-            sendToLoggerError(std::string(failLog) + request->getPathString());
-        }
-
+        co_await dispatchRouteAndSendAsync(
+            request, path,
+            [asyncRouteHandler, request]() -> boost::asio::awaitable<HTTPResponse> {
+                co_return co_await (*asyncRouteHandler)(*request);
+            }(),
+            "async route");
         co_return;
     }
 
@@ -1087,19 +1048,7 @@ boost::asio::awaitable<void> Handler::sendNotFoundResponseAsync(HTTPRequest* htt
         // If the original request had a language prefix in the URL (e.g. /de/missing),
         // serve the language-specific 404 page (e.g. /de/404.html → root/html/de/404.html).
         if (serverData.hasLanguages()) {
-            const std::string& reqPath = httpRequest->getPathString();
-            if (reqPath.size() >= 4 && reqPath[0] == '/' &&
-                std::isalpha(static_cast<unsigned char>(reqPath[1])) &&
-                std::isalpha(static_cast<unsigned char>(reqPath[2])) &&
-                reqPath[3] == '/') {
-                const std::string langCode = reqPath.substr(1, 2);
-                for (const auto& lang : serverData.getAvailableLanguages()) {
-                    if (lang == langCode) {
-                        notFoundPath = "/" + langCode + notFoundPath;
-                        break;
-                    }
-                }
-            }
+            notFoundPath = serverData.localizePathWithRequestLanguage(notFoundPath, httpRequest->getPathString());
         }
 
         const std::string extension = getExtension(notFoundPath);
@@ -1113,15 +1062,8 @@ boost::asio::awaitable<void> Handler::sendNotFoundResponseAsync(HTTPRequest* htt
 
         if (!resolvedNotFoundPath.empty()) {
             if (contentType == "text/html" || contentType == "text/javascript" || contentType == "text/css") {
-                std::unique_ptr<ContentBuilder> contentBuilder;
-
-                if (contentType == "text/html") {
-                    contentBuilder = std::make_unique<HtmlBuilder>(resolvedNotFoundPath, serverData);
-                } else if (contentType == "text/javascript") {
-                    contentBuilder = std::make_unique<JSBuilder>(resolvedNotFoundPath, serverData);
-                } else if (contentType == "text/css") {
-                    contentBuilder = std::make_unique<CSSBuilder>(resolvedNotFoundPath, serverData);
-                }
+                std::unique_ptr<ContentBuilder> contentBuilder =
+                    ContentBuilder::create(contentType, resolvedNotFoundPath, serverData);
 
                 if (contentBuilder && contentBuilder->size() > 0) {
                     co_await sendResponseAsync("404 Not Found", contentType, contentBuilder->file());
@@ -1204,16 +1146,7 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
             }
         }
 
-        std::unique_ptr<ContentBuilder> contentBuilder;
-
-        if (contentType == "text/html") {
-            contentBuilder = std::make_unique<HtmlBuilder>(contentPath, serverData);
-
-        } else if (contentType == "text/javascript") {
-            contentBuilder = std::make_unique<JSBuilder>(contentPath, serverData);
-        } else if (contentType == "text/css") {
-            contentBuilder = std::make_unique<CSSBuilder>(contentPath, serverData);
-        }
+        std::unique_ptr<ContentBuilder> contentBuilder = ContentBuilder::create(contentType, contentPath, serverData);
 
         if (!contentBuilder) {
             co_await sendNotFoundResponseAsync(httpRequest);
@@ -1425,15 +1358,6 @@ std::string Handler::getExtension(const std::string& path) const {
     }
 }
 
-/**
- * Check if the path starts with a language prefix
- * @param str
- * @return true if it starts with a language prefix
- */
-bool startsWithLangPrefix(const std::string& str) {
-    return str.size() >= 4 && str[0] == '/' && std::isalpha(str[1]) && std::isalpha(str[2]) && str[3] == '/';
-}
-
 std::string Handler::buildPath(std::string& pathReceived, const std::string& Extension, HTTPRequest* httpRequest) const {
     // Block directory-traversal attempts before any path manipulation.
     if (!Security::isSafePath(serverData.getRoot(), pathReceived)) {
@@ -1443,11 +1367,8 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
 
     std::string htmlMount = "/html";
 
-    // Check if specific language is requested
-
     const std::string_view language = httpRequest->getHeaderView("accept-language");
 
-    // TODO : Find better way to check for language, can't always add an 'or' statement for each new language
     if (Extension == "jpg" || Extension == "jpeg" || Extension == "png" || Extension == "gif" || Extension == "svg" ||
         Extension == "ico" || Extension == "webp") {
         // For image files with /assets/ prefix, use path as-is (already normalized)
@@ -1510,50 +1431,23 @@ std::string Handler::buildPath(std::string& pathReceived, const std::string& Ext
             size_t lastSlash = pathReceived.find_last_of('/');
             pathReceived = (lastSlash != std::string::npos) ? pathReceived.substr(lastSlash) : "/" + pathReceived;
         }
-    } else if (!startsWithLangPrefix(pathReceived)) {
+    } else if (!serverData.languagePrefixFromPath(pathReceived).has_value()) {
         if (pathReceived.size() == 1) {
             // if the size of the pathReceived is only 1 character long
             // then we can assume that the path is a language indicator for the index page
 
-            // Only use language routing if languages are configured
             if (serverData.hasLanguages()) {
-                // Extract the preferred language from Accept-Language header
-                std::string preferredLang = serverData.getDefaultLanguage();
-
-                // Try to find a matching language from the Accept-Language header
-                for (const auto& lang : serverData.getAvailableLanguages()) {
-                    if (language.find(lang) != std::string_view::npos) {
-                        preferredLang = lang;
-                        break;
-                    }
-                }
-
-                // Always return language-specific path - HTMLBuilder will handle building if needed
+                const std::string preferredLang = serverData.resolvePreferredLanguage(language);
                 return serverData.getRoot() + "/html/" + preferredLang + "/index.html";
             }
 
-            // Fallback to simple index.html if no languages configured
             return serverData.getRoot() + "/html/index.html";
         }
 
-        // Try language-specific directories first, then fallback to /html
         if (serverData.hasLanguages()) {
-            // Extract the preferred language from Accept-Language header
-            std::string preferredLang = serverData.getDefaultLanguage();
-
-            // Try to find a matching language from the Accept-Language header
-            for (const auto& lang : serverData.getAvailableLanguages()) {
-                if (language.find(lang) != std::string_view::npos) {
-                    preferredLang = lang;
-                    break;
-                }
-            }
-
-            // Always use language-specific path when languages are configured
-            // HTMLBuilder will handle loading from template if language file doesn't exist
+            const std::string preferredLang = serverData.resolvePreferredLanguage(language);
             htmlMount = "/html/" + preferredLang;
         } else {
-            // No languages configured, use simple /html
             htmlMount = "/html";
         }
     } else if (pathReceived.size() == 4) {

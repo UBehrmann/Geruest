@@ -128,3 +128,32 @@ TEST(HTTPRequestTest, HttpShouldCloseAfterResponse) {
     EXPECT_TRUE(httpShouldCloseAfterResponse("GET / HTTP/1.0", ""));
     EXPECT_FALSE(httpShouldCloseAfterResponse("GET / HTTP/1.0", "keep-alive"));
 }
+
+TEST(HTTPRequestTest, SplitHttpHeadersCrlf) {
+    const std::string raw = "GET / HTTP/1.1\r\nHost: example.com\r\n\r\nbody";
+    const auto split = splitHttpHeaders(raw);
+    ASSERT_TRUE(split.has_value());
+    EXPECT_EQ(split->delimiterLength, 4u);
+    EXPECT_EQ(split->headerSectionEnd, raw.find("body"));
+    EXPECT_EQ(raw.substr(split->headerSectionEnd), "body");
+}
+
+TEST(HTTPRequestTest, SplitHttpHeadersLf) {
+    const std::string raw = "GET / HTTP/1.1\nHost: example.com\n\nbody";
+    const auto split = splitHttpHeaders(raw);
+    ASSERT_TRUE(split.has_value());
+    EXPECT_EQ(split->delimiterLength, 2u);
+    EXPECT_EQ(raw.substr(split->headerSectionEnd), "body");
+}
+
+TEST(HTTPRequestTest, SplitHttpHeadersCr) {
+    const std::string raw = "GET / HTTP/1.1\rHost: example.com\r\rbody";
+    const auto split = splitHttpHeaders(raw);
+    ASSERT_TRUE(split.has_value());
+    EXPECT_EQ(split->delimiterLength, 2u);
+    EXPECT_EQ(raw.substr(split->headerSectionEnd), "body");
+}
+
+TEST(HTTPRequestTest, SplitHttpHeadersNotFound) {
+    EXPECT_FALSE(splitHttpHeaders("GET / HTTP/1.1\r\nHost: x").has_value());
+}
