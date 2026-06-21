@@ -117,10 +117,6 @@ static const std::unordered_set<std::string> RESERVED_KEYWORDS = {
     "tagName", "innerHTML", "outerHTML", "textContent", "nodeType", "nodeName"
 };
 
-// Pre-compiled regex patterns for performance (compiled once, reused throughout)
-static const std::regex IDENTIFIER_REGEX(R"(\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b)");
-static const std::regex IDENTIFIER_WITH_DOT_REGEX(R"(([.]?)\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b)");
-
 static bool isRegexAllowedAfterChar(char c) {
     switch (c) {
         case '(': case '{': case '[':
@@ -767,19 +763,6 @@ std::vector<JSObfuscator::Token> JSObfuscator::tokenize(const std::string& code)
     return tokens;
 }
 
-std::string JSObfuscator::escapeForRegex(const std::string& str) {
-    static const std::string metacharacters = R"(\^$.|?*+()[]{}-)";
-    std::string escaped;
-    escaped.reserve(str.size() * 2);
-    for (char c : str) {
-        if (metacharacters.find(c) != std::string::npos) {
-            escaped += '\\';
-        }
-        escaped += c;
-    }
-    return escaped;
-}
-
 std::string JSObfuscator::mangleNames(const std::string& code) {
     _lastTopLevelPreserved.clear();
 
@@ -795,9 +778,6 @@ std::string JSObfuscator::mangleNames(const std::string& code) {
 
     js_scope::ScopeRenamePlan plan = js_scope::computeScopedRenames(code, opt, topPreservePtr);
 
-    if (plan.usedLegacyFallback) {
-        _lastDiagnostics.push_back("obfuscator: spelling-keyed rename fallback was used");
-    }
     for (const auto& u : plan.undefinedSymbols) {
         _lastDiagnostics.push_back(std::string("obfuscator: undefined symbol reference: ") + u);
     }
@@ -993,28 +973,6 @@ std::string JSObfuscator::generateRandomName(int length) {
     }
     
     return name;
-}
-
-std::vector<std::string> JSObfuscator::extractIdentifiers(const std::string& code) {
-    std::vector<std::string> identifiers;
-    std::vector<Token> tokens = tokenize(code);
-
-    for (const auto& tok : tokens) {
-        if (tok.type != TokenType::CODE) continue;
-
-        auto searchStart = tok.text.cbegin();
-        std::smatch match;
-        while (std::regex_search(searchStart, tok.text.cend(), match, IDENTIFIER_WITH_DOT_REGEX)) {
-            std::string dotPrefix = match[1].str();
-            std::string identifier = match[2].str();
-            if (dotPrefix.empty() && !isReservedKeyword(identifier)) {
-                identifiers.push_back(identifier);
-            }
-            searchStart = match.suffix().first;
-        }
-    }
-
-    return identifiers;
 }
 
 bool JSObfuscator::isReservedKeyword(const std::string& word) {

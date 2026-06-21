@@ -98,9 +98,7 @@ private:
     };
 
     std::vector<Token> tokenize(const std::string& code);
-    static std::string escapeForRegex(const std::string& str);
     std::string generateRandomName(int length = 8);
-    std::vector<std::string> extractIdentifiers(const std::string& code);
     bool isReservedKeyword(const std::string& word);
     std::string encodeStringLiteral(const std::string& str);
     std::string createNumberExpression(int num);

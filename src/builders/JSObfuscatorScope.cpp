@@ -9,6 +9,7 @@
 #include <cstring>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -1281,62 +1282,18 @@ static void collectBracketStringKeys(const std::string& code, const std::vector<
     }
 }
 
-static void legacySpellingMap(const std::string& code, const ScopeRenameOptions& opt,
-                              std::vector<RenameSpan>& spans) {
-    std::unordered_map<std::string, std::string> map;
-    std::vector<Tok> toks;
-    lexAll(code, toks);
-    for (const Tok& t : toks) {
-        if (t.kind != Tk::Ident) {
-            continue;
-        }
-        std::string id = code.substr(t.a, t.b - t.a);
-        if (id.empty() || id[0] == '_') {
-            continue;
-        }
-        if (opt.reserved && opt.reserved->find(id) != opt.reserved->end()) {
-            continue;
-        }
-        if (opt.preserve.find(id) != opt.preserve.end() || opt.externNames.find(id) != opt.externNames.end()) {
-            continue;
-        }
-        if (map.find(id) == map.end()) {
-            map[id] = opt.generateMangledName ? opt.generateMangledName() : id;
-        }
-    }
-    for (const Tok& t : toks) {
-        if (t.kind != Tk::Ident) {
-            continue;
-        }
-        std::string id = code.substr(t.a, t.b - t.a);
-        if (id.empty() || id[0] == '_') {
-            continue;
-        }
-        auto it = map.find(id);
-        if (it != map.end()) {
-            spans.push_back({t.a, t.b, it->second});
-        }
-    }
-}
-
 }  // namespace
 
 ScopeRenamePlan computeScopedRenames(const std::string& code, const ScopeRenameOptions& optIn,
                                      std::vector<std::string>* topLevelPreservedNamesOut) {
+    if (!optIn.reserved || !optIn.generateMangledName) {
+        throw std::invalid_argument("computeScopedRenames requires reserved and generateMangledName");
+    }
+
     ScopeRenameOptions opt = optIn;
     collectDirectives(code, opt.preserve);
 
     ScopeRenamePlan plan;
-    if (!opt.reserved || !opt.generateMangledName) {
-        plan.usedLegacyFallback = true;
-        if (opt.autoPreserveBracketStringKeys) {
-            std::vector<Tok> keyToks;
-            lexAll(code, keyToks);
-            collectBracketStringKeys(code, keyToks, opt.reserved, opt.preserve);
-        }
-        legacySpellingMap(code, opt, plan.spans);
-        return plan;
-    }
 
     std::vector<Tok> toks;
     lexAll(code, toks);
