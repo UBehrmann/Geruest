@@ -21,7 +21,7 @@ void RouteRegistry::addRoute(const std::string& path, RouteHandler routeHandler)
     }
 }
 
-void RouteRegistry::addRouteAsync(const std::string& path, AsyncRouteHandler routeHandler) {
+void RouteRegistry::addRoute(const std::string& path, AsyncRouteHandler routeHandler) {
     if (path.find('*') != std::string::npos) {
         _asyncWildcardRoutes[path] = std::move(routeHandler);
     } else {

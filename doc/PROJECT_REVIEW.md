@@ -12,7 +12,7 @@ Geruest is **not** a static site generator and **not** raw Boost.Beast. It is a 
 
 The **HTTP core is sound**: accept → session → handler → dispatcher → static files is clear, tested in parts, and performant where it matters (`sendfile`, coroutines, path safety). The main risks are **scope creep** (~2.4k lines of custom JS obfuscation), **documentation drift**, **API footguns**, and a few **real bugs** (text cache staleness, dead config).
 
-**Sweet spot for adopters:** `addRoot`, `addRoute`/`addRouteAsync`, `loadConfig`, dev mode, templates/i18n, gates — with merge/obfuscation/WebP/email **off** until explicitly needed.
+**Sweet spot for adopters:** `addRoot`, `addRoute`, `loadConfig`, dev mode, templates/i18n, gates — with merge/obfuscation/WebP/email **off** until explicitly needed.
 
 ---
 
@@ -101,7 +101,7 @@ flowchart TB
 | **Ops depth** | `/status` with latency percentiles, cgroup metrics, persistence |
 | **Website conventions** | `{components/...}`, `[translations/...]`, HTML-driven asset merge |
 | **Test coverage (partial)** | 20+ GTest binaries: gates, WebSocket, security, obfuscator, DB, resolver |
-| **Example app** | `exemple/exemple.cpp` exercises routes, WS, email, gates |
+| **Example app** | `exemples/showcase/showcase.cpp` exercises routes, WS, email, gates; `exemples/minimal/minimal.cpp` for first hour |
 | **HTTP robustness** | Keep-alive, pipelining, chunked bodies, `100 Continue`, `method_not_allowed` pattern |
 | **Compiler warnings** | `-Wall -Wextra -Wpedantic -Wconversion -Wshadow` in `CMakeLists.txt` |
 | **Memory management** | Largely avoids raw owning pointers; mutex-protected caches |
@@ -158,14 +158,14 @@ flowchart TB
 
 1. Finish **Handler decomposition** — extract HTTP framing + response writer; keep `RouteDispatcher` / `StaticFileResolver`
 2. **Mtime-aware text cache** + per-server cache on `ServerData`
-3. **Unify route API** — one `addRoute` accepting sync or async; collapse gated-route overloads over time
+3. ~~**Unify route API** — one `addRoute` accepting sync or async; collapse gated-route overloads over time~~ (done)
 4. **Bind address** — honor `hostname_` or add `setBindAddress()`
 5. **`init()` returns bool/`expected`** instead of `exit()`
 6. **CORS + OPTIONS** — `enableCors({origins, paths})` or minimal middleware
 
 ### Developer Experience
 
-7. **`minimal.cpp` example** (~40 lines) separate from 600-line `exemple.cpp`
+7. **`minimal.cpp` example** (~40 lines) in `exemples/minimal/` — separate from `exemples/showcase/showcase.cpp`
 8. Split **`getQueryParam` / `getJsonField` / `getCookie`**; add **`responseJson()`**
 9. Public **`geruest::logInfo`** instead of private `sendToLogger`
 10. **`geruest/all.hpp`** re-exporting Security, Version, MethodNotAllowed
@@ -193,7 +193,7 @@ flowchart TB
 |------|----------|
 | **`files_maps` docs** | Superseded by HTML scan; tests only |
 | **README logic bomb / false security claims** | No implementation |
-| **Windows/MinGW in `exemple/readme.md`** | Removed per main README |
+| **Windows/MinGW in example readmes** | Removed per main README |
 | **`TIMEOUT_SEC` macros** | Unused |
 | **Handler dead members** | `clientCount`, `idling`, `requestStream` |
 | **Legacy `build*Header()` in `HTTPResponse.hpp`** | `[[maybe_unused]]` |
@@ -202,7 +202,7 @@ flowchart TB
 | **Stale `unitTests/README.md`** | Wrong layout/counts |
 | **Level 3 obfuscation + dead-code injection** | Breaks valid JS; marginal benefit |
 
-**Do not remove without demand:** gates, WebSocket, DB — tested and used in `exemple/`.
+**Do not remove without demand:** gates, WebSocket, DB — tested and used in `exemples/showcase/`.
 
 ---
 
@@ -219,7 +219,7 @@ flowchart TB
 | **Request body streaming** | Low — 16 MiB cap then full buffer |
 | **Method-based routing** | Low — manual `getMethod()` or `method_not_allowed` |
 | **Structured logging + request IDs** | Medium |
-| **Project template / `geruest new`** | Medium — only heavy `exemple/` |
+| **Project template / `geruest new`** | Medium — `exemples/minimal/` + heavy `exemples/showcase/` |
 | **OpenAPI / route introspection** | Low |
 | **Graceful config reload** | Low |
 | **Offline “build website” CLI** | Low — pipeline is request-time |
@@ -293,7 +293,7 @@ Partially present: DB (compile flags), email (CURL), `method_not_allowed` (examp
 
 3. **Add minimal CORS + OPTIONS for `/v1/*`** — Highest-impact missing piece for browser `fetch` to API.
 
-4. **Stabilize the “first hour” path** — `minimal.cpp`, adoption checklist, trim/split `exemple/`, sane defaults (merge off, obfuscation 0).
+4. **Stabilize the “first hour” path** — `exemples/minimal/minimal.cpp`, adoption checklist in `GETTING_STARTED.md`, split `exemples/`, sane defaults (merge off, obfuscation 0).
 
 5. **Fix HTTP DX footguns** — Document/split `getParam()` behavior; add `responseJson()`, public `getCookie()`; document `method_not_allowed`.
 
@@ -329,6 +329,6 @@ Geruest’s differentiated value is **convention-based C++ website hosting with 
 
 The core scaffold **already holds weight**. The highest-leverage moves are boring: **fix the text cache**, **stop lying in docs**, **add CORS/OPTIONS**, **trim API footguns**, and **resist growing the obfuscator/WebP/email surface** until sync/async routes and the adoption path are foolproof.
 
-For a small/medium **website + REST API**, use: `addRoot`, `addRoute`/`addRouteAsync`, `loadConfig`, `enableDevMode`, translations/components, `addGatedRoute` — and **leave obfuscation/WebP/email off** until explicitly needed.
+For a small/medium **website + REST API**, use: `addRoot`, `addRoute`, `loadConfig`, `enableDevMode`, translations/components, gated pages/routes via `addGatedPage` / `addRoute(..., gate)` — and **leave obfuscation/WebP/email off** until explicitly needed.
 
 **Practical floor:** C++20 (coroutines and Boost.Asio are central), not C++17.

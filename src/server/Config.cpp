@@ -41,6 +41,15 @@ void Geruest::loadConfig(const std::string& envFilePath) {
             sendToLogger("HOSTNAME loaded from config: " + hostname_);
         }
     }
+
+    // BIND_ADDRESS
+    if (!_configFlags.bindAddressSet) {
+        std::string configBindAddress = ConfigLoader::get("BIND_ADDRESS", bindAddress_);
+        if (configBindAddress != bindAddress_) {
+            bindAddress_ = configBindAddress;
+            sendToLogger("BIND_ADDRESS loaded from config: " + bindAddress_);
+        }
+    }
     
     // WEBP_CONVERSION
     if (!_configFlags.webpConversionSet) {

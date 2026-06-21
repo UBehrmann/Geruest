@@ -1,10 +1,10 @@
 # WebSockets
 
-Geruest supports RFC 6455 WebSockets alongside existing HTTP routes. Register handlers with `addRouteWebSocket` — same path matching as `addRoute` / `addRouteAsync` (exact and `*` wildcards).
+Geruest supports RFC 6455 WebSockets alongside existing HTTP routes. Register handlers with `addRouteWebSocket` — same path matching as `addRoute` (exact and `*` wildcards).
 
 ## Coroutine API (recommended)
 
-Mirrors `addRouteAsync`: handler returns `boost::asio::awaitable<void>` and uses `co_await` on the connection.
+Mirrors async `addRoute`: handler returns `boost::asio::awaitable<void>` and uses `co_await` on the connection.
 
 ```cpp
 server.addRouteWebSocket("/chat", [](geruest::WebSocketConnection& ws,

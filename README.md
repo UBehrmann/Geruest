@@ -18,8 +18,7 @@ Geruest (German for "scaffold") is a lightweight C++ web framework designed to s
 - Multilanguage support
 - Static file serving
 - Routing
-  - Sync: `addRoute(path, handler)`
-  - Async (C++20 coroutines): `addRouteAsync(path, handler)` — DB and other `co_await` work
+  - `addRoute(path, handler)` — sync or async (C++ overload); optional third argument for access gate
   - WebSockets: `addRouteWebSocket(path, handler)` — RFC 6455, coroutine or callback API
 - **Async database** (optional PostgreSQL / SQLite at build time)
   - `request.database()` from async routes; `queryAsync`, `executeAsync`, `queryJsonAsync`
@@ -97,7 +96,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Release -DGERUEST_ENABLE_POSTGRESQL=ON -DGERUEST_ENA
   - Multi-language support
   - Graceful shutdown
 - **[Data Classes Reference](doc/DATA_CLASSES.md)** - HTTPRequest, HTTPResponse, JSONParser API
-- **[Database Usage](doc/DATABASE.md)** - Async PostgreSQL/SQLite, pooling, `addRouteAsync`
+- **[Database Usage](doc/DATABASE.md)** - Async PostgreSQL/SQLite, pooling, async `addRoute`
 - **[WebSockets](doc/WEBSOCKETS.md)** - `addRouteWebSocket` coroutine and callback APIs
 
 ### Template System
@@ -170,7 +169,8 @@ int main() {
 **For more examples, see:**
 - [Getting Started Guide](doc/GETTING_STARTED.md)
 - [Features Documentation](doc/FEATURES.md)
-- [Example Application](exemple/exemple.cpp)
+- [Minimal example](exemples/minimal/minimal.cpp) (~40 lines)
+- [Showcase application](exemples/showcase/showcase.cpp) (routes, WebSocket, gates)
 
 ## Installation
 

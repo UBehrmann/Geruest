@@ -28,7 +28,7 @@ Welcome to the Geruest documentation! This guide will help you get started with 
 
 - [**Security Utilities**](SECURITY.md) - SQL injection, XSS, JSON injection, path traversal
 - [**Basic Authentication**](BASIC_AUTH.md) - HTTP Basic Auth for protected pages
-- [**Gated Routes & Pages**](GATED_ROUTES_PAGES.md) - `addGatedPage()`, `addGatedPageAsync()`, `addGatedRoute()`, `addGatedRouteAsync()`
+- [**Gated Routes & Pages**](GATED_ROUTES_PAGES.md) - `addGatedPage()`, `addRoute(..., gate)`
 
 ### Development
 
@@ -37,7 +37,6 @@ Welcome to the Geruest documentation! This guide will help you get started with 
 ### Contributing
 
 - [**Contributing Guide**](CONTRIBUTING.md) - Development setup, code style, testing
-- [**Project Review**](PROJECT_REVIEW.md) - Architecture, DX, feature scope, and code quality review (June 2025)
 
 ---
 
@@ -69,24 +68,25 @@ int main() {
 
 ## Feature Summary
 
-| Feature | Description | Documentation |
-|---------|-------------|---------------|
-| **Routing** | Exact and wildcard route patterns | [Features](FEATURES.md#routing-system) |
-| **Redirects** | Exact/wildcard redirects and redirect maps | [Redirects and 404](REDIRECTS_AND_404.md) |
-| **Static Files** | Automatic file serving | [Features](FEATURES.md#static-file-serving) |
-| **404 Page** | Custom file-backed not-found handling | [Redirects and 404](REDIRECTS_AND_404.md#custom-404-page) |
-| **Thread pool + async I/O** | Boost.Asio `io_context`, async accept, per-connection strand | [Features](FEATURES.md#server-io-and-thread-pool) |
-| **Languages** | Multi-language URL routing | [Translations](TRANSLATIONS.md) |
-| **Asset Merging** | CSS/JS bundling per page | [Asset Merging](ASSET_MERGING.md) |
-| **Components** | Reusable HTML includes | [HTML Injections](HTML_INJECTIONS.md) |
-| **Translations** | JSON-based i18n | [Translations](TRANSLATIONS.md) |
-| **Security** | SQL injection, XSS, JSON injection, path traversal | [Security](SECURITY.md) |
-| **Basic Auth** | HTTP authentication | [Basic Auth](BASIC_AUTH.md) |
-| **Dev Mode** | Verbose logs, no file caching | [Dev Mode](DEV_MODE.md) |
-| **JSON Parser** | Built-in JSON handling | [Data Classes](DATA_CLASSES.md#jsonparser) |
-| **Async routes** | C++20 coroutines via `addRouteAsync` | [Features](FEATURES.md#routing) |
-| **Database** | Optional PostgreSQL/SQLite async backends | [Database](DATABASE.md) |
-| **WebSockets** | RFC 6455 persistent connections | [WebSockets](WEBSOCKETS.md) |
+| Feature                     | Description                                                  | Documentation                                             |
+| --------------------------- | ------------------------------------------------------------ | --------------------------------------------------------- |
+| **Routing**                 | Exact and wildcard route patterns                            | [Features](FEATURES.md#routing-system)                    |
+| **Redirects**               | Exact/wildcard redirects and redirect maps                   | [Redirects and 404](REDIRECTS_AND_404.md)                 |
+| **Static Files**            | Automatic file serving                                       | [Features](FEATURES.md#static-file-serving)               |
+| **404 Page**                | Custom file-backed not-found handling                        | [Redirects and 404](REDIRECTS_AND_404.md#custom-404-page) |
+| **Thread pool + async I/O** | Boost.Asio `io_context`, async accept, per-connection strand | [Features](FEATURES.md#server-io-and-thread-pool)         |
+| **Languages**               | Multi-language URL routing                                   | [Translations](TRANSLATIONS.md)                           |
+| **Asset Merging**           | CSS/JS bundling per page                                     | [Asset Merging](ASSET_MERGING.md)                         |
+| **Components**              | Reusable HTML includes                                       | [HTML Injections](HTML_INJECTIONS.md)                     |
+| **Translations**            | JSON-based i18n                                              | [Translations](TRANSLATIONS.md)                           |
+| **Security**                | SQL injection, XSS, JSON injection, path traversal           | [Security](SECURITY.md)                                   |
+| **Basic Auth**              | HTTP authentication                                          | [Basic Auth](BASIC_AUTH.md)                               |
+| **CORS**                    | Cross-origin browser API access (opt-in)                   | [Features — CORS](FEATURES.md#cors-support)               |
+| **Dev Mode**                | Verbose logs, no file caching                                | [Dev Mode](DEV_MODE.md)                                   |
+| **JSON Parser**             | Built-in JSON handling                                       | [Data Classes](DATA_CLASSES.md#jsonparser)                |
+| **Async routes**            | C++20 coroutines via async `addRoute` overload               | [Features](FEATURES.md#routing)                           |
+| **Database**                | Optional PostgreSQL/SQLite async backends                    | [Database](DATABASE.md)                                   |
+| **WebSockets**              | RFC 6455 persistent connections                              | [WebSockets](WEBSOCKETS.md)                               |
 
 ## Requirements
 

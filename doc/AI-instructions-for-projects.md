@@ -324,11 +324,16 @@ FileManagement::isOlderThan(path, hours); // bool
 
 ## CORS
 
+**Disabled by default.** Enable only for browser clients on a different origin than the API:
+
 ```cpp
-res.setHeader("Access-Control-Allow-Origin", "*");
-res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE");
-res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+server.enableCors({
+    .origins = {"https://app.example.com"},  // or {"*"} for local dev only
+    .paths   = {"/v1/*", "/api/*"},
+});
 ```
+
+Same-origin apps (Geruest-served website + relative `fetch("/v1/...")`) do not need this. See [FEATURES.md](FEATURES.md#cors-support).
 
 ---
 

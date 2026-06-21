@@ -14,7 +14,6 @@
 #include <boost/asio/ip/tcp.hpp>
 
 #include <cstdint>
-#include <cstring>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -22,13 +21,12 @@
 #include <string>
 #include <string_view>
 
+#include "HttpFraming.hpp"
+#include "ResponseWriter.hpp"
 #include "RouteDispatcher.hpp"
 #include "StaticFileResolver.hpp"
 #include "data/HTTPRequest.hpp"
 #include "data/ServerData.hpp"
-
-// Max packet size
-#define BUFFER_SIZE 8192
 
 namespace geruest {
 
@@ -36,6 +34,7 @@ enum class PageAccessDenyStyle { Redirect, Forbidden };
 
 class Handler {
     friend class RouteDispatcher;
+    friend class ResponseWriter;
 
    private:
     static unsigned clientCount;
@@ -46,25 +45,20 @@ class Handler {
 
     std::istringstream requestStream;
 
-    unsigned int messageCount = 0;
-
     const ServerData& serverData;
 
     const std::string IP;
-
-    std::unique_ptr<char[]> buffer;
-    std::int64_t           bufferLength = 0;
-
-    /** Unread bytes after the last fully parsed request (HTTP/1.1 pipelining / partial reads). */
-    std::string pendingRequestData;
 
     bool _upgraded = false;
 
     /** False for /status and other monitoring paths excluded from metrics. */
     bool _countRequestInMetrics = true;
 
-    /** Reused for HTTPResponse::serializeTo and similar to reduce per-send allocations. */
-    std::string responseScratch_;
+    ResponseWriter writer_;
+    /** Alias for RouteDispatcher; owned by writer_. */
+    std::string& responseScratch_;
+
+    HttpFraming framing_;
 
     StaticFileResolver fileResolver_;
     RouteDispatcher    routeDispatcher_;
@@ -73,26 +67,15 @@ class Handler {
     void record5xxMetric() const;
     void recordErrorMetric() const;
 
-    /**
-     * Enforce Basic Auth + page gate for a logical page path.
-     * @return true when access is granted; false after a denial response was sent.
-     */
     boost::asio::awaitable<bool> enforcePageAccessAsync(const HTTPRequest& request, const std::string& pagePath,
                                                         PageAccessDenyStyle denyStyle,
                                                         const std::optional<ResolvedPageGate>& resolvedGate =
                                                             std::nullopt);
 
-    /** Returns 403 when a route gate rejects access; empty when allowed or no gate. */
     boost::asio::awaitable<std::optional<HTTPResponse>> checkRouteGateDenialAsync(
         const HTTPRequest& request) const;
 
-    boost::asio::awaitable<bool> readSocketAsync(std::string_view phase = {});
-    boost::asio::awaitable<bool> readSocketAsync(char* bufferToUse, size_t size, std::string_view phase = {});
-
-    boost::asio::awaitable<bool> discardFromSocketAsync(size_t byteCount);
-
     boost::asio::awaitable<bool> sendSocketAsync(const char* bufferToSend, size_t size);
-    boost::asio::awaitable<bool> sendFileBodyZeroCopyAsync(const std::string& contentPath, size_t fileSize);
 
     void sendToLogger(const std::string& message, LogLevel level = LogLevel::Info) const;
 
@@ -113,9 +96,6 @@ class Handler {
 
     boost::asio::awaitable<void> sendResponseAsync(const std::string& status, const std::string& contentType,
                                                    const std::string& content);
-
-    boost::asio::awaitable<void> sendNotFoundResponseAsync(HTTPRequest* httpRequest);
-    boost::asio::awaitable<void> sendServiceUnavailableResponseAsync(const std::string& why);
 
    public:
     Handler(boost::asio::ip::tcp::socket& socket, std::string clientIP, const ServerData& serverDataRef);

@@ -258,7 +258,7 @@ public:
         server.setWorkerThreadCount(1);
         server.setMaxQueueSize(8);
         server.setStatusPersistencePath((metricsDir_ / "metrics.json").string());
-        server.init();
+        ASSERT_TRUE(server.init());
         listenPort_ = server.getListenPort();
         ASSERT_GT(listenPort_, 0);
 

@@ -6,6 +6,7 @@
 
 #include "Handler.hpp"
 #include "StaticFileResolver.hpp"
+#include "data/CorsConfig.hpp"
 #include "data/MethodNotAllowed.hpp"
 
 namespace geruest {
@@ -32,6 +33,7 @@ boost::asio::awaitable<void> RouteDispatcher::dispatchRouteAndSendAsync(HTTPRequ
             }
         }
 
+        applyCorsHeaders(response, serverData_.getCorsConfig(), request);
         response.serializeTo(host.responseScratch_);
         failLog = "Failed to send route response for: ";
         if (handlerKind == "async route") {
@@ -40,18 +42,21 @@ boost::asio::awaitable<void> RouteDispatcher::dispatchRouteAndSendAsync(HTTPRequ
     } catch (const method_not_allowed& e) {
         HTTPResponse response = responseMethodNotAllowed(request, e.allowMethods());
         host.record4xxMetric();
+        applyCorsHeaders(response, serverData_.getCorsConfig(), request);
         response.serializeTo(host.responseScratch_);
         failLog = "Failed to send 405 for: ";
     } catch (const std::exception& e) {
         host.sendToLoggerError("Exception in " + handlerKind + " handler: " + e.what());
         HTTPResponse response = responseInternalServerError(request);
         host.record5xxMetric();
+        applyCorsHeaders(response, serverData_.getCorsConfig(), request);
         response.serializeTo(host.responseScratch_);
         failLog = "Failed to send 500 for: ";
     } catch (...) {
         host.sendToLoggerError("Unknown exception in " + handlerKind + " handler");
         HTTPResponse response = responseInternalServerError(request);
         host.record5xxMetric();
+        applyCorsHeaders(response, serverData_.getCorsConfig(), request);
         response.serializeTo(host.responseScratch_);
         failLog = "Failed to send 500 for: ";
     }
@@ -67,6 +72,7 @@ boost::asio::awaitable<void> RouteDispatcher::tryDispatchRoute(HTTPRequest* requ
                                                                std::string_view handlerLabel, Handler& host) {
     if (auto denial = co_await host.checkRouteGateDenialAsync(*request)) {
         host.record4xxMetric();
+        applyCorsHeaders(*denial, serverData_.getCorsConfig(), request);
         denial->serializeTo(host.responseScratch_);
         if (!co_await host.sendSocketAsync(host.responseScratch_.data(), host.responseScratch_.size())) {
             host.sendToLoggerError("Failed to send route gate denial for: " + path);
@@ -88,6 +94,7 @@ boost::asio::awaitable<void> RouteDispatcher::dispatchAsync(HTTPRequest* request
         redirectResponse.setHeader("Location", target);
         redirectResponse.setBody("");
 
+        applyCorsHeaders(redirectResponse, serverData_.getCorsConfig(), request);
         redirectResponse.serializeTo(host.responseScratch_);
         if (!co_await host.sendSocketAsync(host.responseScratch_.data(), host.responseScratch_.size())) {
             host.sendToLoggerError("Failed to send redirect response for: " + request->getPathString());
@@ -97,16 +104,7 @@ boost::asio::awaitable<void> RouteDispatcher::dispatchAsync(HTTPRequest* request
 
     std::string path = request->getPathString();
 
-    if (auto routeHandler = serverData_.findMatchingRoute(path)) {
-        co_await tryDispatchRoute(
-            request, path,
-            [routeHandler, request]() -> boost::asio::awaitable<HTTPResponse> {
-                co_return (*routeHandler)(*request);
-            }(),
-            "route", host);
-        co_return;
-    }
-
+    // Async wins when sync and async handlers share the same path pattern.
     if (auto asyncRouteHandler = serverData_.findMatchingAsyncRoute(path)) {
         co_await tryDispatchRoute(
             request, path,
@@ -114,6 +112,16 @@ boost::asio::awaitable<void> RouteDispatcher::dispatchAsync(HTTPRequest* request
                 co_return co_await (*asyncRouteHandler)(*request);
             }(),
             "async route", host);
+        co_return;
+    }
+
+    if (auto routeHandler = serverData_.findMatchingRoute(path)) {
+        co_await tryDispatchRoute(
+            request, path,
+            [routeHandler, request]() -> boost::asio::awaitable<HTTPResponse> {
+                co_return (*routeHandler)(*request);
+            }(),
+            "route", host);
         co_return;
     }
 

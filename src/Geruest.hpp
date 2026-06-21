@@ -31,6 +31,7 @@
 
 #include "data/HTTPRequest.hpp"
 #include "data/HTTPResponse.hpp"
+#include "data/CorsConfig.hpp"
 #include "data/ServerData.hpp"
 #include "server/WebSocket.hpp"
 #include "database/DatabaseClient.hpp"
@@ -63,8 +64,21 @@ class Geruest {
 
     void setHostname(const std::string& hostname);
 
+    void setBindAddress(const std::string& address);
+
+    /**
+     * @brief Register an HTTP route handler (sync or async), optionally with an access gate.
+     * @param path Route path (supports '*' wildcard)
+     * @param handler Sync handler returning HTTPResponse, or async coroutine handler (AsyncResponse)
+     * @param gate Optional gate returning true to allow access, false for 403 Forbidden (sync or async)
+     * @note When sync and async handlers share the same path pattern, the async handler wins at dispatch.
+     */
     void addRoute(const std::string& path, RouteHandler handler);
-    void addRouteAsync(const std::string& path, AsyncRouteHandler handler);
+    void addRoute(const std::string& path, AsyncRouteHandler handler);
+    void addRoute(const std::string& path, RouteHandler handler, RouteGateHandler gate);
+    void addRoute(const std::string& path, RouteHandler handler, AsyncRouteGateHandler gate);
+    void addRoute(const std::string& path, AsyncRouteHandler handler, RouteGateHandler gate);
+    void addRoute(const std::string& path, AsyncRouteHandler handler, AsyncRouteGateHandler gate);
     void addRouteWebSocket(const std::string& path, WebSocketHandler handler);
     void addRouteWebSocket(const std::string& path, WebSocketRoute route);
 
@@ -256,7 +270,8 @@ class Geruest {
      * 
      * Supported configuration keys:
      * - PORT (int): Server port (default: 8080)
-     * - HOSTNAME (string): Server hostname (default: "localhost")
+     * - HOSTNAME (string): Public hostname for URLs/logging (default: "localhost")
+     * - BIND_ADDRESS (string): Listen address (IP or hostname; "0.0.0.0" = all IPv4 interfaces; default: "0.0.0.0")
      * - WEBP_CONVERSION (bool): Enable WebP conversion (default: false)
      * - WEBP_QUALITY (float): WebP quality 0-100 (default: 75)
      * - DEV_MODE (bool): Enable development mode (default: false)
@@ -456,21 +471,14 @@ class Geruest {
     // ========== Page Gate Methods ==========
 
     /**
-     * @brief Register a custom access check for a static HTML page
+     * @brief Register a custom access check for a static HTML page (sync or async gate).
      * @param path Page path to gate (supports asterisk wildcard, e.g. /admin/...)
      * @param gate Handler returning true to allow access, false to redirect
      * @param redirectTo Optional redirect target on denial (empty = language-aware index)
+     * @note On the same path, an async gate wins over a sync gate.
      */
     void addGatedPage(const std::string& path, PageGateHandler gate, const std::string& redirectTo = "");
-
-    /**
-     * @brief Register an async access check for a static HTML page (for DB/session co_await)
-     * @note Unlike addGatedRouteAsync, **async here refers to the gate**, not the page handler.
-     * @param path Page path to gate (supports asterisk wildcard, e.g. /admin/...)
-     * @param gate Coroutine handler returning true to allow access, false to redirect
-     * @param redirectTo Optional redirect target on denial (empty = language-aware index)
-     */
-    void addGatedPageAsync(const std::string& path, AsyncPageGateHandler gate, const std::string& redirectTo = "");
+    void addGatedPage(const std::string& path, AsyncPageGateHandler gate, const std::string& redirectTo = "");
 
     /**
      * @brief Remove a page gate
@@ -487,40 +495,6 @@ class Geruest {
     // ========== Route Gate Methods ==========
 
     /**
-     * @brief Register a sync API route with an access gate (same as addRoute plus gate check)
-     * @param path Route path (supports asterisk wildcard)
-     * @param handler Route handler invoked when the gate allows access
-     * @param gate Sync gate handler returning true to allow access, false to return 403 Forbidden
-     */
-    void addGatedRoute(const std::string& path, RouteHandler handler, RouteGateHandler gate);
-
-    /**
-     * @brief Register a sync API route with an async access gate (gate may co_await DB/session)
-     * @param path Route path (supports asterisk wildcard)
-     * @param handler Route handler invoked when the gate allows access
-     * @param gate Async gate handler returning true to allow access, false to return 403 Forbidden
-     */
-    void addGatedRoute(const std::string& path, RouteHandler handler, AsyncRouteGateHandler gate);
-
-    /**
-     * @brief Register an async API route with a sync access gate (same as addRouteAsync plus gate check)
-     * @note The third parameter is the **gate**, not the route handler. Gate is always sync here.
-     *       Use the AsyncRouteGateHandler overload when the gate needs co_await.
-     * @param path Route path (supports asterisk wildcard)
-     * @param handler Async route handler invoked when the gate allows access
-     * @param gate Sync gate handler returning true to allow access, false to return 403 Forbidden
-     */
-    void addGatedRouteAsync(const std::string& path, AsyncRouteHandler handler, RouteGateHandler gate);
-
-    /**
-     * @brief Register an async API route with an async access gate
-     * @param path Route path (supports asterisk wildcard)
-     * @param handler Async route handler invoked when the gate allows access
-     * @param gate Async gate handler returning true to allow access, false to return 403 Forbidden
-     */
-    void addGatedRouteAsync(const std::string& path, AsyncRouteHandler handler, AsyncRouteGateHandler gate);
-
-    /**
      * @brief Remove a route gate (the route handler remains registered)
      * @param path The gated path pattern to remove
      * @return true if a gate was removed
@@ -531,6 +505,13 @@ class Geruest {
      * @brief Clear all route gates (route handlers remain registered)
      */
     void clearGatedRoutes();
+
+    /**
+     * @brief Enable path-scoped CORS with an origin allowlist and OPTIONS preflight.
+     * @param options Allowed origins (or "*" for any) and path patterns (e.g. "/v1/...").
+     * @note Must be called before init() or start().
+     */
+    void enableCors(const CorsOptions& options);
 
     // ========== Email Configuration Methods ==========
 #if GERUEST_HAS_CURL    /**
@@ -594,12 +575,12 @@ class Geruest {
      */
     LogLevel getLogLevel() const;
 
-    /*
-     * Initializes the server, sets up the socket, binds it to the address and port,
-     * and prepares it to listen for incoming connections.
-     * This method should be called before starting the server.
+    /**
+     * @brief Initializes the listen socket and binds to the configured address/port.
+     * @return true on success, false if bind address resolution or listen failed (error is logged).
+     * @note Call before start(). On failure the acceptor is left closed; fix config before retrying.
      */
-    void init();
+    bool init();
 
     void start();
 
@@ -677,6 +658,7 @@ class Geruest {
     int port = 8080;
 
     std::string hostname_ = "localhost";
+    std::string bindAddress_ = "0.0.0.0";
 
     bool _statusActive = false;
     std::string _statusToken;
@@ -703,6 +685,7 @@ class Geruest {
     struct ConfigFlags {
         bool portSet = false;
         bool hostnameSet = false;
+        bool bindAddressSet = false;
         bool webpConversionSet = false;
         bool webpQualitySet = false;
         bool devModeSet = false;

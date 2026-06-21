@@ -8,7 +8,7 @@ Priority-based configuration with `.env` files and programmatic overrides.
 
 **Highest → Lowest:**
 
-1. **Code setters** — `server.setPort()`, `server.setHostname()`, `server.setMergeAssets()`, etc. Values set in code are never overwritten by config files.
+1. **Code setters** — `server.setPort()`, `server.setBindAddress()`, `server.setMergeAssets()`, etc. Values set in code are never overwritten by config files.
 2. **`.env` file** — current working directory, or explicit path passed to `loadConfig()` / `loadEnvFile()`
 3. **Environment variables** — `export VAR=value`
 
@@ -34,7 +34,8 @@ Standalone `ConfigLoader::get*()` has no code-setter layer — use `Geruest` set
 ```env
 # Server Configuration
 PORT=8080
-HOSTNAME=0.0.0.0
+HOSTNAME=localhost
+BIND_ADDRESS=0.0.0.0
 WORKER_THREADS=16
 # Max simultaneous TCP/HTTP sessions (not a pre-accept backlog queue)
 MAX_QUEUE_SIZE=500
@@ -121,7 +122,7 @@ If the selected backend is not compiled in (`GERUEST_HAS_LIBPQ=0` or `GERUEST_HA
 
 ### Server Configuration
 
-**`WORKER_THREADS`** controls how many threads (in addition to the thread that called `start()`) run **`boost::asio::io_context::run()`** for async I/O. **`MAX_QUEUE_SIZE`** is the **maximum number of concurrent client TCP sessions** the process will serve; extra connections are closed and appear in `/status` as `queue.rejections_total`. The JSON field `queue.current_size` is the current active session count. **`MAX_REQUESTS_PER_CONNECTION`** controls how many HTTP requests one keep-alive connection can serve before it is closed (`0` means unlimited, default `1000`).
+**`HOSTNAME`** is the public hostname for URLs and logging (not used for binding). **`BIND_ADDRESS`** is the listen address passed to `init()` (`0.0.0.0` = all IPv4 interfaces, `127.0.0.1` = loopback only). **`WORKER_THREADS`** controls how many threads (in addition to the thread that called `start()`) run **`boost::asio::io_context::run()`** for async I/O. **`MAX_QUEUE_SIZE`** is the **maximum number of concurrent client TCP sessions** the process will serve; extra connections are closed and appear in `/status` as `queue.rejections_total`. The JSON field `queue.current_size` is the current active session count. **`MAX_REQUESTS_PER_CONNECTION`** controls how many HTTP requests one keep-alive connection can serve before it is closed (`0` means unlimited, default `1000`).
 
 ```cpp
 using namespace geruest;
@@ -129,14 +130,16 @@ using namespace geruest;
 Geruest server;
 
 int port = ConfigLoader::getInt("PORT", 8080);
-std::string host = ConfigLoader::get("HOSTNAME", "0.0.0.0");
+std::string hostname = ConfigLoader::get("HOSTNAME", "localhost");
+std::string bindAddress = ConfigLoader::get("BIND_ADDRESS", "0.0.0.0");
 size_t workers = ConfigLoader::getSizeT("WORKER_THREADS", 16);
 size_t maxSessions = ConfigLoader::getSizeT("MAX_QUEUE_SIZE", 500);
 size_t maxRequestsPerConnection = ConfigLoader::getSizeT("MAX_REQUESTS_PER_CONNECTION", 1000);
 
 // Option 1: Manual configuration
 server.setPort(port);
-server.setHostname(host);
+server.setHostname(hostname);
+server.setBindAddress(bindAddress);
 server.setWorkerThreadCount(workers);
 server.setMaxQueueSize(maxSessions);
 server.setMaxRequestsPerConnection(maxRequestsPerConnection);
@@ -204,7 +207,7 @@ echo ".env" >> .gitignore
 **Use environment variables in production:**
 ```bash
 export PORT=8080
-export HOSTNAME=0.0.0.0
+export BIND_ADDRESS=0.0.0.0
 export DEV_MODE=false
 export LOG_LEVEL=error
 ./my_server
@@ -235,7 +238,7 @@ services:
     image: myapp
     environment:
       - PORT=8080
-      - HOSTNAME=0.0.0.0
+      - BIND_ADDRESS=0.0.0.0
       - SMTP_SERVER=smtp.gmail.com
       - SMTP_USERNAME=${SMTP_USERNAME}
       - SMTP_PASSWORD=${SMTP_PASSWORD}
@@ -267,12 +270,12 @@ int main() {
     
     // Option 1: Auto-load all Geruest configuration (recommended)
     Geruest server;
-    server.loadConfig(".env");  // Reads PORT, HOSTNAME, SMTP_*, etc.
+    server.loadConfig(".env");  // Reads PORT, HOSTNAME, BIND_ADDRESS, SMTP_*, etc.
     
     // Option 2: Manual configuration (overrides .env)
     // ConfigLoader::loadEnvFile(".env");
     // server.setPort(ConfigLoader::getInt("PORT", 8080));
-    // server.setHostname(ConfigLoader::get("HOSTNAME", "0.0.0.0"));
+    // server.setBindAddress(ConfigLoader::get("BIND_ADDRESS", "0.0.0.0"));
     // server.setWorkerThreadCount(ConfigLoader::getSizeT("WORKER_THREADS", 8));
     
     // Application-specific config (not read by Geruest)

@@ -4,8 +4,8 @@ Async database access in Geruest with optional PostgreSQL and SQLite backends.
 
 ## Overview
 
-- Use `addRoute` for sync handlers and `addRouteAsync` for coroutine handlers.
-- DB calls are async APIs and should be used from `addRouteAsync` handlers.
+- Use `addRoute` for sync or async handlers (C++ overload).
+- DB calls are async APIs and should be used from async route handlers.
 - Backends are optional at CMake build time.
 - Runtime backend selection supports:
   - `none`
@@ -108,21 +108,22 @@ server.configurePostgres(pg);
 
 ## Route Function Choice
 
-- `addRoute(path, handler)`:
+- `addRoute(path, syncHandler)`:
   - Handler returns `HTTPResponse`
   - No `co_await`
   - Best for static, auth checks, simple JSON
-- `addRouteAsync(path, handler)`:
+- `addRoute(path, asyncHandler)`:
   - Handler returns `geruest::AsyncResponse`
   - Supports `co_await`
   - Use for DB access (`queryAsync`, `executeAsync`)
+- When sync and async handlers share the same path pattern, **async wins** at dispatch.
 
 ## Route Example (DB)
 
-Use `addRouteAsync` for DB work. Access DB via `request.database()`.
+Use the async `addRoute` overload for DB work. Access DB via `request.database()`.
 
 ```cpp
-server.addRouteAsync("/users", [](const geruest::HTTPRequest& request) -> geruest::AsyncResponse {
+server.addRoute("/users", [](const geruest::HTTPRequest& request) -> geruest::AsyncResponse {
     geruest::HTTPResponse response("200 OK");
     response.setHeader("Content-Type", "application/json");
 

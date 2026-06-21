@@ -42,8 +42,10 @@ sudo make install
 
 Route choice:
 
-- `addRoute(...)`: sync handler (`HTTPResponse` return). Use for static/simple API endpoints without `co_await`.
-- `addRouteAsync(...)`: coroutine handler (`geruest::AsyncResponse` return). Use for DB or other awaitable operations.
+- `addRoute(path, syncHandler)`: sync handler (`HTTPResponse` return). Use for static/simple API endpoints without `co_await`.
+- `addRoute(path, asyncHandler)`: coroutine handler (`geruest::AsyncResponse` return). Use for DB or other awaitable operations.
+- `addRoute(path, handler, gate)`: optional third argument for an access gate (403 on denial).
+- When sync and async handlers share the same path pattern, **async wins** at dispatch.
 
 **Minimal Server (main.cpp):**
 ```cpp
@@ -87,6 +89,27 @@ mkdir build && cd build
 cmake .. && cmake --build .
 ./myserver  # Server on http://localhost:8080
 ```
+
+## First-hour adoption checklist
+
+Use this before turning on merge, obfuscation, or WebP:
+
+1. **Requirements** — C++20, CMake 3.11+, Boost.System (`libboost-system-dev`).
+2. **Start small** — Copy [exemples/minimal/](../exemples/minimal/) (~40 lines) or the snippet above.
+3. **Layout** — `website/html/index.html` + `server.addRoot(path)`; one `/v1/...` route to prove the API path.
+4. **Defaults** — Leave merge, obfuscation, and WebP **off** until you need them ([ASSET_MERGING.md](ASSET_MERGING.md), [OBFUSCATION.md](OBFUSCATION.md)).
+5. **Config** — Optional `.env` beside the binary (`PORT`, `HOSTNAME`); code setters override `.env`.
+6. **Run** — Build `exemples/`, then `./minimal/minimal` from the build tree; open `http://localhost:8080`.
+7. **Go deeper** — Run [exemples/showcase/](../exemples/showcase/) for WebSocket, gates, Basic Auth, email.
+
+## Examples in this repo
+
+| Path | Use when |
+|------|----------|
+| [exemples/minimal/minimal.cpp](../exemples/minimal/minimal.cpp) | First project, learning the API |
+| [exemples/showcase/showcase.cpp](../exemples/showcase/showcase.cpp) | Exploring advanced features |
+
+See [exemples/readme.md](../exemples/readme.md) for build instructions.
 
 ## Project Structure
 

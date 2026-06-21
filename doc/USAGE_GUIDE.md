@@ -129,7 +129,7 @@ location /echo {
 
 ```cpp
 server.setPort(8080);                         // Default: 8080
-server.setHostname("0.0.0.0");                // Listen all interfaces
+server.setBindAddress("0.0.0.0");             // Listen all interfaces (default)
 server.setWorkerThreadCount(16);              // Default: cores × 2 (io_context worker threads)
 server.setMaxQueueSize(1000);                 // Default: 500 (max concurrent client sessions)
 server.setAvailableLanguages({"en", "de"});   // First is default
@@ -142,6 +142,27 @@ server.setPort(port ? std::atoi(port) : 8080);
 ```
 
 **Threading profiles:** General (cores×2, max 500 sessions) | High-traffic (32 threads, 2000 sessions) | Low-resource (4 threads, 100 sessions)
+
+## CORS (cross-origin API access)
+
+**Off by default — call `enableCors()` only when a browser frontend on a different origin needs your API.**
+
+| Scenario | Need CORS? |
+|----------|------------|
+| JS on `localhost:5173`, API on `localhost:8080` | **Yes** |
+| JS and API both on `example.com` (same host, nginx or Geruest monolith) | **No** |
+| JS served by Geruest, `fetch("/v1/users")` relative URLs | **No** |
+| `curl`, mobile app, server-to-server | **No** |
+
+```cpp
+// Before init() / start()
+server.enableCors({
+    .origins = {"http://localhost:5173"},   // frontend Origin(s); use "*" for local dev only
+    .paths   = {"/v1/*", "/api/*"},         // API paths that get CORS + OPTIONS preflight
+});
+```
+
+Route handlers do not need manual `Access-Control-*` headers on covered paths. Full details: [FEATURES.md — CORS Support](FEATURES.md#cors-support).
 
 ## Platform Notes
 

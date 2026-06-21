@@ -90,19 +90,17 @@ TEST(HTTPResponseTest, PredefinedResponseFunctions) {
 }
 
 TEST(HTTPResponseTest, ResponseWithRequestContext) {
-    // Create a mock request
     std::string rawRequest = "GET / HTTP/1.1\r\n"
                             "Host: example.com\r\n"
                             "Origin: https://example.com\r\n"
                             "\r\n";
     HTTPRequest request(rawRequest, "127.0.0.1", "/test/root");
-    
-    // Test response with request context
+
     HTTPResponse response = responseOK(&request);
     std::string responseStr = response.toString();
-    
-    // Should contain CORS headers when Origin is present
-    EXPECT_NE(responseStr.find("Access-Control-Allow-Origin: https://example.com"), std::string::npos);
+
+    // CORS is applied centrally via enableCors(), not in generic response helpers.
+    EXPECT_EQ(responseStr.find("Access-Control-Allow-Origin"), std::string::npos);
 }
 
 TEST(HTTPResponseTest, BuildHeaderFunctions) {

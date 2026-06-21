@@ -86,6 +86,7 @@ set(PLATFORM_LIBS pthread Boost::system)
 
 set(SERVERDATA_SOURCES
     ../data/DevAssetCache.cpp
+    ../data/TextResponseCache.cpp
     ../data/GateRegistry.cpp
     ../data/LanguageConfig.cpp
     ../data/ObfuscationSettings.cpp
@@ -114,6 +115,7 @@ set(GERUEST_SOURCES
     ../data/HTTPRequest.cpp
     ../data/HTTPResponse.cpp
     ../data/MethodNotAllowed.cpp
+    ../data/CorsConfig.cpp
     ${SERVERDATA_SOURCES}
     ../parser/JSONParser.cpp
     ../FileManagement/FileManagement.cpp
@@ -126,7 +128,8 @@ set(GERUEST_SOURCES
     ../builders/JSObfuscatorScope.cpp
     ../builders/WebPConverter.cpp
     ../handler/Handler.cpp
-    ../handler/TextResponseCache.cpp
+    ../handler/HttpFraming.cpp
+    ../handler/ResponseWriter.cpp
     ../handler/StaticFileResolver.cpp
     ../handler/RouteDispatcher.cpp
     ../security/Security.cpp
@@ -180,6 +183,24 @@ add_executable(DevAssetCache_Tests
     ../data/DevAssetCache.cpp
 )
 target_link_libraries(DevAssetCache_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+
+add_executable(TextResponseCache_Tests
+    TextResponseCache/TextResponseCache_tests.cpp
+    ../data/TextResponseCache.cpp
+)
+target_link_libraries(TextResponseCache_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+
+add_executable(CorsConfig_Tests
+    CorsConfig/CorsConfig_tests.cpp
+    ../data/CorsConfig.cpp
+    ../data/HTTPResponse.cpp
+    ../data/HTTPRequest.cpp
+    ../data/MethodNotAllowed.cpp
+    ../data/WildcardMatch.cpp
+    ../parser/JSONParser.cpp
+    ../security/Security.cpp
+)
+target_link_libraries(CorsConfig_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
 add_executable(ContentBuilder_Tests
     ContentBuilder/ContentBuilder_tests.cpp 
@@ -343,6 +364,18 @@ add_executable(ServerDataRouteGate_Tests
 )
 target_link_libraries(ServerDataRouteGate_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
+add_executable(RouteRegistry_Tests
+    RouteRegistry/RouteRegistry_tests.cpp
+    ${SERVERDATA_SOURCES}
+    ../data/HTTPRequest.cpp
+    ../data/HTTPResponse.cpp
+    ../parser/JSONParser.cpp
+    ../auth/BasicAuth.cpp
+    ../security/Security.cpp
+    ${ASSET_MERGER_SOURCES}
+)
+target_link_libraries(RouteRegistry_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+
 add_executable(ServerDataMergedAsset_Tests
     ServerData/ServerDataMergedAsset_tests.cpp
     ${SERVERDATA_SOURCES}
@@ -412,6 +445,8 @@ gtest_discover_tests(HTTPRequest_Tests)
 gtest_discover_tests(HTTPResponse_Tests)
 gtest_discover_tests(FileManagement_Tests)
 gtest_discover_tests(DevAssetCache_Tests)
+gtest_discover_tests(TextResponseCache_Tests)
+gtest_discover_tests(CorsConfig_Tests)
 gtest_discover_tests(ContentBuilder_Tests)
 gtest_discover_tests(JSObfuscator_Tests)
 gtest_discover_tests(BasicAuth_Tests)
@@ -428,6 +463,7 @@ gtest_discover_tests(ServerDataRedirectLanguage_Tests)
 gtest_discover_tests(StaticFileResolver_Tests)
 gtest_discover_tests(ServerDataPageGate_Tests)
 gtest_discover_tests(ServerDataRouteGate_Tests)
+gtest_discover_tests(RouteRegistry_Tests)
 gtest_discover_tests(ServerDataMergedAsset_Tests)
 gtest_discover_tests(GeruestLifecycle_Tests)
 if(GERUEST_HAS_SQLITE)
@@ -458,13 +494,13 @@ exit $rc
 ]=])
     add_custom_target(run_tests
         COMMAND bash "${CMAKE_CURRENT_BINARY_DIR}/run_tests_pg.sh" "${CMAKE_CTEST_COMMAND}"
-        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests StaticFileResolver_Tests ServerDataPageGate_Tests ServerDataRouteGate_Tests GeruestLifecycle_Tests DatabasePostgres_Tests
+        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests StaticFileResolver_Tests ServerDataPageGate_Tests ServerDataRouteGate_Tests RouteRegistry_Tests GeruestLifecycle_Tests DatabasePostgres_Tests
         COMMENT "Running all unit tests via CTest (with PostgreSQL container)"
     )
 else()
     add_custom_target(run_tests
         COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests StaticFileResolver_Tests ServerDataPageGate_Tests ServerDataRouteGate_Tests GeruestLifecycle_Tests
+        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests StaticFileResolver_Tests ServerDataPageGate_Tests ServerDataRouteGate_Tests RouteRegistry_Tests GeruestLifecycle_Tests
         COMMENT "Running all unit tests via CTest"
     )
 endif()

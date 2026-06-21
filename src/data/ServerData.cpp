@@ -37,6 +37,7 @@ ServerData::ServerData(const ServerData& other)
       _textResponseCacheMaxEntryBytes(other._textResponseCacheMaxEntryBytes),
       _textResponseCacheMaxTotalBytes(other._textResponseCacheMaxTotalBytes),
       _notFoundPage(other._notFoundPage),
+      _corsConfig(other._corsConfig),
       _basicAuth(other._basicAuth),
       _logLevel(other._logLevel.load(std::memory_order_relaxed)),
       _databaseClient(other._databaseClient) {
@@ -59,6 +60,7 @@ ServerData& ServerData::operator=(const ServerData& other) {
         _textResponseCacheMaxEntryBytes = other._textResponseCacheMaxEntryBytes;
         _textResponseCacheMaxTotalBytes = other._textResponseCacheMaxTotalBytes;
         _notFoundPage = other._notFoundPage;
+        _corsConfig = other._corsConfig;
         _basicAuth = other._basicAuth;
         _logLevel.store(other._logLevel.load(std::memory_order_relaxed), std::memory_order_relaxed);
         _databaseClient = other._databaseClient;
@@ -86,8 +88,8 @@ void ServerData::addRoute(const std::string& path, RouteHandler routeHandler) {
     _routes.addRoute(path, std::move(routeHandler));
 }
 
-void ServerData::addRouteAsync(const std::string& path, AsyncRouteHandler routeHandler) {
-    _routes.addRouteAsync(path, std::move(routeHandler));
+void ServerData::addRoute(const std::string& path, AsyncRouteHandler routeHandler) {
+    _routes.addRoute(path, std::move(routeHandler));
 }
 
 void ServerData::addWebSocketRoute(const std::string& path, WebSocketHandler routeHandler) {

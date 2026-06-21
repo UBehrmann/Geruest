@@ -32,7 +32,7 @@ class RouteRegistry {
     const std::unordered_map<std::string, RouteHandler>& getExactRoutes() const { return _routes; }
 
     void addRoute(const std::string& path, RouteHandler routeHandler);
-    void addRouteAsync(const std::string& path, AsyncRouteHandler routeHandler);
+    void addRoute(const std::string& path, AsyncRouteHandler routeHandler);
     void addWebSocketRoute(const std::string& path, WebSocketHandler routeHandler);
 
     bool addRedirect(const std::string& from, const std::string& to, int status = 301);

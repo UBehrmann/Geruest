@@ -155,15 +155,7 @@ void addDefaultHeaders(HTTPResponse* response, const HTTPRequest* request) {
     response->setHeader("Keep-Alive", "timeout=5, max=100");
     response->setHeader("Cache-Control", "no-cache");
     response->setHeader("Content-Type", "text/plain");
-
-    if (request) {
-        const std::string_view origin = request->getHeaderView("origin");
-        if (!origin.empty()) {
-            response->setHeader("Access-Control-Allow-Origin", std::string(origin));
-            response->setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-            response->setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-        }
-    }
+    (void)request;
 }
 
 // Generic helper for building responses with status and body

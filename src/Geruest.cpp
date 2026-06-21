@@ -84,14 +84,59 @@ void Geruest::setPort(int _port) { port = _port; _configFlags.portSet = true; }
 
 void Geruest::setHostname(const std::string& hostname) { hostname_ = hostname; _configFlags.hostnameSet = true; }
 
+void Geruest::setBindAddress(const std::string& address) {
+    bindAddress_ = address;
+    _configFlags.bindAddressSet = true;
+}
+
 void Geruest::setStatusPersistencePath(std::string path) { _statusPersistencePath = std::move(path); }
 
 void Geruest::addRoute(const std::string& path, RouteHandler routeHandler) {
     serverData.addRoute(path, std::move(routeHandler));
 }
 
-void Geruest::addRouteAsync(const std::string& path, AsyncRouteHandler routeHandler) {
-    serverData.addRouteAsync(path, std::move(routeHandler));
+void Geruest::addRoute(const std::string& path, AsyncRouteHandler routeHandler) {
+    serverData.addRoute(path, std::move(routeHandler));
+}
+
+void Geruest::addRoute(const std::string& path, RouteHandler handler, RouteGateHandler gate) {
+    if (path.empty() || !handler || !gate) {
+        sendToLoggerError("Failed to add route with gate (path/handler/gate invalid): " + path);
+        return;
+    }
+    serverData.addRoute(path, std::move(handler));
+    serverData.addRouteGate(path, std::move(gate));
+    sendToLogger("Added route with gate: " + path);
+}
+
+void Geruest::addRoute(const std::string& path, RouteHandler handler, AsyncRouteGateHandler gate) {
+    if (path.empty() || !handler || !gate) {
+        sendToLoggerError("Failed to add route with async gate (path/handler/gate invalid): " + path);
+        return;
+    }
+    serverData.addRoute(path, std::move(handler));
+    serverData.addAsyncRouteGate(path, std::move(gate));
+    sendToLogger("Added route with async gate: " + path);
+}
+
+void Geruest::addRoute(const std::string& path, AsyncRouteHandler handler, RouteGateHandler gate) {
+    if (path.empty() || !handler || !gate) {
+        sendToLoggerError("Failed to add async route with gate (path/handler/gate invalid): " + path);
+        return;
+    }
+    serverData.addRoute(path, std::move(handler));
+    serverData.addRouteGate(path, std::move(gate));
+    sendToLogger("Added async route with gate: " + path);
+}
+
+void Geruest::addRoute(const std::string& path, AsyncRouteHandler handler, AsyncRouteGateHandler gate) {
+    if (path.empty() || !handler || !gate) {
+        sendToLoggerError("Failed to add async route with async gate (path/handler/gate invalid): " + path);
+        return;
+    }
+    serverData.addRoute(path, std::move(handler));
+    serverData.addAsyncRouteGate(path, std::move(gate));
+    sendToLogger("Added async route with async gate: " + path);
 }
 
 void Geruest::addRouteWebSocket(const std::string& path, WebSocketHandler handler) {
@@ -435,11 +480,11 @@ void Geruest::addGatedPage(const std::string& path, PageGateHandler gate, const 
     }
 }
 
-void Geruest::addGatedPageAsync(const std::string& path, AsyncPageGateHandler gate, const std::string& redirectTo) {
+void Geruest::addGatedPage(const std::string& path, AsyncPageGateHandler gate, const std::string& redirectTo) {
     if (serverData.addAsyncPageGate(path, std::move(gate), redirectTo)) {
-        sendToLogger("Added gated page (async): " + path);
+        sendToLogger("Added gated page (async gate): " + path);
     } else {
-        sendToLoggerError("Failed to add gated page (async) (path/handler invalid): " + path);
+        sendToLoggerError("Failed to add gated page (async gate invalid): " + path);
     }
 }
 
@@ -456,46 +501,6 @@ void Geruest::clearGatedPages() {
 
 // ========== Route Gates ==========
 
-void Geruest::addGatedRoute(const std::string& path, RouteHandler handler, RouteGateHandler gate) {
-    if (path.empty() || !handler || !gate) {
-        sendToLoggerError("Failed to add gated route (path/handler/gate invalid): " + path);
-        return;
-    }
-    serverData.addRoute(path, std::move(handler));
-    serverData.addRouteGate(path, std::move(gate));
-    sendToLogger("Added gated route: " + path);
-}
-
-void Geruest::addGatedRoute(const std::string& path, RouteHandler handler, AsyncRouteGateHandler gate) {
-    if (path.empty() || !handler || !gate) {
-        sendToLoggerError("Failed to add gated route with async gate (path/handler/gate invalid): " + path);
-        return;
-    }
-    serverData.addRoute(path, std::move(handler));
-    serverData.addAsyncRouteGate(path, std::move(gate));
-    sendToLogger("Added gated route (async gate): " + path);
-}
-
-void Geruest::addGatedRouteAsync(const std::string& path, AsyncRouteHandler handler, RouteGateHandler gate) {
-    if (path.empty() || !handler || !gate) {
-        sendToLoggerError("Failed to add gated async route (path/handler/gate invalid): " + path);
-        return;
-    }
-    serverData.addRouteAsync(path, std::move(handler));
-    serverData.addRouteGate(path, std::move(gate));
-    sendToLogger("Added gated async route: " + path);
-}
-
-void Geruest::addGatedRouteAsync(const std::string& path, AsyncRouteHandler handler, AsyncRouteGateHandler gate) {
-    if (path.empty() || !handler || !gate) {
-        sendToLoggerError("Failed to add gated async route with async gate (path/handler/gate invalid): " + path);
-        return;
-    }
-    serverData.addRouteAsync(path, std::move(handler));
-    serverData.addAsyncRouteGate(path, std::move(gate));
-    sendToLogger("Added gated async route (async gate): " + path);
-}
-
 bool Geruest::removeGatedRoute(const std::string& path) {
     bool removed = serverData.removeRouteGate(path);
     if (removed) sendToLogger("Removed gated route: " + path);
@@ -505,6 +510,13 @@ bool Geruest::removeGatedRoute(const std::string& path) {
 void Geruest::clearGatedRoutes() {
     serverData.clearRouteGates();
     sendToLogger("Cleared all gated routes");
+}
+
+void Geruest::enableCors(const CorsOptions& options) {
+    serverData.setCorsConfig(CorsConfig::fromOptions(options));
+    if (serverData.getCorsConfig().isEnabled() && serverData.shouldLog(LogLevel::Info)) {
+        sendToLogger("CORS enabled for " + std::to_string(options.paths.size()) + " path pattern(s)");
+    }
 }
 
 // ========== Email Configuration ==========

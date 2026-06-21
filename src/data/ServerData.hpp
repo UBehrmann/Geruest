@@ -22,7 +22,9 @@
 #include <vector>
 
 #include "../auth/BasicAuth.hpp"
+#include "CorsConfig.hpp"
 #include "DevAssetCache.hpp"
+#include "TextResponseCache.hpp"
 #include "GateRegistry.hpp"
 #include "LanguageConfig.hpp"
 #include "ObfuscationSettings.hpp"
@@ -63,7 +65,7 @@ class ServerData {
     const std::unordered_map<std::string, RouteHandler>& getRoutes() const;
 
     void addRoute(const std::string& path, RouteHandler routeHandler);
-    void addRouteAsync(const std::string& path, AsyncRouteHandler routeHandler);
+    void addRoute(const std::string& path, AsyncRouteHandler routeHandler);
     void addWebSocketRoute(const std::string& path, WebSocketHandler routeHandler);
 
     bool addRedirect(const std::string& from, const std::string& to, int status = 301);
@@ -131,6 +133,9 @@ class ServerData {
     DevAssetCache& devAssetCache() { return _devAssetCache; }
     const DevAssetCache& devAssetCache() const { return _devAssetCache; }
 
+    TextResponseCache& textResponseCache() { return _textResponseCache; }
+    const TextResponseCache& textResponseCache() const { return _textResponseCache; }
+
     void setAvailableLanguages(const std::vector<std::string>& languages);
     const std::vector<std::string>& getAvailableLanguages() const;
     const std::string& getDefaultLanguage() const;
@@ -143,6 +148,9 @@ class ServerData {
     void setNotFoundPage(const std::string& path) { _notFoundPage = path; }
     const std::string& getNotFoundPage() const { return _notFoundPage; }
     bool hasNotFoundPage() const { return !_notFoundPage.empty(); }
+
+    void setCorsConfig(CorsConfig config) { _corsConfig = std::move(config); }
+    const CorsConfig& getCorsConfig() const { return _corsConfig; }
 
     BasicAuth& getBasicAuth() { return _basicAuth; }
     const BasicAuth& getBasicAuth() const { return _basicAuth; }
@@ -220,6 +228,7 @@ class ServerData {
     ObfuscationSettings _obfuscation;
     ServerMetrics _metrics;
     DevAssetCache _devAssetCache;
+    TextResponseCache _textResponseCache;
 
     std::string _root;
     bool _removeComments = true;
@@ -231,6 +240,7 @@ class ServerData {
     size_t _textResponseCacheMaxEntryBytes = 512 * 1024;
     size_t _textResponseCacheMaxTotalBytes = 32 * 1024 * 1024;
     std::string _notFoundPage;
+    CorsConfig _corsConfig;
     BasicAuth _basicAuth;
     std::atomic<LogLevel> _logLevel{LogLevel::Error};
     std::shared_ptr<db::DatabaseClient> _databaseClient;
