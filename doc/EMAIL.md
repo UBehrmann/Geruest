@@ -204,6 +204,6 @@ void setEmailMaxQueueSize(size_t size);
 2. **Always use TLS** - `SMTP_USE_TLS=true` (never disable in production)
 3. **Sanitize input** - Use `sanitizeHeaderValue()` for all user input in headers
 4. **Validate emails** - Use regex to verify email format
-5. **Enable rate limiting** - Prevent abuse with `setEmailMinInterval()`/`setEmailMaxPerIP()`
+5. **Enable per-IP email limits** - Prevent SMTP abuse with `setEmailMinInterval()` / `setEmailMaxPerIP()` (not global HTTP rate limiting)
 6. **Rotate credentials** - Change passwords/keys regularly
 7. **Use environment variables** - For Docker/containers

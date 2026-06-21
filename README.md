@@ -35,15 +35,12 @@ Geruest (German for "scaffold") is a lightweight C++ web framework designed to s
   - Exclude external libraries from obfuscation
   - Works seamlessly with asset merging
   - Respects development mode (auto-disables for debugging)
-- Security
+- Security utilities (see [Security Guide](doc/SECURITY.md))
   - SQL injection protection (`Security::buildQuery`, `Security::escapeSql`)
   - XSS protection (`Security::escapeHtml`)
   - JSON injection protection (`Security::escapeJson`, built into `JSONParser`)
   - Path traversal protection (`Security::isSafePath`, applied automatically to static files)
-  - Logic bomb for bots?
-  - Rate limiting
-  - IP blocking
-- CLI for easy management of the server while running
+  - Email per-IP send limits when SMTP is enabled (`setEmailMinInterval()`, `setEmailMaxPerIP()`) — not global HTTP rate limiting or IP blocking
 
 ## Roadmap
 
@@ -52,10 +49,10 @@ Geruest (German for "scaffold") is a lightweight C++ web framework designed to s
 - [X] Multilanguage support 
 - [X] Simple routing
 - [X] Test the first iteration with existing code base
-- [ ] Add CLI
-- [ ] Add Rate limiting
-- [ ] Add IP blocking
 - [X] Add websockets support
+- [ ] Runtime CLI (not implemented)
+- [ ] Global HTTP rate limiting (not implemented; email has per-IP send limits only)
+- [ ] IP blocking (not implemented)
 
 ## Requirements
 
@@ -89,7 +86,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Release -DGERUEST_ENABLE_POSTGRESQL=ON -DGERUEST_ENA
 
 - **[Getting Started Guide](doc/GETTING_STARTED.md)** - Installation, requirements, and your first server
 - **[Usage Guide](doc/USAGE_GUIDE.md)** - Local development, Docker deployment, production setup
-- **[Configuration Guide](doc/CONFIGURATION.md)** - .env files, environment variables, configuration hierarchy
+- **[Configuration Guide](doc/CONFIGURATION.md)** - .env files, environment variables, code setters, configuration hierarchy
 
 ### Core Features
 
@@ -133,11 +130,6 @@ cmake .. -DCMAKE_BUILD_TYPE=Release -DGERUEST_ENABLE_POSTGRESQL=ON -DGERUEST_ENA
 /components
 ├── footer.html
 └── header.html
-/configs
-└── restrictions.json
-/files_maps
-├── css_file_map.json
-└── js_file_map.json
 /html
 └── index.html
 ```
@@ -224,27 +216,6 @@ target_include_directories(MyWebsiteApp
 # Add the library binary directory (where the static library is)
 link_directories(/path/to/Geruest/build)
 ```
-
-## CLI Commands
-
-To connect to the server's CLI:
-
-```bash
-nc ip_address port
-```
-
-Available commands:
-
-| Command   | Description                            |
-| --------- | -------------------------------------- |
-| `version` | Show the current version of the server |
-| `status`  | Show the current status of the server  |
-| `help`    | Show available commands                |
-| `exit`    | Exit the CLI                           |
-| `clear`   | Clear the CLI screen                   |
-| `config`  | Show current server configuration      |
-| `uptime`  | Show server uptime                     |
-| `routes`  | Show all defined routes                |
 
 ## License
 

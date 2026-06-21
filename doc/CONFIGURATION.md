@@ -4,12 +4,30 @@ Priority-based configuration with `.env` files and programmatic overrides.
 
 ## Configuration Priority
 
-**Highest → Lowest:**
-1. **`.env` File** (current working directory, or explicit path passed to `loadEnvFile()`)
-2. **Environment Variables** (`export VAR=value`)
-3. **Defaults** (second parameter in `get*()` methods)
+### Geruest server settings (`loadConfig()` + setters)
 
-**Note:** For `Geruest` server configuration, values explicitly set via setters (e.g., `server.setPort()`) take precedence over all configuration sources.
+**Highest → Lowest:**
+
+1. **Code setters** — `server.setPort()`, `server.setHostname()`, `server.setMergeAssets()`, etc. Values set in code are never overwritten by config files.
+2. **`.env` file** — current working directory, or explicit path passed to `loadConfig()` / `loadEnvFile()`
+3. **Environment variables** — `export VAR=value`
+
+Call setters before or after `loadConfig()`; either way, a setter locks that field. `loadConfig()` only fills fields not already locked.
+
+```cpp
+server.setPort(9000);
+server.loadConfig(".env");  // PORT from .env is ignored; other unset fields still load
+```
+
+### `ConfigLoader::get*()` (standalone reads)
+
+**Highest → Lowest:**
+
+1. **`.env` file** (after `loadEnvFile()`)
+2. **Environment variables**
+3. **Default parameter** (second argument to `get()`, `getInt()`, etc.)
+
+Standalone `ConfigLoader::get*()` has no code-setter layer — use `Geruest` setters or assign in application code for programmatic overrides.
 
 ## .env File Format
 
@@ -283,6 +301,6 @@ int main() {
 
 - **Values not loading**: Check `.env` is in the current working directory (where the process runs) or provide an explicit path to `loadConfig()`/`loadEnvFile()`
 - **Type conversion errors**: Invalid values return the default parameter, not errors
-- **Priority confusion**: .env file takes precedence over environment variables
+- **Priority confusion**: For `Geruest`, code setters beat `.env` beat environment variables; for standalone `ConfigLoader::get*()`, `.env` beats environment variables beats the default argument
 - **Missing required keys**: Use `ConfigLoader::has()` to check existence before retrieval
 - **Server config not loading**: Call `server.loadConfig()` before `init()` or `start()`

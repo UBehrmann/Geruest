@@ -13,7 +13,9 @@ Quick installation and first server setup for Geruest C++ web framework.
 - Optional: **libcurl** (email), **libwebp** (image conversion) — see main README
 - Platform support: **Linux/Unix only** (Windows removed)
 
-## Installation
+## Headers and dependencies
+
+`#include <Geruest.hpp>` is the usual entry point for server setup, routing, and core HTTP types. It is **not** a minimal single header: it transitively includes Boost.Asio, `JSONParser`, optional database and WebSocket headers, and (when built with curl) `EmailSender`. Include helper headers explicitly when needed — e.g. `<security/Security.hpp>`, `<FileManagement/FileManagement.hpp>`, `<auth/BasicAuth.hpp>`.
 
 ### Linux
 ```bash

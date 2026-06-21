@@ -7,13 +7,13 @@
 | **Routing** | Sync (`addRoute`), async (`addRouteAsync`), and WebSocket (`addRouteWebSocket`) handlers with exact/wildcard paths | `addRoute()`, `addRouteAsync()`, `addRouteWebSocket()` |
 | **Static Files** | Auto-serve files from root directories | `addRoot()` |
 | **Templates** | Component injection `{file}`, translations `[key]` | `ContentBuilder` |
-| **Asset Merging** | Combine CSS/JS files from file maps | `AssetMerger` |
+| **Asset Merging** | Combine CSS/JS from HTML `<link>` / `<script>` tags per page | `AssetMerger` |
 | **JS Obfuscation** | Make JavaScript harder to analyze | `setObfuscationLevel()` |
 | **Translations** | Multi-language with JSON files | `setAvailableLanguages()` |
 | **CORS** | Preflight/CORS headers | Manual headers |
 | **Basic Auth** | SHA-256 password protection | `BasicAuth` |
 | **Gated Pages & Routes** | Custom access checks for HTML pages (302) and API routes (403) | `addGatedPage()`, `addGatedPageAsync()`, `addGatedRoute()`, `addGatedRouteAsync()` |
-| **Email/SMTP** | Send emails via SMTP (with TLS) | `EmailService` |
+| **Email/SMTP** | Send emails via SMTP (with TLS) | `EmailSender` |
 | **JSON Parsing** | String-based JSON handling | `JSONParser` |
 | **WebP Conversion** | Auto-convert images to WebP | `WebPConverter` |
 | **Configuration** | `.env` and environment config | `ConfigLoader` |
@@ -84,15 +84,21 @@ server.addRoot("/var/www/website");  // Auto-serve files
 
 ## Asset Merging
 
-**`files_maps/css_file_map.json`:**
-```json
-{
-    "bundle_name": "main.css",
-    "files": ["reset.css", "layout.css"]
-}
+Asset merge scans each HTML page for `<link rel="stylesheet">` and `<script src="...">` tags, concatenates referenced files into one CSS and one JS bundle per page, and rewrites the HTML. No JSON file maps are required.
+
+```html
+<!-- Input -->
+<link rel="stylesheet" href="reset.css">
+<link rel="stylesheet" href="layout.css">
+<script src="utils.js"></script>
+<script src="main.js"></script>
+
+<!-- Output (setMergeAssets(true)) -->
+<link rel="stylesheet" href="/pagename.css">
+<script src="/pagename.js"></script>
 ```
 
-Automatic path normalization: `/css/main.css`, `/assets/css/main.css` → same bundle
+See [ASSET_MERGING.md](ASSET_MERGING.md) for path normalization and subdirectory behavior.
 
 ## JavaScript Obfuscation
 
@@ -186,13 +192,19 @@ server.addGatedRouteAsync("/v1/profile", handleProfileAsync, checkSessionAsync);
 
 See [GATED_ROUTES_PAGES.md](GATED_ROUTES_PAGES.md) for full API.
 
-## Email Service
+## Email (`EmailSender`)
+
+Requires libcurl at build time (`GERUEST_HAS_CURL`). See [EMAIL.md](EMAIL.md).
 
 ```cpp
-#include <email/EmailService.hpp>
+server.loadConfig(".env");  // or server.initEmail(...)
 
-EmailService email(serverData, "smtp.gmail.com", 587, "user@gmail.com", "app-password");
-email.sendEmail("to@example.com", "Subject", "Message body");
+EmailSender::getInstance().enqueueEmail(
+    "to@example.com",
+    "Subject",
+    "Message body",
+    req.getClientIP()  // used for per-IP send limits, not global HTTP rate limiting
+);
 ```
 
 ## JSON Processing
@@ -218,6 +230,8 @@ WebPConverter::convertToWebP("input.png", "output.webp", 90);  // Quality: 90%
 ```
 
 ## Configuration System
+
+**Priority:** code setters (`server.setPort()`, etc.) > `.env` > environment variables when using `server.loadConfig()`. Standalone `ConfigLoader::get*()` uses `.env` > environment variables > default argument. See [CONFIGURATION.md](CONFIGURATION.md).
 
 **`.env` file:**
 ```env

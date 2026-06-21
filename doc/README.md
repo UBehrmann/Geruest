@@ -8,7 +8,7 @@ Welcome to the Geruest documentation! This guide will help you get started with 
 
 - [**Getting Started**](GETTING_STARTED.md) - Prerequisites, installation, and your first server
 - [**Usage Guide**](USAGE_GUIDE.md) - Local development, Docker deployment, Linux/Unix setup
-- [**Configuration**](CONFIGURATION.md) - .env files, environment variables, configuration hierarchy
+- [**Configuration**](CONFIGURATION.md) - .env files, environment variables, code setters, configuration hierarchy
 
 ### Core Features
 
@@ -37,6 +37,7 @@ Welcome to the Geruest documentation! This guide will help you get started with 
 ### Contributing
 
 - [**Contributing Guide**](CONTRIBUTING.md) - Development setup, code style, testing
+- [**Project Review**](PROJECT_REVIEW.md) - Architecture, DX, feature scope, and code quality review (June 2025)
 
 ---
 

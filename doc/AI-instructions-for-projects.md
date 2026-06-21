@@ -1,7 +1,9 @@
 # Geruest Project — AI Instructions
 
-C++20 web framework. Namespace: `geruest`. Header: `<Geruest.hpp>`.
-Version: 0.7.8. Build system: CMake 3.10+. **Core HTTP server** depends on **Boost** (Asio + Boost.System, 1.75+). Optional: libcurl (email), libwebp (WebP).
+C++20 web framework. Namespace: `geruest`. Primary entry header: `<Geruest.hpp>`.
+Version: 0.12.7. Build system: CMake 3.10+. **Core HTTP server** depends on **Boost** (Asio + Boost.System, 1.75+). Optional: libcurl (email), libwebp (WebP), PostgreSQL/SQLite (database backends).
+
+`<Geruest.hpp>` is the main facade but not a minimal single header — it pulls HTTP types, optional database, WebSocket, and JSON. Helpers such as `Security`, `FileManagement`, `BasicAuth`, and `WebPConverter` need their own includes when used directly.
 
 ## Quick Summary
 
@@ -133,7 +135,7 @@ Response: `200 OK`, `Content-Type: application/json`, `Cache-Control: no-store`.
 ```json
 {
   "health": "ok",
-  "version": "0.7.8",
+  "version": "0.12.7",
   "timestamp": "2025-07-03T12:00:00Z",
   "uptime_seconds": 3600,
   "requests":   { "total": 0, "active": 0, "last_hour": 0, "avg_per_hour": 0 },
@@ -221,7 +223,9 @@ ConfigLoader::has("KEY");
 ConfigLoader::clear();
 ```
 
-Priority: `.env` file > environment variables > default value.
+Priority for **`Geruest::loadConfig()` / setters**: code setters > `.env` > environment variables. `loadConfig()` only fills fields not already set via setters.
+
+Priority for standalone **`ConfigLoader::get*()`**: `.env` > environment variables > default argument.
 
 ---
 
@@ -337,9 +341,6 @@ website/
 ├── assets/
 │   ├── css/  js/  images/
 │   └── translations/   # JSON per feature, keyed by language code
-├── configs/
-│   └── restrictions.json
-└── files_maps/     # css_file_map.json, js_file_map.json
 ```
 
 ---
@@ -368,7 +369,7 @@ target_link_libraries(myapp PRIVATE Geruest::Geruest Boost::system Threads::Thre
 
 ```cpp
 #include <Version.hpp>
-geruest::getVersion();       // e.g. "0.7.8"
+geruest::getVersion();       // e.g. "0.12.7"
 geruest::getVersionMajor();  geruest::getVersionMinor();  geruest::getVersionPatch();
 ```
 
@@ -382,4 +383,4 @@ SMTP_SERVER  SMTP_PORT  SMTP_USERNAME  SMTP_PASSWORD  SMTP_FROM_ADDRESS  SMTP_US
 EMAIL_MIN_INTERVAL  EMAIL_MAX_PER_IP  EMAIL_TRACKING_DURATION  EMAIL_MAX_QUEUE_SIZE
 ```
 
-Priority: `.env` file → environment variables → code defaults. `loadConfig()` only sets values not already set in code.
+Priority for **`Geruest::loadConfig()`**: code setters > `.env` > environment variables (`loadConfig()` only sets values not already locked by setters). For standalone **`ConfigLoader::get*()`**: `.env` > environment variables > default argument.
