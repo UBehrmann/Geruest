@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.11)
 
 # Define the project name and version
-project(GeruestLibrary VERSION 0.12.3 LANGUAGES CXX)
+project(GeruestLibrary VERSION 0.12.4 LANGUAGES CXX)
 
 # Configure version header
 configure_file(
