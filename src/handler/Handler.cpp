@@ -39,6 +39,7 @@
 #include "TextResponseCache.hpp"
 #include "builders/ContentBuilder.hpp"
 #include "builders/WebPConverter.hpp"
+#include "GateEvaluation.hpp"
 #include "data/HTTPResponse.hpp"
 #include "security/Security.hpp"
 #include "server/WebSocket.hpp"
@@ -120,37 +121,6 @@ void Handler::recordErrorMetric() const {
     }
 }
 
-boost::asio::awaitable<std::optional<HTTPResponse>> Handler::checkPageGateDenialAsync(
-    const HTTPRequest& request, const std::optional<ResolvedPageGate>& resolvedGate) const {
-    const auto gate = resolvedGate.has_value() ? resolvedGate : serverData.findResolvedPageGate(request.getPathString());
-    if (!gate.has_value()) {
-        co_return std::nullopt;
-    }
-
-    bool allowed = false;
-    try {
-        if (gate->async) {
-            allowed = co_await gate->asyncHandler(request);
-        } else {
-            allowed = gate->syncHandler(request);
-        }
-    } catch (const std::exception& e) {
-        sendToLoggerError(std::string("Exception in page gate handler: ") + e.what());
-    } catch (...) {
-        sendToLoggerError("Unknown exception in page gate handler");
-    }
-
-    if (allowed) {
-        co_return std::nullopt;
-    }
-
-    HTTPResponse redirectResponse("302 Found");
-    redirectResponse.setHeader("Location",
-                               serverData.resolvePageGateRedirect(gate->redirectTo, request.getPathString()));
-    redirectResponse.setBody("");
-    co_return redirectResponse;
-}
-
 boost::asio::awaitable<bool> Handler::enforcePageAccessAsync(const HTTPRequest& request,
                                                              const std::string& pagePath,
                                                              PageAccessDenyStyle denyStyle,
@@ -173,19 +143,8 @@ boost::asio::awaitable<bool> Handler::enforcePageAccessAsync(const HTTPRequest& 
         co_return true;
     }
 
-    bool allowed = false;
-    try {
-        if (gate->async) {
-            allowed = co_await gate->asyncHandler(request);
-        } else {
-            allowed = gate->syncHandler(request);
-        }
-    } catch (const std::exception& e) {
-        sendToLoggerError(std::string("Exception in page gate handler: ") + e.what());
-    } catch (...) {
-        sendToLoggerError("Unknown exception in page gate handler");
-    }
-
+    const bool allowed = co_await evaluateResolvedGateAsync(
+        *gate, request, [this](const std::string& msg) { sendToLoggerError(msg); }, "page");
     if (allowed) {
         co_return true;
     }
@@ -217,19 +176,8 @@ boost::asio::awaitable<std::optional<HTTPResponse>> Handler::checkRouteGateDenia
         co_return std::nullopt;
     }
 
-    bool allowed = false;
-    try {
-        if (gate->async) {
-            allowed = co_await gate->asyncHandler(request);
-        } else {
-            allowed = gate->syncHandler(request);
-        }
-    } catch (const std::exception& e) {
-        sendToLoggerError(std::string("Exception in route gate handler: ") + e.what());
-    } catch (...) {
-        sendToLoggerError("Unknown exception in route gate handler");
-    }
-
+    const bool allowed = co_await evaluateResolvedGateAsync(
+        *gate, request, [this](const std::string& msg) { sendToLoggerError(msg); }, "route");
     if (allowed) {
         co_return std::nullopt;
     }

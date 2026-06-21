@@ -25,7 +25,6 @@
 #include "RouteDispatcher.hpp"
 #include "StaticFileResolver.hpp"
 #include "data/HTTPRequest.hpp"
-#include "data/HTTPResponse.hpp"
 #include "data/ServerData.hpp"
 
 // Max packet size
@@ -73,11 +72,6 @@ class Handler {
     void record4xxMetric() const;
     void record5xxMetric() const;
     void recordErrorMetric() const;
-
-    /** Returns denial response when a page gate rejects access; empty when allowed or no gate. */
-    boost::asio::awaitable<std::optional<HTTPResponse>> checkPageGateDenialAsync(
-        const HTTPRequest& request,
-        const std::optional<ResolvedPageGate>& resolvedGate = std::nullopt) const;
 
     /**
      * Enforce Basic Auth + page gate for a logical page path.

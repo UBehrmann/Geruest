@@ -62,79 +62,43 @@ class ServerData {
     std::unordered_map<std::string, RouteHandler> getRoutes();
     const std::unordered_map<std::string, RouteHandler>& getRoutes() const;
 
-    void addRoute(const std::string& path, RouteHandler routeHandler) { _routes.addRoute(path, std::move(routeHandler)); }
-    void addRouteAsync(const std::string& path, AsyncRouteHandler routeHandler) {
-        _routes.addRouteAsync(path, std::move(routeHandler));
-    }
-    void addWebSocketRoute(const std::string& path, WebSocketHandler routeHandler) {
-        _routes.addWebSocketRoute(path, std::move(routeHandler));
-    }
+    void addRoute(const std::string& path, RouteHandler routeHandler);
+    void addRouteAsync(const std::string& path, AsyncRouteHandler routeHandler);
+    void addWebSocketRoute(const std::string& path, WebSocketHandler routeHandler);
 
-    bool addRedirect(const std::string& from, const std::string& to, int status = 301) {
-        return _routes.addRedirect(from, to, status);
-    }
-    size_t addRedirects(const std::unordered_map<std::string, std::string>& redirects, int status = 301) {
-        return _routes.addRedirects(redirects, status);
-    }
-    std::optional<std::pair<std::string, int>> findMatchingRedirect(const std::string& path) const {
-        return _routes.findMatchingRedirect(path);
-    }
+    bool addRedirect(const std::string& from, const std::string& to, int status = 301);
+    size_t addRedirects(const std::unordered_map<std::string, std::string>& redirects, int status = 301);
+    std::optional<std::pair<std::string, int>> findMatchingRedirect(const std::string& path) const;
 
-    bool addPageGate(const std::string& path, PageGateHandler handler, const std::string& redirectTo = "") {
-        return _gates.addPageGate(path, std::move(handler), redirectTo);
-    }
-    bool addAsyncPageGate(const std::string& path, AsyncPageGateHandler handler, const std::string& redirectTo = "") {
-        return _gates.addAsyncPageGate(path, std::move(handler), redirectTo);
-    }
-    bool removePageGate(const std::string& path) { return _gates.removePageGate(path); }
-    void clearPageGates() { _gates.clearPageGates(); }
-    std::optional<PageGateRule> findMatchingPageGate(const std::string& path) const {
-        return _gates.findMatchingPageGate(path);
-    }
-    std::optional<AsyncPageGateRule> findMatchingAsyncPageGate(const std::string& path) const {
-        return _gates.findMatchingAsyncPageGate(path);
-    }
-    std::optional<ResolvedPageGate> findResolvedPageGate(const std::string& path) const {
-        return _gates.findResolvedPageGate(path);
-    }
-    std::string resolvePageGateRedirect(const std::string& redirectTo, const std::string& requestPath) const {
-        return _gates.resolvePageGateRedirect(redirectTo, requestPath);
-    }
+    bool addPageGate(const std::string& path, PageGateHandler handler, const std::string& redirectTo = "");
+    bool addAsyncPageGate(const std::string& path, AsyncPageGateHandler handler, const std::string& redirectTo = "");
+    bool removePageGate(const std::string& path);
+    void clearPageGates();
+    std::optional<PageGateRule> findMatchingPageGate(const std::string& path) const;
+    std::optional<AsyncPageGateRule> findMatchingAsyncPageGate(const std::string& path) const;
+    std::optional<ResolvedPageGate> findResolvedPageGate(const std::string& path) const;
+    std::string resolvePageGateRedirect(const std::string& redirectTo, const std::string& requestPath) const;
     bool pageRequiresAccessControl(const std::string& pagePath) const;
     std::optional<std::string> findMergedAssetOwnerPagePath(const std::string& assetRequestPath) const;
 
-    bool addRouteGate(const std::string& path, RouteGateHandler handler) {
-        return _gates.addRouteGate(path, std::move(handler));
-    }
-    bool addAsyncRouteGate(const std::string& path, AsyncRouteGateHandler handler) {
-        return _gates.addAsyncRouteGate(path, std::move(handler));
-    }
-    bool removeRouteGate(const std::string& path) { return _gates.removeRouteGate(path); }
-    void clearRouteGates() { _gates.clearRouteGates(); }
-    std::optional<RouteGateRule> findMatchingRouteGate(const std::string& path) const {
-        return _gates.findMatchingRouteGate(path);
-    }
-    std::optional<ResolvedRouteGate> findResolvedRouteGate(const std::string& path) const {
-        return _gates.findResolvedRouteGate(path);
-    }
+    bool addRouteGate(const std::string& path, RouteGateHandler handler);
+    bool addAsyncRouteGate(const std::string& path, AsyncRouteGateHandler handler);
+    bool removeRouteGate(const std::string& path);
+    void clearRouteGates();
+    std::optional<RouteGateRule> findMatchingRouteGate(const std::string& path) const;
+    std::optional<ResolvedRouteGate> findResolvedRouteGate(const std::string& path) const;
 
-    std::optional<RouteHandler> findMatchingRoute(const std::string& path) const {
-        return _routes.findMatchingRoute(path);
-    }
-    std::optional<AsyncRouteHandler> findMatchingAsyncRoute(const std::string& path) const {
-        return _routes.findMatchingAsyncRoute(path);
-    }
-    std::optional<WebSocketHandler> findMatchingWebSocketRoute(const std::string& path) const {
-        return _routes.findMatchingWebSocketRoute(path);
-    }
+    std::optional<RouteHandler> findMatchingRoute(const std::string& path) const;
+    std::optional<AsyncRouteHandler> findMatchingAsyncRoute(const std::string& path) const;
+    std::optional<WebSocketHandler> findMatchingWebSocketRoute(const std::string& path) const;
 
-    void setWebSocketMaxMessageBytes(size_t bytes) { _routes.setWebSocketMaxMessageBytes(bytes); }
-    void setWebSocketMaxFrameBytes(size_t bytes) { _routes.setWebSocketMaxFrameBytes(bytes); }
-    void setWebSocketIdleTimeout(std::chrono::seconds seconds) { _routes.setWebSocketIdleTimeout(seconds); }
-    void setWebSocketPingInterval(std::chrono::seconds seconds) { _routes.setWebSocketPingInterval(seconds); }
-    void addWebSocketSubprotocol(std::string name) { _routes.addWebSocketSubprotocol(std::move(name)); }
-    const WebSocketLimits& getWebSocketLimits() const { return _routes.getWebSocketLimits(); }
-    const std::vector<std::string>& getWebSocketSubprotocols() const { return _routes.getWebSocketSubprotocols(); }
+    void setWebSocketMaxMessageBytes(size_t bytes);
+    void setWebSocketMaxFrameBytes(size_t bytes);
+    void setWebSocketIdleTimeout(std::chrono::seconds seconds);
+    void setWebSocketPingInterval(std::chrono::seconds seconds);
+    void addWebSocketSubprotocol(std::string name);
+    const WebSocketLimits& getWebSocketLimits() const;
+    const std::vector<std::string>& getWebSocketSubprotocols() const;
 
     const std::string& getRoot() const { return _root; }
     void setRoot(const std::string& newRoot) { _root = newRoot; }
@@ -167,22 +131,14 @@ class ServerData {
     DevAssetCache& devAssetCache() { return _devAssetCache; }
     const DevAssetCache& devAssetCache() const { return _devAssetCache; }
 
-    void setAvailableLanguages(const std::vector<std::string>& languages) {
-        _languages.setAvailableLanguages(languages);
-    }
-    const std::vector<std::string>& getAvailableLanguages() const { return _languages.getAvailableLanguages(); }
-    const std::string& getDefaultLanguage() const { return _languages.getDefaultLanguage(); }
-    bool isLanguageAvailable(const std::string& lang) const { return _languages.isLanguageAvailable(lang); }
-    bool hasLanguages() const { return _languages.hasLanguages(); }
-    std::optional<std::string> languagePrefixFromPath(const std::string& path) const {
-        return _languages.languagePrefixFromPath(path);
-    }
-    std::string resolvePreferredLanguage(std::string_view acceptLanguage) const {
-        return _languages.resolvePreferredLanguage(acceptLanguage);
-    }
-    std::string localizePathWithRequestLanguage(const std::string& path, const std::string& requestPath) const {
-        return _languages.localizePathWithRequestLanguage(path, requestPath);
-    }
+    void setAvailableLanguages(const std::vector<std::string>& languages);
+    const std::vector<std::string>& getAvailableLanguages() const;
+    const std::string& getDefaultLanguage() const;
+    bool isLanguageAvailable(const std::string& lang) const;
+    bool hasLanguages() const;
+    std::optional<std::string> languagePrefixFromPath(const std::string& path) const;
+    std::string resolvePreferredLanguage(std::string_view acceptLanguage) const;
+    std::string localizePathWithRequestLanguage(const std::string& path, const std::string& requestPath) const;
 
     void setNotFoundPage(const std::string& path) { _notFoundPage = path; }
     const std::string& getNotFoundPage() const { return _notFoundPage; }
@@ -191,77 +147,69 @@ class ServerData {
     BasicAuth& getBasicAuth() { return _basicAuth; }
     const BasicAuth& getBasicAuth() const { return _basicAuth; }
 
-    void setLogLevel(LogLevel level) { _logLevel.store(level, std::memory_order_relaxed); }
-    LogLevel getLogLevel() const { return _logLevel.load(std::memory_order_relaxed); }
-    bool shouldLog(LogLevel level) const {
-        return static_cast<int>(level) <= static_cast<int>(_logLevel.load(std::memory_order_relaxed));
-    }
+    void setLogLevel(LogLevel level);
+    LogLevel getLogLevel() const;
+    bool shouldLog(LogLevel level) const;
 
-    void setDatabaseClient(std::shared_ptr<db::DatabaseClient> client) { _databaseClient = std::move(client); }
-    std::shared_ptr<db::DatabaseClient> getDatabaseClient() const { return _databaseClient; }
+    void setDatabaseClient(std::shared_ptr<db::DatabaseClient> client);
+    std::shared_ptr<db::DatabaseClient> getDatabaseClient() const;
 
-    void setObfuscationLevel(unsigned int level) { _obfuscation.setLevel(level); }
-    unsigned int getObfuscationLevel() const { return _obfuscation.getLevel(); }
-    void setObfuscationCacheExpiry(int days) { _obfuscation.setCacheExpiryDays(days); }
-    int getObfuscationCacheExpiry() const { return _obfuscation.getCacheExpiryDays(); }
-    void addObfuscationExclusion(const std::string& filename) { _obfuscation.addExclusion(filename); }
-    bool isObfuscationExcluded(const std::string& filename) const { return _obfuscation.isExcluded(filename); }
-    const std::vector<std::string>& getObfuscationExclusions() const { return _obfuscation.getExclusions(); }
-    void addObfuscationPreserveIdent(const std::string& name) { _obfuscation.addPreserveIdent(name); }
-    void addObfuscationExternGlobal(const std::string& name) { _obfuscation.addExternGlobal(name); }
-    const std::unordered_set<std::string>& getObfuscationPreserveIdents() const {
-        return _obfuscation.getPreserveIdents();
-    }
-    const std::unordered_set<std::string>& getObfuscationExternGlobals() const {
-        return _obfuscation.getExternGlobals();
-    }
-    void loadObfuscationExternsFromText(const std::string& text) { _obfuscation.loadExternsFromText(text); }
-    void setObfuscationStrictUndefined(bool v) { _obfuscation.setStrictUndefined(v); }
-    bool getObfuscationStrictUndefined() const { return _obfuscation.getStrictUndefined(); }
-    void setObfuscationEmitGlobalThisAssignments(bool v) { _obfuscation.setEmitGlobalThisBracket(v); }
-    bool getObfuscationEmitGlobalThisAssignments() const { return _obfuscation.getEmitGlobalThisBracket(); }
-    void setObfuscationValidateWithAcorn(bool v) { _obfuscation.setValidateWithAcorn(v); }
-    bool getObfuscationValidateWithAcorn() const { return _obfuscation.getValidateWithAcorn(); }
-    void setObfuscationAutoBracketKeys(bool v) { _obfuscation.setAutoBracketKeys(v); }
-    bool getObfuscationAutoBracketKeys() const { return _obfuscation.getAutoBracketKeys(); }
-    bool shouldObfuscate() const { return !_devMode && _obfuscation.getLevel() > 0; }
+    void setObfuscationLevel(unsigned int level);
+    unsigned int getObfuscationLevel() const;
+    void setObfuscationCacheExpiry(int days);
+    int getObfuscationCacheExpiry() const;
+    void addObfuscationExclusion(const std::string& filename);
+    bool isObfuscationExcluded(const std::string& filename) const;
+    const std::vector<std::string>& getObfuscationExclusions() const;
+    void addObfuscationPreserveIdent(const std::string& name);
+    void addObfuscationExternGlobal(const std::string& name);
+    const std::unordered_set<std::string>& getObfuscationPreserveIdents() const;
+    const std::unordered_set<std::string>& getObfuscationExternGlobals() const;
+    void loadObfuscationExternsFromText(const std::string& text);
+    void setObfuscationStrictUndefined(bool v);
+    bool getObfuscationStrictUndefined() const;
+    void setObfuscationEmitGlobalThisAssignments(bool v);
+    bool getObfuscationEmitGlobalThisAssignments() const;
+    void setObfuscationValidateWithAcorn(bool v);
+    bool getObfuscationValidateWithAcorn() const;
+    void setObfuscationAutoBracketKeys(bool v);
+    bool getObfuscationAutoBracketKeys() const;
+    bool shouldObfuscate() const;
 
-    static bool isMetricsExcludedPath(const std::string& path) {
-        return ServerMetrics::isMetricsExcludedPath(path);
-    }
+    static bool isMetricsExcludedPath(const std::string& path);
 
-    void recordRequest() const { _metrics.recordRequest(); }
-    void recordError() const { _metrics.recordError(); }
-    void record4xx() const { _metrics.record4xx(); }
-    void record5xx() const { _metrics.record5xx(); }
-    void recordQueueRejection() const { _metrics.recordQueueRejection(); }
-    void recordAcceptError() const { _metrics.recordAcceptError(); }
-    void recordAcceptEmfile() const { _metrics.recordAcceptEmfile(); }
-    void recordFileOpenFailure() const { _metrics.recordFileOpenFailure(); }
-    void recordOverloadHttpResponse() const { _metrics.recordOverloadHttpResponse(); }
-    void recordQueueFill(float fillPct) const { _metrics.recordQueueFill(fillPct); }
-    void incrementActiveHandlers() const { _metrics.incrementActiveHandlers(); }
-    void decrementActiveHandlers() const { _metrics.decrementActiveHandlers(); }
-    void recordLatency(uint32_t us) const { _metrics.recordLatency(us); }
+    void recordRequest() const;
+    void recordError() const;
+    void record4xx() const;
+    void record5xx() const;
+    void recordQueueRejection() const;
+    void recordAcceptError() const;
+    void recordAcceptEmfile() const;
+    void recordFileOpenFailure() const;
+    void recordOverloadHttpResponse() const;
+    void recordQueueFill(float fillPct) const;
+    void incrementActiveHandlers() const;
+    void decrementActiveHandlers() const;
+    void recordLatency(uint32_t us) const;
 
-    uint64_t getTotalRequests() const { return _metrics.getTotalRequests(); }
-    uint64_t getTotalErrors() const { return _metrics.getTotalErrors(); }
-    uint64_t getTotal4xx() const { return _metrics.getTotal4xx(); }
-    uint64_t getTotal5xx() const { return _metrics.getTotal5xx(); }
-    uint64_t getTotalInternalErrors() const { return _metrics.getTotalInternalErrors(); }
-    uint64_t getQueueRejections() const { return _metrics.getQueueRejections(); }
-    uint64_t getAcceptErrorsTotal() const { return _metrics.getAcceptErrorsTotal(); }
-    uint64_t getAcceptEmfileTotal() const { return _metrics.getAcceptEmfileTotal(); }
-    uint64_t getFileOpenFailures() const { return _metrics.getFileOpenFailures(); }
-    uint64_t getOverloadHttpResponses() const { return _metrics.getOverloadHttpResponses(); }
-    int64_t getActiveHandlers() const { return _metrics.getActiveHandlers(); }
-    WindowMetrics getWindowMetricsHour() const { return _metrics.getWindowMetricsHour(); }
-    WindowMetrics getRollingAveragePerHour() const { return _metrics.getRollingAveragePerHour(); }
-    LatencyStats getLatencyStats(uint32_t windowSeconds) const { return _metrics.getLatencyStats(windowSeconds); }
-    uint64_t getUptimeSeconds() const { return _metrics.getUptimeSeconds(); }
-    bool loadPersistentMetricsFromFile(const std::string& path) { return _metrics.loadPersistentMetricsFromFile(path); }
-    bool savePersistentMetricsToFile(const std::string& path) const { return _metrics.savePersistentMetricsToFile(path); }
-    double getUptimeHoursTotal() const { return _metrics.getUptimeHoursTotal(); }
+    uint64_t getTotalRequests() const;
+    uint64_t getTotalErrors() const;
+    uint64_t getTotal4xx() const;
+    uint64_t getTotal5xx() const;
+    uint64_t getTotalInternalErrors() const;
+    uint64_t getQueueRejections() const;
+    uint64_t getAcceptErrorsTotal() const;
+    uint64_t getAcceptEmfileTotal() const;
+    uint64_t getFileOpenFailures() const;
+    uint64_t getOverloadHttpResponses() const;
+    int64_t getActiveHandlers() const;
+    WindowMetrics getWindowMetricsHour() const;
+    WindowMetrics getRollingAveragePerHour() const;
+    LatencyStats getLatencyStats(uint32_t windowSeconds) const;
+    uint64_t getUptimeSeconds() const;
+    bool loadPersistentMetricsFromFile(const std::string& path);
+    bool savePersistentMetricsToFile(const std::string& path) const;
+    double getUptimeHoursTotal() const;
 
    private:
     void wireLanguagePointers_();

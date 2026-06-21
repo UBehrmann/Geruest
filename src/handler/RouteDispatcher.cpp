@@ -62,6 +62,21 @@ boost::asio::awaitable<void> RouteDispatcher::dispatchRouteAndSendAsync(HTTPRequ
     co_return;
 }
 
+boost::asio::awaitable<void> RouteDispatcher::tryDispatchRoute(HTTPRequest* request, const std::string& path,
+                                                               boost::asio::awaitable<HTTPResponse> produced,
+                                                               std::string_view handlerLabel, Handler& host) {
+    if (auto denial = co_await host.checkRouteGateDenialAsync(*request)) {
+        host.record4xxMetric();
+        denial->serializeTo(host.responseScratch_);
+        if (!co_await host.sendSocketAsync(host.responseScratch_.data(), host.responseScratch_.size())) {
+            host.sendToLoggerError("Failed to send route gate denial for: " + path);
+        }
+        co_return;
+    }
+
+    co_await dispatchRouteAndSendAsync(request, path, std::move(produced), handlerLabel, host);
+}
+
 boost::asio::awaitable<void> RouteDispatcher::dispatchAsync(HTTPRequest* request, Handler& host) {
     auto redirectMatch = serverData_.findMatchingRedirect(request->getPathString());
     if (redirectMatch.has_value()) {
@@ -83,16 +98,7 @@ boost::asio::awaitable<void> RouteDispatcher::dispatchAsync(HTTPRequest* request
     std::string path = request->getPathString();
 
     if (auto routeHandler = serverData_.findMatchingRoute(path)) {
-        if (auto denial = co_await host.checkRouteGateDenialAsync(*request)) {
-            host.record4xxMetric();
-            denial->serializeTo(host.responseScratch_);
-            if (!co_await host.sendSocketAsync(host.responseScratch_.data(), host.responseScratch_.size())) {
-                host.sendToLoggerError("Failed to send route gate denial for: " + path);
-            }
-            co_return;
-        }
-
-        co_await dispatchRouteAndSendAsync(
+        co_await tryDispatchRoute(
             request, path,
             [routeHandler, request]() -> boost::asio::awaitable<HTTPResponse> {
                 co_return (*routeHandler)(*request);
@@ -102,16 +108,7 @@ boost::asio::awaitable<void> RouteDispatcher::dispatchAsync(HTTPRequest* request
     }
 
     if (auto asyncRouteHandler = serverData_.findMatchingAsyncRoute(path)) {
-        if (auto denial = co_await host.checkRouteGateDenialAsync(*request)) {
-            host.record4xxMetric();
-            denial->serializeTo(host.responseScratch_);
-            if (!co_await host.sendSocketAsync(host.responseScratch_.data(), host.responseScratch_.size())) {
-                host.sendToLoggerError("Failed to send route gate denial for: " + path);
-            }
-            co_return;
-        }
-
-        co_await dispatchRouteAndSendAsync(
+        co_await tryDispatchRoute(
             request, path,
             [asyncRouteHandler, request]() -> boost::asio::awaitable<HTTPResponse> {
                 co_return co_await (*asyncRouteHandler)(*request);

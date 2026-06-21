@@ -52,6 +52,14 @@ class GateRegistry {
                                              const std::unordered_map<std::string, Rule>& wildcardGates,
                                              const std::string& path) const;
 
+    template <typename Rule>
+    std::optional<Rule> findBestWildcardRuleMatch(const std::unordered_map<std::string, Rule>& wildcardGates,
+                                                  const std::string& path) const;
+
+    template <typename Resolved, typename ResolveExactFn, typename FindWildcardFn>
+    std::optional<Resolved> findResolvedGateImpl(const std::string& path, ResolveExactFn&& resolveExact,
+                                                 FindWildcardFn&& findBestWildcard) const;
+
     template <typename Resolved, typename AsyncRule, typename SyncRule, typename FromAsync, typename FromSync>
     std::optional<Resolved> findBestWildcardGate(const std::string& path,
                                                  const std::unordered_map<std::string, AsyncRule>& asyncWild,

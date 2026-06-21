@@ -16,14 +16,8 @@ void GateRegistry::storeGateRule(const std::string& path, Rule rule,
 }
 
 template <typename Rule>
-std::optional<Rule> GateRegistry::findMatchingGateImpl(const std::unordered_map<std::string, Rule>& exactGates,
-                                                       const std::unordered_map<std::string, Rule>& wildcardGates,
-                                                       const std::string& path) const {
-    auto exactMatch = exactGates.find(path);
-    if (exactMatch != exactGates.end()) {
-        return exactMatch->second;
-    }
-
+std::optional<Rule> GateRegistry::findBestWildcardRuleMatch(
+    const std::unordered_map<std::string, Rule>& wildcardGates, const std::string& path) const {
     size_t bestPatternLength = 0;
     std::optional<std::string> bestPattern;
     std::optional<Rule> bestMatch;
@@ -40,8 +34,20 @@ std::optional<Rule> GateRegistry::findMatchingGateImpl(const std::unordered_map<
             bestMatch = gate.second;
         }
     }
-    if (bestMatch.has_value()) {
-        return bestMatch;
+    return bestMatch;
+}
+
+template <typename Rule>
+std::optional<Rule> GateRegistry::findMatchingGateImpl(const std::unordered_map<std::string, Rule>& exactGates,
+                                                       const std::unordered_map<std::string, Rule>& wildcardGates,
+                                                       const std::string& path) const {
+    auto exactMatch = exactGates.find(path);
+    if (exactMatch != exactGates.end()) {
+        return exactMatch->second;
+    }
+
+    if (auto wildMatch = findBestWildcardRuleMatch(wildcardGates, path)) {
+        return wildMatch;
     }
 
     if (_languages == nullptr) {
@@ -58,23 +64,35 @@ std::optional<Rule> GateRegistry::findMatchingGateImpl(const std::unordered_map<
         return exactMatch->second;
     }
 
-    bestPatternLength = 0;
-    bestPattern.reset();
-    bestMatch.reset();
-    for (const auto& gate : wildcardGates) {
-        const std::string& pattern = gate.first;
-        if (!matchesWildcardPattern(pattern, *strippedPath)) {
-            continue;
-        }
-        const bool better = !bestMatch.has_value() || pattern.size() > bestPatternLength ||
-                            (pattern.size() == bestPatternLength && bestPattern.has_value() && pattern < *bestPattern);
-        if (better) {
-            bestPatternLength = pattern.size();
-            bestPattern = pattern;
-            bestMatch = gate.second;
-        }
+    return findBestWildcardRuleMatch(wildcardGates, *strippedPath);
+}
+
+template <typename Resolved, typename ResolveExactFn, typename FindWildcardFn>
+std::optional<Resolved> GateRegistry::findResolvedGateImpl(const std::string& path, ResolveExactFn&& resolveExact,
+                                                           FindWildcardFn&& findBestWildcard) const {
+    const std::string canon = canonicalRequestPath(path);
+    if (auto resolved = resolveExact(canon)) {
+        return resolved;
     }
-    return bestMatch;
+
+    if (auto resolved = findBestWildcard(canon)) {
+        return resolved;
+    }
+
+    if (_languages == nullptr) {
+        return std::nullopt;
+    }
+
+    const auto strippedPath = _languages->stripSupportedLanguagePrefix(canon);
+    if (!strippedPath.has_value()) {
+        return std::nullopt;
+    }
+
+    if (auto resolved = resolveExact(*strippedPath)) {
+        return resolved;
+    }
+
+    return findBestWildcard(*strippedPath);
 }
 
 template <typename Resolved, typename AsyncRule, typename SyncRule, typename FromAsync, typename FromSync>
@@ -175,29 +193,9 @@ std::optional<ResolvedPageGate> GateRegistry::findBestWildcardPageGate(const std
 }
 
 std::optional<ResolvedPageGate> GateRegistry::findResolvedPageGate(const std::string& path) const {
-    const std::string canon = canonicalRequestPath(path);
-    if (auto resolved = resolveExactPageGate(canon)) {
-        return resolved;
-    }
-
-    if (auto resolved = findBestWildcardPageGate(canon)) {
-        return resolved;
-    }
-
-    if (_languages == nullptr) {
-        return std::nullopt;
-    }
-
-    const auto strippedPath = _languages->stripSupportedLanguagePrefix(canon);
-    if (!strippedPath.has_value()) {
-        return std::nullopt;
-    }
-
-    if (auto resolved = resolveExactPageGate(*strippedPath)) {
-        return resolved;
-    }
-
-    return findBestWildcardPageGate(*strippedPath);
+    return findResolvedGateImpl<ResolvedPageGate>(
+        path, [this](const std::string& lookup) { return resolveExactPageGate(lookup); },
+        [this](const std::string& lookup) { return findBestWildcardPageGate(lookup); });
 }
 
 std::string GateRegistry::resolvePageGateRedirect(const std::string& redirectTo,
@@ -273,29 +271,9 @@ std::optional<ResolvedRouteGate> GateRegistry::findBestWildcardRouteGate(const s
 }
 
 std::optional<ResolvedRouteGate> GateRegistry::findResolvedRouteGate(const std::string& path) const {
-    const std::string canon = canonicalRequestPath(path);
-    if (auto resolved = resolveExactRouteGate(canon)) {
-        return resolved;
-    }
-
-    if (auto resolved = findBestWildcardRouteGate(canon)) {
-        return resolved;
-    }
-
-    if (_languages == nullptr) {
-        return std::nullopt;
-    }
-
-    const auto strippedPath = _languages->stripSupportedLanguagePrefix(canon);
-    if (!strippedPath.has_value()) {
-        return std::nullopt;
-    }
-
-    if (auto resolved = resolveExactRouteGate(*strippedPath)) {
-        return resolved;
-    }
-
-    return findBestWildcardRouteGate(*strippedPath);
+    return findResolvedGateImpl<ResolvedRouteGate>(
+        path, [this](const std::string& lookup) { return resolveExactRouteGate(lookup); },
+        [this](const std::string& lookup) { return findBestWildcardRouteGate(lookup); });
 }
 
 }  // namespace geruest

@@ -30,6 +30,10 @@ class RouteDispatcher {
                                                            boost::asio::awaitable<HTTPResponse> produced,
                                                            std::string_view handlerLabel, Handler& host);
 
+    boost::asio::awaitable<void> tryDispatchRoute(HTTPRequest* request, const std::string& path,
+                                                  boost::asio::awaitable<HTTPResponse> produced,
+                                                  std::string_view handlerLabel, Handler& host);
+
     const ServerData& serverData_;
     StaticFileResolver& fileResolver_;
 };
