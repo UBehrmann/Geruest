@@ -124,6 +124,7 @@ add_library(Geruest STATIC
     src/data/ObfuscationSettings.cpp
     src/data/RouteRegistry.cpp
     src/data/ServerData.cpp
+    src/data/DevAssetCache.cpp
     src/data/ServerMetrics.cpp
     src/data/WildcardMatch.cpp
     src/email/EmailSender.cpp

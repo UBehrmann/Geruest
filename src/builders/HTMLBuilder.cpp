@@ -68,10 +68,6 @@ std::string escapeTranslationForJsDoubleQuoted(const std::string& s) {
 
 }  // namespace
 
-// Initialize static members
-std::unordered_map<std::string, std::string> HtmlBuilder::_mergedAssetsCache;
-std::mutex HtmlBuilder::_cacheMutex;
-
 HtmlBuilder::HtmlBuilder(const std::string& inputPath, const ServerData& serverData)
     : ContentBuilder(inputPath, serverData) {
     buildHtml();
@@ -411,22 +407,20 @@ void HtmlBuilder::processAssetMerging(const std::string& pageName) {
     // In dev mode: Store merged assets in memory cache instead of saving to disk
     // In production: Save merged assets to disk for performance
     if (_serverData.isDevMode()) {
-        std::lock_guard<std::mutex> lock(_cacheMutex);
-        
-        // Store merged CSS in cache
+        const DevAssetCache& cache = _serverData.devAssetCache();
+
         if (result.hasCss && !result.mergedCss.empty()) {
             std::string cssPath = result.cssSubdir.empty() ?
                 "/assets/css/" + pageName + ".css" :
                 "/assets/css/" + result.cssSubdir + "/" + pageName + ".css";
-            _mergedAssetsCache[cssPath] = result.mergedCss;
+            cache.putMergedAsset(cssPath, result.mergedCss);
         }
-        
-        // Store merged JS in cache
+
         if (result.hasJs && !result.mergedJs.empty()) {
             std::string jsPath = result.jsSubdir.empty() ?
                 "/assets/js/" + pageName + ".js" :
                 "/assets/js/" + result.jsSubdir + "/" + pageName + ".js";
-            _mergedAssetsCache[jsPath] = result.mergedJs;
+            cache.putMergedAsset(jsPath, result.mergedJs);
         }
     } else {
         // Production mode: Save to disk
@@ -501,28 +495,6 @@ void HtmlBuilder::ensureAbsoluteAssetPaths() {
     builtFile = result;
 }
 
-std::string HtmlBuilder::getMergedAssetFromCache(const std::string& path) {
-    std::lock_guard<std::mutex> lock(_cacheMutex);
-    auto it = _mergedAssetsCache.find(path);
-    if (it != _mergedAssetsCache.end()) {
-        return it->second;
-    }
-    return "";
-}
-
-bool HtmlBuilder::hasMergedAssetInCache(const std::string& path) {
-    std::lock_guard<std::mutex> lock(_cacheMutex);
-    return _mergedAssetsCache.find(path) != _mergedAssetsCache.end();
-}
-
-std::shared_ptr<const std::vector<uint8_t>> HtmlBuilder::getWebPFromCache(const std::string& path) {
-    return WebPConverter::getFromCache(path);
-}
-
-bool HtmlBuilder::hasWebPInCache(const std::string& path) {
-    return WebPConverter::hasInCache(path);
-}
-
 void HtmlBuilder::processWebPConversion() {
     // Extract all image paths from HTML
     // Images are expected to be in assets/images/ directory (standard Geruest path)
@@ -565,8 +537,7 @@ void HtmlBuilder::processWebPConversion() {
         // Convert image to WebP
         bool success = false;
         if (_serverData.isDevMode()) {
-            // In dev mode: only convert if not already cached
-            if (WebPConverter::hasInCache(fullWebPPath)) {
+            if (_serverData.devAssetCache().hasWebP(fullWebPPath)) {
                 success = true;
             } else {
                 success = WebPConverter::convertImage(fullSourcePath, fullWebPPath, true, _serverData.getWebPQuality());

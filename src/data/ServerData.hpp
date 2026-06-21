@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "../auth/BasicAuth.hpp"
+#include "DevAssetCache.hpp"
 #include "GateRegistry.hpp"
 #include "LanguageConfig.hpp"
 #include "ObfuscationSettings.hpp"
@@ -163,6 +164,9 @@ class ServerData {
     void enableDevMode();
     bool isDevMode() const { return _devMode; }
 
+    DevAssetCache& devAssetCache() { return _devAssetCache; }
+    const DevAssetCache& devAssetCache() const { return _devAssetCache; }
+
     void setAvailableLanguages(const std::vector<std::string>& languages) {
         _languages.setAvailableLanguages(languages);
     }
@@ -267,6 +271,7 @@ class ServerData {
     GateRegistry _gates;
     ObfuscationSettings _obfuscation;
     ServerMetrics _metrics;
+    DevAssetCache _devAssetCache;
 
     std::string _root;
     bool _removeComments = true;

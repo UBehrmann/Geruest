@@ -10,6 +10,7 @@
  */
 
 #include "WebPConverter.hpp"
+#include "data/DevAssetCache.hpp"
 #include "FileManagement/FileManagement.hpp"
 
 #include <algorithm>
@@ -67,11 +68,7 @@ void WebPConverter::StbiDeleter::operator()(uint8_t* p) const noexcept {
 }
 
 // Initialize static members
-std::mutex WebPConverter::_staticCacheMutex;
-std::unordered_map<std::string, std::shared_ptr<const std::vector<uint8_t>>> WebPConverter::_staticWebpCache;
-std::deque<std::string> WebPConverter::_staticCacheOrder;
-size_t WebPConverter::_staticCacheSizeBytes = 0;
-size_t WebPConverter::_staticMaxCacheBytes = WebPConverter::WEBP_DEFAULT_MAX_CACHE_BYTES;
+std::mutex WebPConverter::_conversionMutex;
 std::condition_variable WebPConverter::_conversionCV;
 std::unordered_set<std::string> WebPConverter::_inProgressConversions;
 bool WebPConverter::_conversionActive = false;
@@ -110,39 +107,6 @@ std::string WebPConverter::getWebPPath(const std::string& sourcePath) {
         return sourcePath + ".webp";
     }
     return sourcePath.substr(0, dotPos) + ".webp";
-}
-
-// ========== Static cache methods ==========
-
-std::shared_ptr<const std::vector<uint8_t>> WebPConverter::getFromCache(const std::string& webpPath) {
-    std::lock_guard<std::mutex> lock(_staticCacheMutex);
-    auto it = _staticWebpCache.find(webpPath);
-    if (it != _staticWebpCache.end()) {
-        return it->second;
-    }
-    return nullptr;
-}
-
-bool WebPConverter::hasInCache(const std::string& webpPath) {
-    std::lock_guard<std::mutex> lock(_staticCacheMutex);
-    return _staticWebpCache.find(webpPath) != _staticWebpCache.end();
-}
-
-void WebPConverter::clearStaticCache() {
-    {
-        std::lock_guard<std::mutex> lock(_staticCacheMutex);
-        _staticWebpCache.clear();
-        _staticCacheOrder.clear();
-        _staticCacheSizeBytes = 0;
-        // _inProgressConversions is intentionally NOT cleared here:
-        // any thread currently mid-conversion must still finish and clean up.
-    }
-    _conversionCV.notify_all();
-}
-
-void WebPConverter::setMaxCacheBytes(size_t maxBytes) {
-    std::lock_guard<std::mutex> lock(_staticCacheMutex);
-    _staticMaxCacheBytes = maxBytes;
 }
 
 void WebPConverter::setMaxConversionDimension(int maxDimension) {
@@ -453,33 +417,34 @@ bool WebPConverter::convertImage(const std::string& sourcePath, const std::strin
     bool claimedPath = false;   // did we insert into _inProgressConversions?
 
     {
-        std::unique_lock<std::mutex> lock(_staticCacheMutex);
+        std::unique_lock<std::mutex> lock(_conversionMutex);
 
         if (cacheOnly) {
-            _conversionCV.wait(lock, [&outputPath]() {
-                if (_staticWebpCache.count(outputPath) > 0) return true; // already done
+            if (!_serverData) {
+                std::cerr << "WebPConverter: cacheOnly conversion requires setServerData()" << std::endl;
+                return false;
+            }
+            const DevAssetCache& cache = _serverData->devAssetCache();
+            _conversionCV.wait(lock, [&outputPath, &cache]() {
+                if (cache.hasWebP(outputPath)) return true;
                 return !_conversionActive &&
                        _inProgressConversions.count(outputPath) == 0;
             });
-            if (_staticWebpCache.count(outputPath) > 0) {
-                return true; // another thread converted it while we waited
+            if (cache.hasWebP(outputPath)) {
+                return true;
             }
             _inProgressConversions.insert(outputPath);
             claimedPath = true;
         } else {
-            // Production: just wait for the global slot; the filesystem provides
-            // idempotency (mtime checks happen before convertImage is called).
             _conversionCV.wait(lock, []() { return !_conversionActive; });
         }
 
-        _conversionActive = true; // claim slot — applies to BOTH modes
+        _conversionActive = true;
     }
 
-    // RAII cleanup: releases _conversionActive and the per-path slot (if claimed)
-    // on every exit path so the next waiting thread can proceed.
     auto releaseSlot = [&]() noexcept {
         {
-            std::lock_guard<std::mutex> lock(_staticCacheMutex);
+            std::lock_guard<std::mutex> lock(_conversionMutex);
             _conversionActive = false;
             if (claimedPath) _inProgressConversions.erase(outputPath);
         }
@@ -581,32 +546,13 @@ bool WebPConverter::convertImage(const std::string& sourcePath, const std::strin
     // Phase 4 — store result and release slot.
     // -----------------------------------------------------------------------
     if (cacheOnly) {
-        auto entry = std::make_shared<const std::vector<uint8_t>>(std::move(webpData));
-        const size_t entrySize = entry->size();
-        {
-            std::lock_guard<std::mutex> lock(_staticCacheMutex);
-
-            if (entrySize <= _staticMaxCacheBytes) {
-                while (!_staticCacheOrder.empty() &&
-                       _staticCacheSizeBytes + entrySize > _staticMaxCacheBytes) {
-                    const std::string& oldest = _staticCacheOrder.front();
-                    auto it = _staticWebpCache.find(oldest);
-                    if (it != _staticWebpCache.end()) {
-                        _staticCacheSizeBytes -= it->second->size();
-                        _staticWebpCache.erase(it);
-                    }
-                    _staticCacheOrder.pop_front();
-                }
-                _staticCacheSizeBytes += entrySize;
-                _staticWebpCache[outputPath] = std::move(entry);
-                _staticCacheOrder.push_back(outputPath);
-            } else {
-                std::cerr << "WebPConverter: entry too large for cache ("
-                          << entrySize << " bytes), serving without caching: "
-                          << outputPath << std::endl;
-            }
+        if (!_serverData) {
+            releaseSlot();
+            return false;
         }
-        releaseSlot(); // releases _conversionActive + in-progress + notifies
+        auto entry = std::make_shared<const std::vector<uint8_t>>(std::move(webpData));
+        _serverData->devAssetCache().putWebP(outputPath, std::move(entry));
+        releaseSlot();
         return true;
     } else {
         bool ok = saveWebP(outputPath, webpData);

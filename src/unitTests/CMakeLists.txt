@@ -85,6 +85,7 @@ endif()
 set(PLATFORM_LIBS pthread Boost::system)
 
 set(SERVERDATA_SOURCES
+    ../data/DevAssetCache.cpp
     ../data/GateRegistry.cpp
     ../data/LanguageConfig.cpp
     ../data/ObfuscationSettings.cpp
@@ -169,7 +170,13 @@ target_link_libraries(HTTPResponse_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 add_executable(FileManagement_Tests FileManagement/FileManagement_tests.cpp ../FileManagement/FileManagement.cpp)
 target_link_libraries(FileManagement_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
-add_executable(ContentBuilder_Tests 
+add_executable(DevAssetCache_Tests
+    DevAssetCache/DevAssetCache_tests.cpp
+    ../data/DevAssetCache.cpp
+)
+target_link_libraries(DevAssetCache_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+
+add_executable(ContentBuilder_Tests
     ContentBuilder/ContentBuilder_tests.cpp 
     ../auth/BasicAuth.cpp
     ${SERVERDATA_SOURCES}
@@ -393,6 +400,7 @@ gtest_discover_tests(JSONParser_Tests)
 gtest_discover_tests(HTTPRequest_Tests)
 gtest_discover_tests(HTTPResponse_Tests)
 gtest_discover_tests(FileManagement_Tests)
+gtest_discover_tests(DevAssetCache_Tests)
 gtest_discover_tests(ContentBuilder_Tests)
 gtest_discover_tests(JSObfuscator_Tests)
 gtest_discover_tests(BasicAuth_Tests)

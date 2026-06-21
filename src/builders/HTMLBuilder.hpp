@@ -12,10 +12,7 @@
 #define HTMLBUILDER_HPP
 
 #include <filesystem>
-#include <memory>
 #include <string>
-#include <unordered_map>
-#include <mutex>
 
 #include "ContentBuilder.hpp"
 #include "FileManagement/FileManagement.hpp"
@@ -30,19 +27,7 @@ class HtmlBuilder : public ContentBuilder {
    public:
     HtmlBuilder(const std::string& inputPath, const ServerData& serverData);
 
-    // Static cache for merged assets in dev mode
-    static std::string getMergedAssetFromCache(const std::string& path);
-    static bool hasMergedAssetInCache(const std::string& path);
-
-    // Static accessor for WebP cache (used by Handler)
-    static std::shared_ptr<const std::vector<uint8_t>> getWebPFromCache(const std::string& path);
-    static bool hasWebPInCache(const std::string& path);
-
    private:
-    // In-memory cache for merged assets (dev mode only)
-    static std::unordered_map<std::string, std::string> _mergedAssetsCache;
-    static std::mutex _cacheMutex;
-
     void buildHtml();
 
     /**

@@ -28,7 +28,6 @@
  */
 
 #include "JSBuilder.hpp"
-#include "HTMLBuilder.hpp"
 #include "AssetMerger.hpp"
 #include "JSObfuscator.hpp"
 #include "../FileManagement/FileManagement.hpp"

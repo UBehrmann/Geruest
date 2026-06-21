@@ -51,10 +51,11 @@ bool ContentBuilder::tryLoadMergedAssetDevCache(const std::string& absolutePath,
         return false;
     }
     const std::string relativePath = absolutePath.substr(rootPos);
-    if (!HtmlBuilder::hasMergedAssetInCache(relativePath)) {
+    const DevAssetCache& cache = serverData.devAssetCache();
+    if (!cache.hasMergedAsset(relativePath)) {
         return false;
     }
-    out = HtmlBuilder::getMergedAssetFromCache(relativePath);
+    out = cache.getMergedAsset(relativePath);
     return true;
 }
 

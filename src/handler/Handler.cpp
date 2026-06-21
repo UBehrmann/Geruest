@@ -37,9 +37,7 @@
 #endif
 
 #include "TextResponseCache.hpp"
-#include "builders/AssetMerger.hpp"
 #include "builders/ContentBuilder.hpp"
-#include "builders/HTMLBuilder.hpp"
 #include "builders/WebPConverter.hpp"
 #include "data/HTTPResponse.hpp"
 #include "security/Security.hpp"
@@ -805,7 +803,7 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
 
     } else {
         if (contentType == "image/webp" && serverData.isDevMode() && serverData.getWebPConversion()) {
-            auto cachedWebP = HtmlBuilder::getWebPFromCache(contentPath);
+            auto cachedWebP = serverData.devAssetCache().getWebP(contentPath);
             if (cachedWebP && !cachedWebP->empty()) {
                 HTTPResponse htmlResponse("200 OK");
                 htmlResponse.setHeader("Content-Type", contentType);
@@ -874,7 +872,7 @@ boost::asio::awaitable<void> Handler::sendFileAsync(const std::string& contentTy
                     bool cacheOnly = serverData.isDevMode();
                     if (WebPConverter::convertImage(sourcePath, contentPath, cacheOnly, serverData.getWebPQuality())) {
                         if (cacheOnly) {
-                            auto webpData = WebPConverter::getFromCache(contentPath);
+                            auto webpData = serverData.devAssetCache().getWebP(contentPath);
                             if (webpData && !webpData->empty()) {
                                 HTTPResponse webpResponse("200 OK");
                                 webpResponse.setHeader("Content-Type", contentType);
