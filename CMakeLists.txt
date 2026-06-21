@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.11)
 
 # Define the project name and version
-project(GeruestLibrary VERSION 0.12.1 LANGUAGES CXX)
+project(GeruestLibrary VERSION 0.12.2 LANGUAGES CXX)
 
 # Configure version header
 configure_file(
@@ -119,7 +119,13 @@ add_library(Geruest STATIC
     src/data/HTTPRequest.cpp
     src/data/HTTPResponse.cpp
     src/data/MethodNotAllowed.cpp
+    src/data/GateRegistry.cpp
+    src/data/LanguageConfig.cpp
+    src/data/ObfuscationSettings.cpp
+    src/data/RouteRegistry.cpp
     src/data/ServerData.cpp
+    src/data/ServerMetrics.cpp
+    src/data/WildcardMatch.cpp
     src/email/EmailSender.cpp
     src/FileManagement/FileManagement.cpp
     src/handler/Handler.cpp

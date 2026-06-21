@@ -84,6 +84,16 @@ endif()
 # Linux/Unix settings
 set(PLATFORM_LIBS pthread Boost::system)
 
+set(SERVERDATA_SOURCES
+    ../data/GateRegistry.cpp
+    ../data/LanguageConfig.cpp
+    ../data/ObfuscationSettings.cpp
+    ../data/RouteRegistry.cpp
+    ../data/ServerData.cpp
+    ../data/ServerMetrics.cpp
+    ../data/WildcardMatch.cpp
+)
+
 # Collect all source files from the main Geruest library
 set(GERUEST_SOURCES
     ../Geruest.cpp
@@ -98,7 +108,7 @@ set(GERUEST_SOURCES
     ../data/HTTPRequest.cpp
     ../data/HTTPResponse.cpp
     ../data/MethodNotAllowed.cpp
-    ../data/ServerData.cpp
+    ${SERVERDATA_SOURCES}
     ../parser/JSONParser.cpp
     ../FileManagement/FileManagement.cpp
     ../builders/AssetMerger.cpp
@@ -159,6 +169,7 @@ target_link_libraries(FileManagement_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 add_executable(ContentBuilder_Tests 
     ContentBuilder/ContentBuilder_tests.cpp 
     ../auth/BasicAuth.cpp
+    ${SERVERDATA_SOURCES}
     ../builders/AssetMerger.cpp
     ../builders/ContentBuilder.cpp
     ../builders/HTMLBuilder.cpp
@@ -231,7 +242,7 @@ target_link_libraries(WebSocketHandshake_Tests ${PLATFORM_LIBS} GTest::gtest_mai
 
 add_executable(WebSocketServerData_Tests
     WebSocket/WebSocketServerData_tests.cpp
-    ../data/ServerData.cpp
+    ${SERVERDATA_SOURCES}
     ../data/HTTPRequest.cpp
     ../server/WebSocket.cpp
     ../parser/JSONParser.cpp
@@ -258,7 +269,7 @@ endif()
 
 add_executable(ServerDataMetricsPersistence_Tests
     ServerData/ServerDataMetricsPersistence_tests.cpp
-    ../data/ServerData.cpp
+    ${SERVERDATA_SOURCES}
     ../parser/JSONParser.cpp
     ../auth/BasicAuth.cpp
     ../security/Security.cpp
@@ -268,7 +279,7 @@ target_link_libraries(ServerDataMetricsPersistence_Tests ${PLATFORM_LIBS} GTest:
 
 add_executable(ServerDataRedirectLanguage_Tests
     ServerData/ServerDataRedirectLanguage_tests.cpp
-    ../data/ServerData.cpp
+    ${SERVERDATA_SOURCES}
     ../parser/JSONParser.cpp
     ../auth/BasicAuth.cpp
     ../security/Security.cpp
@@ -278,7 +289,7 @@ target_link_libraries(ServerDataRedirectLanguage_Tests ${PLATFORM_LIBS} GTest::g
 
 add_executable(ServerDataPageGate_Tests
     ServerData/ServerDataPageGate_tests.cpp
-    ../data/ServerData.cpp
+    ${SERVERDATA_SOURCES}
     ../data/HTTPRequest.cpp
     ../parser/JSONParser.cpp
     ../auth/BasicAuth.cpp
@@ -289,7 +300,7 @@ target_link_libraries(ServerDataPageGate_Tests ${PLATFORM_LIBS} GTest::gtest_mai
 
 add_executable(ServerDataRouteGate_Tests
     ServerData/ServerDataRouteGate_tests.cpp
-    ../data/ServerData.cpp
+    ${SERVERDATA_SOURCES}
     ../data/HTTPRequest.cpp
     ../data/HTTPResponse.cpp
     ../parser/JSONParser.cpp
@@ -301,7 +312,7 @@ target_link_libraries(ServerDataRouteGate_Tests ${PLATFORM_LIBS} GTest::gtest_ma
 
 add_executable(ServerDataMergedAsset_Tests
     ServerData/ServerDataMergedAsset_tests.cpp
-    ../data/ServerData.cpp
+    ${SERVERDATA_SOURCES}
     ../data/HTTPRequest.cpp
     ../parser/JSONParser.cpp
     ../auth/BasicAuth.cpp
