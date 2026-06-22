@@ -2,12 +2,12 @@
 
 Custom `bool(const HTTPRequest&)` access checks for static HTML pages and API routes. Unlike [Basic Authentication](BASIC_AUTH.md) (username/password + `401`), gates run your own logic and deny when the handler returns `false`.
 
-| | Pages (`addGatedPage`) | API routes (`addRoute` + gate) |
-|---|------------------------|--------------------------------|
-| Target | Static HTML from `addRoot()` | Sync or async route handler |
-| Gate | Sync or async (`PageGateHandler` / `AsyncPageGateHandler` overload) | Optional third argument: sync or async gate |
-| On deny | **302 Found** redirect | **403 Forbidden** |
-| Registers handler | No (page already on disk) | Yes |
+| | Pages (`addGatedPage`) | API routes (`addRoute` + gate) | WebSockets (`addRouteWebSocket` + gate) |
+|---|------------------------|--------------------------------|----------------------------------------|
+| Target | Static HTML from `addRoot()` | Sync or async route handler | WebSocket handler (coroutine or callback) |
+| Gate | Sync or async (`PageGateHandler` / `AsyncPageGateHandler` overload) | Optional third argument: sync or async gate | Optional third argument: sync or async gate |
+| On deny | **302 Found** redirect | **403 Forbidden** | **403 Forbidden** (before handshake) |
+| Registers handler | No (page already on disk) | Yes | Yes |
 
 ## Quick Start
 
@@ -38,6 +38,13 @@ server->addRoute("/v1/admin", handleAdmin, [](const HTTPRequest& req) {
 
 // Async route + async gate (required for DB/session lookup in gate)
 server->addRoute("/v1/profile", handleProfileAsync, checkSessionAsync);
+
+// WebSocket with gate: deny → 403 Forbidden (before upgrade)
+server->addRouteWebSocket("/chat", chatHandler, [](const HTTPRequest& req) {
+    return req.getHeader("authorization") == "Bearer mytoken";
+});
+
+server->addRouteWebSocket("/chat", chatHandler, checkSessionAsync);
 ```
 
 ## Async routes require async gates
@@ -59,6 +66,8 @@ server->addRoute("/v1/profile", handleProfileAsync, [](const HTTPRequest& req) -
 ```
 
 Sync routes may still use sync gates for trivial header checks. Offloading sync gate work to a dedicated pool does **not** apply to app code that blocks inside the route handler itself — use async handlers and `co_await` for I/O there too.
+
+The same gate types apply to WebSocket routes (`addRouteWebSocket(..., gate)`). The gate runs on the upgrade request before `101 Switching Protocols`.
 
 Wrapping a DB call in an app-side `thread_pool` and calling `.get()` from an async route or gate **still blocks** the connection coroutine; use `co_await` on framework async APIs instead.
 
@@ -116,6 +125,19 @@ Sync gates are for fast, non-blocking checks (headers, tokens in memory). Use `A
 
 **Worker threads:** `setWorkerThreadCount` / `WORKER_THREADS` is the number of io_context threads handling connections. Prefer async gates (and async route handlers) for I/O instead of raising the worker count to absorb blocking work.
 
+### WebSocket routes with optional gate
+
+```cpp
+void addRouteWebSocket(const std::string& path, WebSocketHandler handler);
+void addRouteWebSocket(const std::string& path, WebSocketRoute route);
+void addRouteWebSocket(const std::string& path, WebSocketHandler handler, RouteGateHandler gate);
+void addRouteWebSocket(const std::string& path, WebSocketHandler handler, AsyncRouteGateHandler gate);
+void addRouteWebSocket(const std::string& path, WebSocketRoute route, RouteGateHandler gate);
+void addRouteWebSocket(const std::string& path, WebSocketRoute route, AsyncRouteGateHandler gate);
+```
+
+Omit the third argument for an ungated WebSocket route. Gate types and path matching are the same as API route gates. See [WebSockets](WEBSOCKETS.md).
+
 ## Path matching
 
 Same rules as routes and redirects:
@@ -171,6 +193,12 @@ Both can apply to the same static page. Basic Auth runs first (`401` on failure)
 - `removeGatedRoute` removes only the gate; the route handler stays registered
 - Sync route gates run on a gate thread pool (not the connection coroutine); keep them fast or use `AsyncRouteGateHandler` for DB/session work
 - Async routes accept only `AsyncRouteGateHandler` (no sync gate overload)
+
+**WebSockets**
+
+- Gate runs before the WebSocket handshake on every matching upgrade request
+- Handler exceptions in the gate are treated as denial (`403`)
+- Uses the same route gate registry as API routes (`removeGatedRoute` removes the gate; the WebSocket handler stays registered)
 
 ## See Also
 

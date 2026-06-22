@@ -231,6 +231,17 @@ boost::asio::awaitable<bool> Handler::tryHandleWebSocketAsync(HTTPRequest* reque
         co_return true;
     }
 
+    if (auto denial = co_await checkRouteGateDenialAsync(*request)) {
+        record4xxMetric();
+        applyCorsHeaders(*denial, serverData.getCorsConfig(), request);
+        denial->serializeTo(responseScratch_);
+        if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
+            sendToLoggerError("Failed to send WebSocket gate denial for: " + request->getPathString());
+        }
+        _upgraded = true;
+        co_return true;
+    }
+
     const std::string secKey = request->getHeader("sec-websocket-key");
     const std::string acceptKey = computeAcceptKey(secKey);
     const std::string subprotocol =

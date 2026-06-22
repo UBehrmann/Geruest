@@ -58,12 +58,16 @@ bool isOpen() const;
 // Coroutine
 server.addRouteWebSocket("/ws", handler);
 
+// Coroutine + optional gate
+server.addRouteWebSocket("/ws", handler, checkToken);
+
 // Callback struct
 geruest::WebSocketRoute route;
 route.onOpen = ...;
 route.onMessage = ...;
 route.onClose = ...;
 server.addRouteWebSocket("/ws-cb", route);
+server.addRouteWebSocket("/ws-cb", route, checkToken);  // optional gate
 ```
 
 See [WEBSOCKETS.md](WEBSOCKETS.md) for full examples.

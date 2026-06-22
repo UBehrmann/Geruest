@@ -19,7 +19,7 @@ Geruest (German for "scaffold") is a lightweight C++ web framework designed to s
 - Static file serving
 - Routing
   - `addRoute(path, handler)` — sync or async (C++ overload); optional third argument for access gate
-  - WebSockets: `addRouteWebSocket(path, handler)` — RFC 6455, coroutine or callback API
+  - WebSockets: `addRouteWebSocket(path, handler)` — RFC 6455, coroutine or callback API; optional gate blocks upgrade
 - **Async database** (optional PostgreSQL / SQLite at build time)
   - `request.database()` from async routes; `queryAsync`, `executeAsync`, `queryJsonAsync`
   - Pooling, `.env` configuration, dedicated SQLite executor threads

@@ -45,6 +45,8 @@ Route choice:
 - `addRoute(path, syncHandler)`: sync handler (`HTTPResponse` return). Use for static/simple API endpoints without `co_await`.
 - `addRoute(path, asyncHandler)`: coroutine handler (`geruest::AsyncResponse` return). Use for DB or other awaitable operations.
 - `addRoute(path, handler, gate)`: optional third argument for an access gate (403 on denial).
+- `addRouteWebSocket(path, handler)`: WebSocket handler (coroutine or callback API).
+- `addRouteWebSocket(path, handler, gate)`: optional gate blocks the upgrade before handshake (403 on denial).
 - When sync and async handlers share the same path pattern, **async wins** at dispatch.
 
 **Minimal Server (main.cpp):**

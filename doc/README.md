@@ -16,7 +16,7 @@ Welcome to the Geruest documentation! This guide will help you get started with 
 - [**Redirects and 404**](REDIRECTS_AND_404.md) - Redirect maps, wildcard redirects, and custom 404 pages
 - [**Data Classes**](DATA_CLASSES.md) - HTTPRequest, HTTPResponse, JSONParser API reference
 - [**Database Usage**](DATABASE.md) - Async DB setup and route usage (PostgreSQL/SQLite)
-- [**WebSockets**](WEBSOCKETS.md) - `addRouteWebSocket` coroutine and callback APIs
+- [**WebSockets**](WEBSOCKETS.md) - `addRouteWebSocket` coroutine and callback APIs, optional access gates
 
 ### Template System
 
@@ -28,7 +28,7 @@ Welcome to the Geruest documentation! This guide will help you get started with 
 
 - [**Security Utilities**](SECURITY.md) - SQL injection, XSS, JSON injection, path traversal
 - [**Basic Authentication**](BASIC_AUTH.md) - HTTP Basic Auth for protected pages
-- [**Gated Routes & Pages**](GATED_ROUTES_PAGES.md) - `addGatedPage()`, `addRoute(..., gate)`
+- [**Gated Routes & Pages**](GATED_ROUTES_PAGES.md) - `addGatedPage()`, `addRoute(..., gate)`, `addRouteWebSocket(..., gate)`
 
 ### Development
 
@@ -86,7 +86,7 @@ int main() {
 | **JSON Parser**             | Built-in JSON handling                                       | [Data Classes](DATA_CLASSES.md#jsonparser)                |
 | **Async routes**            | C++20 coroutines via async `addRoute` overload               | [Features](FEATURES.md#routing)                           |
 | **Database**                | Optional PostgreSQL/SQLite async backends                    | [Database](DATABASE.md)                                   |
-| **WebSockets**              | RFC 6455 persistent connections                              | [WebSockets](WEBSOCKETS.md)                               |
+| **WebSockets**              | RFC 6455 persistent connections, optional access gates       | [WebSockets](WEBSOCKETS.md)                               |
 
 ## Requirements
 

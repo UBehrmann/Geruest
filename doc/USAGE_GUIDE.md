@@ -112,7 +112,7 @@ server {
 
 ## WebSockets
 
-Register with `addRouteWebSocket` (coroutine or callback API). See [WEBSOCKETS.md](WEBSOCKETS.md).
+Register with `addRouteWebSocket` (coroutine or callback API). Pass an optional third argument for an access gate (403 on denial, before handshake). See [WEBSOCKETS.md](WEBSOCKETS.md).
 
 For nginx WSS termination, proxy with upgrade headers:
 

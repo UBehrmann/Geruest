@@ -438,6 +438,107 @@ TEST(WebSocketIntegration, RouteNotFoundReturns404) {
     close(fd);
 }
 
+TEST(WebSocketIntegration, GateDenialReturns403) {
+    Geruest server;
+    server.addRouteWebSocket(
+        "/secure-echo",
+        [](WebSocketConnection&, const HTTPRequest&) -> boost::asio::awaitable<void> { co_return; },
+        [](const HTTPRequest&) { return false; });
+
+    ScopedBackgroundServer bg;
+    bg.launch(server);
+    const int fd = connectTo(bg.listenPort());
+    ASSERT_GE(fd, 0);
+
+    const std::string handshake =
+        "GET /secure-echo HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "\r\n";
+    ASSERT_TRUE(sendAll(fd, handshake.data(), handshake.size()));
+
+    std::string response;
+    ASSERT_TRUE(recvSome(fd, response, 12));
+    EXPECT_NE(response.find("403 Forbidden"), std::string::npos);
+
+    close(fd);
+}
+
+TEST(WebSocketIntegration, GateAllowsUpgrade) {
+    Geruest server;
+    server.addRouteWebSocket(
+        "/gated-echo",
+        [](WebSocketConnection& ws, const HTTPRequest&) -> boost::asio::awaitable<void> {
+            WSMessage msg = co_await ws.recv();
+            if (msg.isText()) {
+                co_await ws.send(msg.text());
+            }
+            co_return;
+        },
+        [](const HTTPRequest&) { return true; });
+
+    ScopedBackgroundServer bg;
+    bg.launch(server);
+    const int fd = connectTo(bg.listenPort());
+    ASSERT_GE(fd, 0);
+
+    const std::string handshake =
+        "GET /gated-echo HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "\r\n";
+    ASSERT_TRUE(sendAll(fd, handshake.data(), handshake.size()));
+
+    std::string response;
+    ASSERT_TRUE(recvSome(fd, response, 12));
+    EXPECT_NE(response.find("101 Switching Protocols"), std::string::npos);
+
+    const auto frame = maskedTextFrame("gated");
+    ASSERT_TRUE(sendAll(fd, frame.data(), frame.size()));
+
+    SocketRecvBuffer rx(fd);
+    const std::optional<std::string> echoed = readServerTextPayload(rx);
+    ASSERT_TRUE(echoed.has_value());
+    EXPECT_EQ(*echoed, "gated");
+
+    close(fd);
+}
+
+TEST(WebSocketIntegration, AsyncGateDenialReturns403) {
+    Geruest server;
+    server.addRouteWebSocket(
+        "/async-gated",
+        [](WebSocketConnection&, const HTTPRequest&) -> boost::asio::awaitable<void> { co_return; },
+        [](const HTTPRequest&) -> AsyncRouteGateAccess { co_return false; });
+
+    ScopedBackgroundServer bg;
+    bg.launch(server);
+    const int fd = connectTo(bg.listenPort());
+    ASSERT_GE(fd, 0);
+
+    const std::string handshake =
+        "GET /async-gated HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "\r\n";
+    ASSERT_TRUE(sendAll(fd, handshake.data(), handshake.size()));
+
+    std::string response;
+    ASSERT_TRUE(recvSome(fd, response, 12));
+    EXPECT_NE(response.find("403 Forbidden"), std::string::npos);
+
+    close(fd);
+}
+
 TEST(WebSocketIntegration, NonWebSocketUpgradeReachesHttpRoute) {
     Geruest server;
     server.addRouteWebSocket(

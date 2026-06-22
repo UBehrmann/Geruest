@@ -139,6 +139,46 @@ void Geruest::addRouteWebSocket(const std::string& path, WebSocketRoute route) {
     sendToLogger("Added WebSocket callback route: " + path);
 }
 
+void Geruest::addRouteWebSocket(const std::string& path, WebSocketHandler handler, RouteGateHandler gate) {
+    if (path.empty() || !handler || !gate) {
+        sendToLoggerError("Failed to add WebSocket route with gate (path/handler/gate invalid): " + path);
+        return;
+    }
+    serverData.addWebSocketRoute(path, std::move(handler));
+    serverData.addRouteGate(path, std::move(gate));
+    sendToLogger("Added WebSocket route with gate: " + path);
+}
+
+void Geruest::addRouteWebSocket(const std::string& path, WebSocketHandler handler, AsyncRouteGateHandler gate) {
+    if (path.empty() || !handler || !gate) {
+        sendToLoggerError("Failed to add WebSocket route with async gate (path/handler/gate invalid): " + path);
+        return;
+    }
+    serverData.addWebSocketRoute(path, std::move(handler));
+    serverData.addAsyncRouteGate(path, std::move(gate));
+    sendToLogger("Added WebSocket route with async gate: " + path);
+}
+
+void Geruest::addRouteWebSocket(const std::string& path, WebSocketRoute route, RouteGateHandler gate) {
+    if (path.empty() || !gate) {
+        sendToLoggerError("Failed to add WebSocket callback route with gate (path/gate invalid): " + path);
+        return;
+    }
+    serverData.addWebSocketRoute(path, adaptWebSocketRoute(std::move(route)));
+    serverData.addRouteGate(path, std::move(gate));
+    sendToLogger("Added WebSocket callback route with gate: " + path);
+}
+
+void Geruest::addRouteWebSocket(const std::string& path, WebSocketRoute route, AsyncRouteGateHandler gate) {
+    if (path.empty() || !gate) {
+        sendToLoggerError("Failed to add WebSocket callback route with async gate (path/gate invalid): " + path);
+        return;
+    }
+    serverData.addWebSocketRoute(path, adaptWebSocketRoute(std::move(route)));
+    serverData.addAsyncRouteGate(path, std::move(gate));
+    sendToLogger("Added WebSocket callback route with async gate: " + path);
+}
+
 void Geruest::setWebSocketMaxMessageBytes(size_t bytes) {
     serverData.setWebSocketMaxMessageBytes(bytes);
     sendToLogger("WebSocket max message bytes set to: " + std::to_string(bytes));

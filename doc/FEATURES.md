@@ -4,7 +4,7 @@
 
 | Feature | Description | Key Method/Header |
 |---------|-------------|-------------------|
-| **Routing** | Sync and async handlers via `addRoute` (overload), WebSocket via `addRouteWebSocket`; exact/wildcard paths | `addRoute()`, `addRouteWebSocket()` |
+| **Routing** | Sync and async handlers via `addRoute` (overload), WebSocket via `addRouteWebSocket` (optional gate); exact/wildcard paths | `addRoute()`, `addRouteWebSocket()` |
 | **Static Files** | Auto-serve files from root directories | `addRoot()` |
 | **Templates** | Component injection `{file}`, translations `[key]` | `ContentBuilder` |
 | **Asset Merging** | Combine CSS/JS from HTML `<link>` / `<script>` tags per page | `AssetMerger` |
@@ -12,7 +12,7 @@
 | **Translations** | Multi-language with JSON files | `setAvailableLanguages()` |
 | **CORS** | Path-scoped allowlist + OPTIONS preflight | `enableCors()` |
 | **Basic Auth** | SHA-256 password protection | `BasicAuth` |
-| **Gated Pages & Routes** | Custom access checks for HTML pages (302) and API routes (403) | `addGatedPage()`, `addRoute(..., gate)` |
+| **Gated Pages & Routes** | Custom access checks for HTML pages (302), API routes (403), and WebSocket upgrades (403) | `addGatedPage()`, `addRoute(..., gate)`, `addRouteWebSocket(..., gate)` |
 | **Email/SMTP** | Send emails via SMTP (with TLS) | `EmailSender` |
 | **JSON Parsing** | String-based JSON handling | `JSONParser` |
 | **WebP Conversion** | Auto-convert images to WebP | `WebPConverter` |
@@ -30,7 +30,7 @@ The HTTP server is built on **Boost.Asio**:
 
 ## Routing
 
-Use `addRoute` for sync or async handlers (C++ overload picks the handler type). Pass an optional third argument for an access gate. Use `addRouteWebSocket` for persistent WebSocket connections. See [WebSockets](WEBSOCKETS.md).
+Use `addRoute` for sync or async handlers (C++ overload picks the handler type). Pass an optional third argument for an access gate. Use `addRouteWebSocket` for persistent WebSocket connections (optional gate blocks the upgrade). See [WebSockets](WEBSOCKETS.md).
 
 **Precedence:** When sync and async handlers are registered on the **same path pattern**, the **async handler wins** at dispatch. Avoid registering both unless you intend the async handler to replace the sync one.
 
@@ -68,6 +68,9 @@ server.addRoute("/api/users/db", [](const HTTPRequest& req) -> geruest::AsyncRes
 // Gated API route (optional third argument)
 server.addRoute("/v1/admin", handleAdmin, checkSession);
 server.addRoute("/v1/profile", handleProfileAsync, checkSessionAsync);
+
+// Gated WebSocket (optional third argument)
+server.addRouteWebSocket("/chat", chatHandler, checkSession);
 ```
 
 ## Static File Serving
@@ -246,7 +249,7 @@ server.addRoute("/admin", [&auth](const HTTPRequest& req) {
 
 ## Gated Pages & Routes
 
-Custom access checks for static HTML pages and API routes. Page gates deny with **302**; route gates deny with **403**.
+Custom access checks for static HTML pages, API routes, and WebSocket upgrades. Page gates deny with **302**; route and WebSocket gates deny with **403**.
 
 ```cpp
 server.addGatedPage("/devices/devices", [](const HTTPRequest& req) {
@@ -258,9 +261,11 @@ server.addGatedPage("/admin", checkSessionAsync, "/login");  // async gate overl
 server.addRoute("/v1/secret", handleSecret, checkSession);
 
 server.addRoute("/v1/profile", handleProfileAsync, checkSessionAsync);
+
+server.addRouteWebSocket("/chat", chatHandler, checkSession);
 ```
 
-See [GATED_ROUTES_PAGES.md](GATED_ROUTES_PAGES.md) for full API.
+See [GATED_ROUTES_PAGES.md](GATED_ROUTES_PAGES.md) and [WEBSOCKETS.md](WEBSOCKETS.md) for full API.
 
 ## Email (`EmailSender`)
 

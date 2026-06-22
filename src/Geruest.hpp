@@ -81,8 +81,18 @@ class Geruest {
     void addRoute(const std::string& path, RouteHandler handler, RouteGateHandler gate);
     void addRoute(const std::string& path, RouteHandler handler, AsyncRouteGateHandler gate);
     void addRoute(const std::string& path, AsyncRouteHandler handler, AsyncRouteGateHandler gate);
+    /**
+     * @brief Register a WebSocket route handler (coroutine or callback API), optionally with an access gate.
+     * @param path Route path (supports '*' wildcard)
+     * @param handler Coroutine handler or callback `WebSocketRoute`
+     * @param gate Optional gate returning true to allow the upgrade, false for 403 Forbidden before handshake.
+     */
     void addRouteWebSocket(const std::string& path, WebSocketHandler handler);
     void addRouteWebSocket(const std::string& path, WebSocketRoute route);
+    void addRouteWebSocket(const std::string& path, WebSocketHandler handler, RouteGateHandler gate);
+    void addRouteWebSocket(const std::string& path, WebSocketHandler handler, AsyncRouteGateHandler gate);
+    void addRouteWebSocket(const std::string& path, WebSocketRoute route, RouteGateHandler gate);
+    void addRouteWebSocket(const std::string& path, WebSocketRoute route, AsyncRouteGateHandler gate);
 
     void setWebSocketMaxMessageBytes(size_t bytes);
     void setWebSocketMaxFrameBytes(size_t bytes);
