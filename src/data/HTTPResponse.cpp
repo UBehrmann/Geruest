@@ -51,6 +51,20 @@ void HTTPResponse::setBody(const std::string& responseBody) {
     headers.emplace_back("Content-Length", std::to_string(body.size()));
 }
 
+bool HTTPResponse::hasHeader(std::string_view key) const {
+    return hasHeaderKey(headers, std::string(key));
+}
+
+std::string HTTPResponse::getHeaderValue(std::string_view key) const {
+    const std::string keyStr(key);
+    for (const auto& header : headers) {
+        if (header.first == keyStr) {
+            return header.second;
+        }
+    }
+    return {};
+}
+
 void HTTPResponse::serializeTo(std::string& out) const {
     size_t estimatedSize = 32 + status.size() + body.size();
     for (const auto& header : headers) {

@@ -12,6 +12,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -55,6 +56,9 @@ enum class LogLevel {
     Info = 3,
     Debug = 4
 };
+
+/** Optional redirect for log output (level, message, context e.g. client IP or "Geruest"). */
+using LogSink = std::function<void(LogLevel level, std::string_view message, std::string_view context)>;
 
 class ServerData {
    public:
@@ -164,6 +168,10 @@ class ServerData {
     LogLevel getLogLevel() const;
     bool shouldLog(LogLevel level) const;
 
+    void setLogSink(LogSink sink);
+    void clearLogSink();
+    void emitLog(LogLevel level, std::string_view message, std::string_view context = {}) const;
+
     void setDatabaseClient(std::shared_ptr<db::DatabaseClient> client);
     std::shared_ptr<db::DatabaseClient> getDatabaseClient() const;
 
@@ -248,6 +256,7 @@ class ServerData {
     CorsConfig _corsConfig;
     BasicAuth _basicAuth;
     std::atomic<LogLevel> _logLevel{LogLevel::Error};
+    LogSink _logSink;
     std::shared_ptr<db::DatabaseClient> _databaseClient;
 };
 

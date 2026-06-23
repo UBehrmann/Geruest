@@ -17,7 +17,9 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
-#include <mutex>
+#include <functional>
+#include <string>
+#include <string_view>
 #include <queue>
 #include <string>
 #include <thread>
@@ -82,6 +84,8 @@ struct IPActivity {
  */
 class EmailSender {
    public:
+    using LogFn = std::function<void(std::string_view message)>;
+
     /**
      * @brief SMTP configuration structure
      */
@@ -94,24 +98,14 @@ class EmailSender {
         std::string fromAddress;
     };
 
-    /**
-     * @brief Initialize the EmailSender singleton
-     * @param config SMTP configuration
-     * @note Must be called once before getInstance()
-     */
-    static void init(const Config& config);
-
-    /**
-     * @brief Get the EmailSender singleton instance
-     * @return Reference to the singleton instance
-     * @throws std::runtime_error if not initialized
-     */
-    static EmailSender& getInstance();
+    explicit EmailSender(const Config& config);
 
     /**
      * @brief Stop the email sender and cleanup
      */
     void stop();
+
+    void setLogCallbacks(LogFn info, LogFn error);
 
     /**
      * @brief Queue an email for sending (producer)
@@ -183,14 +177,9 @@ class EmailSender {
      */
     void clearIPTracking();
 
-   private:
-    EmailSender(const Config& config);
     ~EmailSender();
 
-    // Singleton
-    static EmailSender* instance;
-    static std::mutex instanceMutex;
-
+   private:
     // Configuration
     Config config;
     size_t _maxQueueSize = 1000;
@@ -215,6 +204,9 @@ class EmailSender {
     // Statistics
     std::atomic<size_t> _emailsSent{0};
     std::atomic<size_t> _emailsRejected{0};
+
+    LogFn _logInfo;
+    LogFn _logError;
 
     /**
      * @brief Worker thread function (consumer)

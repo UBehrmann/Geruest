@@ -192,29 +192,32 @@ Geruest now targets Linux/Unix only. Windows support has been removed.
 
 ### Using Geruest in Your Project
 
-**See [Getting Started - CMakeLists.txt](doc/GETTING_STARTED.md#cmakeliststxt-for-your-project) for a complete example.**
+**See [Getting Started](doc/GETTING_STARTED.md) for Core-only vs full-stack CMake examples.**
+
+After `cmake --install`, point CMake at the install prefix (e.g. `/usr/local` or `$HOME/.local`):
 
 ```cmake
-cmake_minimum_required(VERSION 3.11)
+cmake_minimum_required(VERSION 3.17)
 project(MyWebsiteApp)
 set(CMAKE_CXX_STANDARD 20)
 
 find_package(Boost 1.75 REQUIRED COMPONENTS system)
 find_package(Threads REQUIRED)
+find_package(Geruest REQUIRED)
 
 add_executable(MyWebsiteApp main.cpp)
 
-# Geruest is built with Boost.Asio; consumers should link Boost.System (matches installed Geruest)
-target_link_libraries(MyWebsiteApp PRIVATE Geruest Boost::system Threads::Threads)
+# Full stack (WebSocket, assets, obfuscation, DB, email when built)
+target_link_libraries(MyWebsiteApp PRIVATE Geruest::Geruest Boost::system Threads::Threads)
 
-# Include the library headers
-target_include_directories(MyWebsiteApp
-    PRIVATE
-    /path/to/Geruest/src
-)
+# Core-only API server instead:
+# target_link_libraries(MyWebsiteApp PRIVATE Geruest::Core Boost::system Threads::Threads)
+```
 
-# Add the library binary directory (where the static library is)
-link_directories(/path/to/Geruest/build)
+If Geruest is not on the default search path:
+
+```bash
+cmake .. -DCMAKE_PREFIX_PATH=/usr/local   # or $HOME/.local
 ```
 
 ## License

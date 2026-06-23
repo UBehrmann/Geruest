@@ -22,8 +22,6 @@
 
 namespace geruest {
 
-unsigned Handler::clientCount = 0;
-
 Handler::Handler(boost::asio::ip::tcp::socket& socket, std::string clientIP, const ServerData& serverDataRef)
     : clientSocket(socket),
       serverData(serverDataRef),
@@ -129,29 +127,19 @@ boost::asio::awaitable<std::optional<HTTPResponse>> Handler::checkRouteGateDenia
 }
 
 void Handler::sendToLogger(const std::string& message, LogLevel level) const {
-    if (serverData.shouldLog(level)) {
-        std::cout << "Log: " << message << " from " << IP << std::endl;
-    }
+    serverData.emitLog(level, message, IP);
 }
 void Handler::sendToLoggerPages(const std::string& message) const {
-    if (serverData.shouldLog(LogLevel::Info)) {
-        std::cout << "Page Log: " << message << " from " << IP << std::endl;
-    }
+    serverData.emitLog(LogLevel::Info, "Page Log: " + message, IP);
 }
 void Handler::sendToLoggerAPI(const std::string& message) const {
-    if (serverData.shouldLog(LogLevel::Info)) {
-        std::cout << "API Log: " << message << " from " << IP << std::endl;
-    }
+    serverData.emitLog(LogLevel::Info, "API Log: " + message, IP);
 }
 void Handler::sendToLoggerUser(const std::string& message) const {
-    if (serverData.shouldLog(LogLevel::Info)) {
-        std::cout << "User Log: " << message << " from " << IP << std::endl;
-    }
+    serverData.emitLog(LogLevel::Info, "User Log: " + message, IP);
 }
 void Handler::sendToLoggerError(const std::string& message) const {
-    if (serverData.shouldLog(LogLevel::Error)) {
-        std::cerr << "Error Log: " << message << " from " << IP << std::endl;
-    }
+    serverData.emitLog(LogLevel::Error, message, IP);
 }
 
 boost::asio::awaitable<void> Handler::runAsync() {

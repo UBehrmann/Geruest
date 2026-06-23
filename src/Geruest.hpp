@@ -46,12 +46,7 @@
 #include "email/EmailSender.hpp"
 #endif
 
-// Constants
-#define TIMEOUT_SEC 30
-#define TIMEOUT_USEC 0
-
-// Max packet size
-#define BUFFER_SIZE 8192
+// Constants removed — use HttpFraming::kBufferSize for buffer sizing.
 
 namespace geruest {
 
@@ -574,9 +569,24 @@ class Geruest {
      * @param size Maximum pending emails (default: 1000)
      */
     void setEmailMaxQueueSize(size_t size);
+
+    /**
+     * @brief Access the email sender after initEmail() (nullptr if not initialized).
+     */
+    EmailSender* emailSender();
+    const EmailSender* emailSender() const;
 #endif  // GERUEST_HAS_CURL && GERUEST_ENABLE_EMAIL
 
     // ========== Logging Configuration Methods ==========
+
+    /**
+     * @brief Redirect log output to a custom sink (default: stdout/stderr).
+     * @param sink Called as sink(level, message, context) when shouldLog(level).
+     */
+    void setLogSink(LogSink sink);
+
+    /** @brief Restore default stdout/stderr logging. */
+    void clearLogSink();
 
     /**
      * @brief Set the log level for filtering log output
@@ -690,6 +700,10 @@ class Geruest {
     std::thread _statusPersistenceThread;
 
     ServerData serverData;
+
+#if GERUEST_HAS_CURL && GERUEST_ENABLE_EMAIL
+    std::unique_ptr<EmailSender> _emailSender;
+#endif
 
     // Thread pool configuration
     size_t _workerThreadCount = std::thread::hardware_concurrency() * 2;

@@ -46,6 +46,7 @@ set(_GERUEST_CORE_SOURCES
     ${GERUEST_ROOT}/src/handler/ResponseWriter.cpp
     ${GERUEST_ROOT}/src/handler/StaticFileResolver.cpp
     ${GERUEST_ROOT}/src/handler/RouteDispatcher.cpp
+    ${GERUEST_ROOT}/src/handler/GzipResponse.cpp
     ${GERUEST_ROOT}/src/modules/ModuleHooks.cpp
     ${GERUEST_ROOT}/src/obfuscation/ObfuscationSettings.cpp
     ${GERUEST_ROOT}/src/parser/JSONParser.cpp
@@ -55,7 +56,7 @@ set(_GERUEST_CORE_SOURCES
 add_library(GeruestCore STATIC ${_GERUEST_CORE_SOURCES})
 add_library(Geruest::Core ALIAS GeruestCore)
 _geruest_public_includes(GeruestCore)
-target_link_libraries(GeruestCore PUBLIC Threads::Threads Boost::system)
+target_link_libraries(GeruestCore PUBLIC Threads::Threads Boost::system ZLIB::ZLIB)
 
 add_library(GeruestObfuscation STATIC
     ${GERUEST_ROOT}/src/builders/JSObfuscator.cpp
@@ -78,6 +79,7 @@ add_library(GeruestAssets STATIC
 )
 add_library(Geruest::Assets ALIAS GeruestAssets)
 _geruest_public_includes(GeruestAssets)
+target_include_directories(GeruestAssets PRIVATE ${GERUEST_ROOT}/third_party/stb)
 target_link_libraries(GeruestAssets PUBLIC GeruestCore GeruestObfuscation)
 if(GERUEST_HAS_WEBP)
     if(WEBP_LINK_TARGET)

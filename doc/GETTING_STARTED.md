@@ -5,7 +5,7 @@ Quick installation and first server setup for Geruest C++ web framework.
 ## Requirements
 
 - **C++20** compiler (GCC 10+, Clang 11+)
-- **CMake** 3.10 or newer (3.17+ recommended for `find_package` CONFIG patterns)
+- **CMake** 3.11 or newer (3.17+ recommended for `find_package` CONFIG patterns)
 - **Boost** 1.75+ with **Boost.System** (Asio uses it unless you build against header-only Boost as in the library’s FetchContent path). Examples:
   - Debian/Ubuntu: `sudo apt-get install libboost-system-dev`
   - Fedora: `sudo dnf install boost-devel`
@@ -25,11 +25,24 @@ Core always provides HTTP routing, gates, static file passthrough (raw files whe
 Include helper headers explicitly when needed — e.g. `<security/Security.hpp>`, `<FileManagement/FileManagement.hpp>`, `<auth/BasicAuth.hpp>`.
 
 ### Linux
+
+From the repo root (installs to `/usr/local` by default):
+
 ```bash
-git clone https://github.com/yourusername/Geruest.git
+git clone https://github.com/UBehrmann/Geruest.git
 cd Geruest
-chmod +x setup_scripts/linux_setup.sh
-./setup_scripts/linux_setup.sh
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake --build .
+sudo cmake --install .
+```
+
+Or install to `$HOME/.local` with the helper script:
+
+```bash
+git clone https://github.com/UBehrmann/Geruest.git
+cd Geruest
+./_install.sh
 ```
 
 ### Manual Build

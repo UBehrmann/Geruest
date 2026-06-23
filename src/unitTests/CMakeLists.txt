@@ -81,6 +81,32 @@ else()
     add_compile_definitions(GERUEST_HAS_SQLITE=0)
 endif()
 
+find_package(ZLIB REQUIRED)
+
+option(GERUEST_ENABLE_WEBP "Enable WebP image conversion in tests" OFF)
+
+set(GERUEST_HAS_WEBP FALSE)
+if(GERUEST_ENABLE_WEBP)
+    find_package(WebP QUIET)
+    if(WebP_FOUND)
+        set(GERUEST_HAS_WEBP TRUE)
+        set(WEBP_LINK_TARGET WebP::webp)
+    else()
+        find_package(PkgConfig QUIET)
+        if(PkgConfig_FOUND)
+            pkg_check_modules(LIBWEBP QUIET libwebp)
+            if(LIBWEBP_FOUND)
+                set(GERUEST_HAS_WEBP TRUE)
+            endif()
+        endif()
+    endif()
+endif()
+if(GERUEST_HAS_WEBP)
+    set(GERUEST_HAS_WEBP_NUM 1)
+else()
+    set(GERUEST_HAS_WEBP_NUM 0)
+endif()
+
 foreach(_geruest_flag CURL LIBPQ SQLITE)
     if(GERUEST_HAS_${_geruest_flag})
         set(GERUEST_HAS_${_geruest_flag}_NUM 1)
@@ -89,28 +115,6 @@ foreach(_geruest_flag CURL LIBPQ SQLITE)
     endif()
 endforeach()
 unset(_geruest_flag)
-
-find_package(WebP QUIET)
-if(WebP_FOUND)
-    set(GERUEST_HAS_WEBP TRUE)
-    set(WEBP_LINK_TARGET WebP::webp)
-else()
-    find_package(PkgConfig QUIET)
-    if(PkgConfig_FOUND)
-        pkg_check_modules(LIBWEBP QUIET libwebp)
-        if(LIBWEBP_FOUND)
-            set(GERUEST_HAS_WEBP TRUE)
-        endif()
-    endif()
-    if(NOT GERUEST_HAS_WEBP)
-        set(GERUEST_HAS_WEBP FALSE)
-    endif()
-endif()
-if(GERUEST_HAS_WEBP)
-    set(GERUEST_HAS_WEBP_NUM 1)
-else()
-    set(GERUEST_HAS_WEBP_NUM 0)
-endif()
 
 set(GERUEST_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 set(GERUEST_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}")
@@ -122,7 +126,7 @@ if(NOT GERUEST_HAS_CURL)
     set(GERUEST_ENABLE_EMAIL OFF)
 endif()
 
-foreach(_mod WEBSOCKET ASSETS OBFUSCATION EMAIL)
+foreach(_mod WEBSOCKET ASSETS OBFUSCATION EMAIL WEBP)
     if(GERUEST_ENABLE_${_mod})
         set(GERUEST_ENABLE_${_mod}_NUM 1)
     else()
@@ -142,126 +146,27 @@ if(NOT TARGET GeruestCore)
     include(${GERUEST_ROOT}/cmake/GeruestModules.cmake)
 endif()
 
-# Linux/Unix settings
-set(PLATFORM_LIBS Threads::Threads Boost::system)
-
-set(SERVERDATA_SOURCES
-    ../data/DevAssetCache.cpp
-    ../data/TextResponseCache.cpp
-    ../data/GateRegistry.cpp
-    ../data/LanguageConfig.cpp
-    ../data/RouteRegistry.cpp
-    ../data/ServerData.cpp
-    ../data/ServerMetrics.cpp
-    ../data/WildcardMatch.cpp
-)
-
-set(ASSET_MERGER_SOURCES
-    ../builders/AssetHtmlDiscovery.cpp
-    ../builders/AssetMerger.cpp
-)
-
-# Collect all source files from the main Geruest library
-set(GERUEST_SOURCES
-    ../Geruest.cpp
-    ../server/Config.cpp
-    ../server/Socket.cpp
-    ../server/Workers.cpp
-    ../server/HttpSession.cpp
-    ../server/WebSocket.cpp
-    ../server/Status.cpp
-    ../auth/BasicAuth.cpp
-    ../config/ConfigLoader.cpp
-    ../data/HTTPRequest.cpp
-    ../data/HTTPResponse.cpp
-    ../data/MethodNotAllowed.cpp
-    ../data/CorsConfig.cpp
-    ${SERVERDATA_SOURCES}
-    ../parser/JSONParser.cpp
-    ../FileManagement/FileManagement.cpp
-    ${ASSET_MERGER_SOURCES}
-    ../builders/ContentBuilder.cpp
-    ../builders/HTMLBuilder.cpp
-    ../builders/CSSBuilder.cpp
-    ../builders/JSBuilder.cpp
-    ../builders/JSObfuscator.cpp
-    ../builders/JSObfuscatorScope.cpp
-    ../builders/WebPConverter.cpp
-    ../handler/Handler.cpp
-    ../handler/SyncGateExecutor.cpp
-    ../handler/HttpFraming.cpp
-    ../handler/ResponseWriter.cpp
-    ../handler/StaticFileResolver.cpp
-    ../handler/RouteDispatcher.cpp
-    ../security/Security.cpp
-)
-
-# Conditionally add EmailSender if CURL is available
-if(GERUEST_HAS_CURL)
-    list(APPEND GERUEST_SOURCES ../email/EmailSender.cpp)
-endif()
-
-if(GERUEST_HAS_LIBPQ OR GERUEST_HAS_SQLITE)
-    list(APPEND GERUEST_SOURCES
-        ../database/DatabaseClient.cpp
-        ../database/DbExecutor.cpp
-    )
-endif()
-
 # Create individual test executables
-# Note: No longer building a combined Geruest_Unit_Tests executable
-# All tests are run via individual executables or ctest
-add_executable(JSONParser_Tests
-    JSONParser/JSONParser_tests.cpp
-    ../parser/JSONParser.cpp
-    ../security/Security.cpp
-)
-target_link_libraries(JSONParser_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+add_executable(JSONParser_Tests JSONParser/JSONParser_tests.cpp)
+target_link_libraries(JSONParser_Tests Geruest::Core GTest::gtest_main)
 
-add_executable(HTTPRequest_Tests
-    HTTPRequest/HTTPRequest_tests.cpp
-    ../data/HTTPRequest.cpp
-    ../parser/JSONParser.cpp
-    ../security/Security.cpp
-)
-target_link_libraries(HTTPRequest_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+add_executable(HTTPRequest_Tests HTTPRequest/HTTPRequest_tests.cpp)
+target_link_libraries(HTTPRequest_Tests Geruest::Core GTest::gtest_main)
 
-add_executable(HTTPResponse_Tests
-    HTTPResponse/HTTPResponse_tests.cpp
-    ../data/HTTPResponse.cpp
-    ../data/HTTPRequest.cpp
-    ../data/MethodNotAllowed.cpp
-    ../parser/JSONParser.cpp
-    ../security/Security.cpp
-)
-target_link_libraries(HTTPResponse_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+add_executable(HTTPResponse_Tests HTTPResponse/HTTPResponse_tests.cpp)
+target_link_libraries(HTTPResponse_Tests Geruest::Core GTest::gtest_main)
 
-add_executable(FileManagement_Tests FileManagement/FileManagement_tests.cpp ../FileManagement/FileManagement.cpp)
-target_link_libraries(FileManagement_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+add_executable(FileManagement_Tests FileManagement/FileManagement_tests.cpp)
+target_link_libraries(FileManagement_Tests Geruest::Core GTest::gtest_main)
 
-add_executable(DevAssetCache_Tests
-    DevAssetCache/DevAssetCache_tests.cpp
-    ../data/DevAssetCache.cpp
-)
-target_link_libraries(DevAssetCache_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+add_executable(DevAssetCache_Tests DevAssetCache/DevAssetCache_tests.cpp)
+target_link_libraries(DevAssetCache_Tests Geruest::Core GTest::gtest_main)
 
-add_executable(TextResponseCache_Tests
-    TextResponseCache/TextResponseCache_tests.cpp
-    ../data/TextResponseCache.cpp
-)
-target_link_libraries(TextResponseCache_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+add_executable(TextResponseCache_Tests TextResponseCache/TextResponseCache_tests.cpp)
+target_link_libraries(TextResponseCache_Tests Geruest::Core GTest::gtest_main)
 
-add_executable(CorsConfig_Tests
-    CorsConfig/CorsConfig_tests.cpp
-    ../data/CorsConfig.cpp
-    ../data/HTTPResponse.cpp
-    ../data/HTTPRequest.cpp
-    ../data/MethodNotAllowed.cpp
-    ../data/WildcardMatch.cpp
-    ../parser/JSONParser.cpp
-    ../security/Security.cpp
-)
-target_link_libraries(CorsConfig_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+add_executable(CorsConfig_Tests CorsConfig/CorsConfig_tests.cpp)
+target_link_libraries(CorsConfig_Tests Geruest::Core GTest::gtest_main)
 
 add_executable(ContentBuilder_Tests
     ContentBuilder/ContentBuilder_tests.cpp
@@ -274,34 +179,22 @@ add_executable(JSObfuscator_Tests
 target_link_libraries(JSObfuscator_Tests Geruest::Obfuscation GTest::gtest_main)
 # Optional syntax check: npm i acorn && js < tools/acorn_validate_stdin.js (repo root)
 
-add_executable(BasicAuth_Tests 
-    BasicAuth/BasicAuth_tests.cpp 
-    ../auth/BasicAuth.cpp
-)
-target_link_libraries(BasicAuth_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+add_executable(BasicAuth_Tests BasicAuth/BasicAuth_tests.cpp)
+target_link_libraries(BasicAuth_Tests Geruest::Core GTest::gtest_main)
 
-add_executable(ConfigLoader_Tests 
-    ConfigLoader/ConfigLoader_tests.cpp 
-    ../config/ConfigLoader.cpp
-)
-target_link_libraries(ConfigLoader_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+add_executable(ConfigLoader_Tests ConfigLoader/ConfigLoader_tests.cpp)
+target_link_libraries(ConfigLoader_Tests Geruest::Core GTest::gtest_main)
 
 add_executable(AssetMerger_Tests 
     AssetMerger/AssetMerger_tests.cpp
 )
 target_link_libraries(AssetMerger_Tests PRIVATE Geruest::Core Geruest::Assets GTest::gtest_main)
 
-add_executable(AssetHtmlDiscovery_Tests
-    AssetHtmlDiscovery/AssetHtmlDiscovery_tests.cpp
-    ../builders/AssetHtmlDiscovery.cpp
-)
-target_link_libraries(AssetHtmlDiscovery_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+add_executable(AssetHtmlDiscovery_Tests AssetHtmlDiscovery/AssetHtmlDiscovery_tests.cpp)
+target_link_libraries(AssetHtmlDiscovery_Tests Geruest::Assets GTest::gtest_main)
 
-add_executable(Security_Tests
-    Security/Security_tests.cpp
-    ../security/Security.cpp
-)
-target_link_libraries(Security_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+add_executable(Security_Tests Security/Security_tests.cpp)
+target_link_libraries(Security_Tests Geruest::Core GTest::gtest_main)
 
 add_executable(WebSocketCodec_Tests
     WebSocket/WebSocketCodec_tests.cpp
@@ -348,15 +241,8 @@ add_executable(ServerDataRouteGate_Tests
 )
 target_link_libraries(ServerDataRouteGate_Tests Geruest::Core GTest::gtest_main)
 
-add_executable(GateEvaluation_Tests
-    GateEvaluation/GateEvaluation_tests.cpp
-    ../handler/SyncGateExecutor.cpp
-    ../data/HTTPRequest.cpp
-    ../data/HTTPResponse.cpp
-    ../parser/JSONParser.cpp
-    ../security/Security.cpp
-)
-target_link_libraries(GateEvaluation_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+add_executable(GateEvaluation_Tests GateEvaluation/GateEvaluation_tests.cpp)
+target_link_libraries(GateEvaluation_Tests Geruest::Core GTest::gtest_main)
 
 add_executable(RouteRegistry_Tests
     RouteRegistry/RouteRegistry_tests.cpp
@@ -379,39 +265,21 @@ add_executable(CoreOnly_Tests
 target_link_libraries(CoreOnly_Tests Geruest::Core GTest::gtest_main)
 
 if(GERUEST_HAS_SQLITE)
-    add_executable(DatabaseSqlite_Tests
-        Database/DatabaseSqlite_tests.cpp
-        ../database/DatabaseClient.cpp
-        ../database/DbExecutor.cpp
-        ../parser/JSONParser.cpp
-        ../security/Security.cpp
-    )
+    add_executable(DatabaseSqlite_Tests Database/DatabaseSqlite_tests.cpp)
     # Work around GCC 13 internal compiler error in coroutine lowering for this test TU.
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 13 AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 14)
         set_source_files_properties(Database/DatabaseSqlite_tests.cpp PROPERTIES COMPILE_OPTIONS "-O0")
     endif()
-    target_link_libraries(DatabaseSqlite_Tests ${PLATFORM_LIBS} GTest::gtest_main SQLite::SQLite3)
-    if(GERUEST_HAS_LIBPQ)
-        target_link_libraries(DatabaseSqlite_Tests PostgreSQL::PostgreSQL)
-    endif()
+    target_link_libraries(DatabaseSqlite_Tests Geruest::Database GTest::gtest_main)
 endif()
 
 if(GERUEST_HAS_LIBPQ)
-    add_executable(DatabasePostgres_Tests
-        Database/DatabasePostgres_tests.cpp
-        ../database/DatabaseClient.cpp
-        ../database/DbExecutor.cpp
-        ../parser/JSONParser.cpp
-        ../security/Security.cpp
-    )
+    add_executable(DatabasePostgres_Tests Database/DatabasePostgres_tests.cpp)
     # Work around GCC 13 internal compiler error in coroutine lowering for this test TU.
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 13 AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 14)
         set_source_files_properties(Database/DatabasePostgres_tests.cpp PROPERTIES COMPILE_OPTIONS "-O0")
     endif()
-    target_link_libraries(DatabasePostgres_Tests ${PLATFORM_LIBS} GTest::gtest_main PostgreSQL::PostgreSQL)
-    if(GERUEST_HAS_SQLITE)
-        target_link_libraries(DatabasePostgres_Tests SQLite::SQLite3)
-    endif()
+    target_link_libraries(DatabasePostgres_Tests Geruest::Database GTest::gtest_main)
 endif()
 
 # Add tests to CTest using Google Test discovery

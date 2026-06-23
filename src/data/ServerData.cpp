@@ -8,6 +8,7 @@
 #include "modules/ModuleHooks.hpp"
 
 #include <algorithm>
+#include <iostream>
 
 namespace geruest {
 
@@ -38,6 +39,7 @@ ServerData::ServerData(const ServerData& other)
       _corsConfig(other._corsConfig),
       _basicAuth(other._basicAuth),
       _logLevel(other._logLevel.load(std::memory_order_relaxed)),
+      _logSink(other._logSink),
       _databaseClient(other._databaseClient) {
     wireLanguagePointers_();
 }
@@ -61,6 +63,7 @@ ServerData& ServerData::operator=(const ServerData& other) {
         _corsConfig = other._corsConfig;
         _basicAuth = other._basicAuth;
         _logLevel.store(other._logLevel.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        _logSink = other._logSink;
         _databaseClient = other._databaseClient;
         wireLanguagePointers_();
     }
@@ -221,6 +224,33 @@ LogLevel ServerData::getLogLevel() const { return _logLevel.load(std::memory_ord
 
 bool ServerData::shouldLog(LogLevel level) const {
     return static_cast<int>(level) <= static_cast<int>(_logLevel.load(std::memory_order_relaxed));
+}
+
+void ServerData::setLogSink(LogSink sink) { _logSink = std::move(sink); }
+
+void ServerData::clearLogSink() { _logSink = nullptr; }
+
+void ServerData::emitLog(LogLevel level, std::string_view message, std::string_view context) const {
+    if (!shouldLog(level)) {
+        return;
+    }
+    if (_logSink) {
+        _logSink(level, message, context);
+        return;
+    }
+    if (level <= LogLevel::Error) {
+        if (context.empty()) {
+            std::cerr << "Error: " << message << std::endl;
+        } else {
+            std::cerr << "Error: " << message << " from " << context << std::endl;
+        }
+        return;
+    }
+    if (context.empty()) {
+        std::cout << message << std::endl;
+    } else {
+        std::cout << message << " from " << context << std::endl;
+    }
 }
 
 void ServerData::setDatabaseClient(std::shared_ptr<db::DatabaseClient> client) {

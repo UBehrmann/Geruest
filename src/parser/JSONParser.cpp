@@ -79,16 +79,34 @@ namespace {
 
 }  // namespace
 
-JSONParser::JSONParser(const std::string &input) : _ownedStorage(input), _view(_ownedStorage), jp(0) {
+JSONParser::JSONParser(const std::string &input, bool strict)
+    : _ownedStorage(input), _view(_ownedStorage), jp(0), _strict(strict) {
     parseJSON();
 }
 
-JSONParser::JSONParser(std::string_view json, std::shared_ptr<const std::string> lifetime)
-    : _lifetimeBacking(std::move(lifetime)), _view(json), jp(0) {
+JSONParser::JSONParser(std::string_view json, std::shared_ptr<const std::string> lifetime, bool strict)
+    : _lifetimeBacking(std::move(lifetime)), _view(json), jp(0), _strict(strict) {
     parseJSON();
 }
 
 JSONParser::JSONParser(std::map<std::string, std::string> initialData) : data(std::move(initialData)) {}
+
+void JSONParser::failParse(const char* message) {
+    _parseOk = false;
+    _parseError = message;
+    if (_strict) {
+        throw std::runtime_error(_parseError);
+    }
+}
+
+void JSONParser::finishParse() {
+    while (jp < _view.length() && isWhiteSpace(_view[jp])) {
+        ++jp;
+    }
+    if (jp != _view.length()) {
+        failParse("trailing data after JSON value");
+    }
+}
 
 bool JSONParser::isWhiteSpace(char c) {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r';
@@ -325,21 +343,31 @@ void JSONParser::parseJSON() {
     data.clear();
     keys.clear();
     jp = 0;
+    _parseOk = true;
+    _parseError.clear();
     
     // Skip leading whitespace
     while (jp < _view.length() && isWhiteSpace(_view[jp])) {
         jp++;
     }
     
+    if (jp >= _view.length()) {
+        failParse("empty input");
+        return;
+    }
+    
     // Check if this is an array or object
-    if (jp < _view.length() && _view[jp] == '[') {
-        // This is an array, parse it
+    if (_view[jp] == '[') {
         parseArray();
+        if (_parseOk) {
+            finishParse();
+        }
         return;
     }
     
     // This should be an object
-    if (jp >= _view.length() || _view[jp] != '{') {
+    if (_view[jp] != '{') {
+        failParse("expected JSON object or array");
         return;
     }
     jp++;
@@ -354,13 +382,17 @@ void JSONParser::parseJSON() {
         }
         
         std::string key = readKey();
-        if (key.empty()) break;
+        if (key.empty()) {
+            failParse("expected object key");
+            break;
+        }
         keys.push_back(key);
         
         while (jp < _view.length() && isWhiteSpace(_view[jp])) {
             jp++;
         }
         if (jp >= _view.length() || _view[jp] != ':') {
+            failParse("expected ':' after object key");
             break;
         }
         jp++;
@@ -377,6 +409,10 @@ void JSONParser::parseJSON() {
             jp++;
             break;
         }
+    }
+
+    if (_parseOk) {
+        finishParse();
     }
 }
 

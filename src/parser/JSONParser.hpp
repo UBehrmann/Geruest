@@ -13,9 +13,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
-#include <iostream>
 #include <map>
-#include <memory>
 #include <cfloat>
 #include <climits>
 #include <utility>
@@ -42,6 +40,13 @@ private:
     std::shared_ptr<const std::string> _lifetimeBacking;
     std::string_view _view;
     size_t jp = 0;
+    bool _parseOk = true;
+    bool _strict = false;
+    std::string _parseError;
+
+    void failParse(const char* message);
+
+    void finishParse();
 
     /**
      * Read the key from the JSONParser string
@@ -114,10 +119,10 @@ public:
 
     JSONParser() = default;
 
-    explicit JSONParser(const std::string &input);
+    explicit JSONParser(const std::string &input, bool strict = false);
 
     /** Parse JSON from `json`; keep `lifetime` alive while this parser exists (slice must lie inside *lifetime). */
-    JSONParser(std::string_view json, std::shared_ptr<const std::string> lifetime);
+    JSONParser(std::string_view json, std::shared_ptr<const std::string> lifetime, bool strict = false);
 
     explicit JSONParser(std::map<std::string, std::string> initialData);
 
@@ -229,6 +234,12 @@ public:
     
     // Check if a key exists
     bool hasKey(const std::string &key) const;
+
+    /** @brief True when the last parse consumed a complete JSON value with no trailing junk. */
+    [[nodiscard]] bool ok() const { return _parseOk; }
+
+    /** @brief Non-empty when ok() is false. */
+    [[nodiscard]] const std::string& parseError() const { return _parseError; }
 };
 
 /**

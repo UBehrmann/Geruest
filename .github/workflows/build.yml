@@ -41,14 +41,14 @@ jobs:
       - name: Configure and Build
         run: |
           mkdir build && cd build
-          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DGERUEST_ENABLE_SQLITE=ON -DGERUEST_ENABLE_POSTGRESQL=ON
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DGERUEST_ENABLE_SQLITE=ON -DGERUEST_ENABLE_POSTGRESQL=ON -DGERUEST_ENABLE_WEBP=ON
           cmake --build . --config Release
 
       - name: Build Unit Tests
         run: |
           cd src/unitTests
           mkdir -p build && cd build
-          cmake .. -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DGERUEST_ENABLE_SQLITE=ON -DGERUEST_ENABLE_POSTGRESQL=ON
+          cmake .. -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DGERUEST_ENABLE_SQLITE=ON -DGERUEST_ENABLE_POSTGRESQL=ON -DGERUEST_ENABLE_WEBP=ON
           cmake --build .
 
       - name: Run Unit Tests

@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 #include <vector>
 #include <string>
+#include <stdexcept>
 #include <fstream>
 #include <sstream>
 #include <algorithm>
@@ -550,4 +551,25 @@ TEST(JSONParserTest, AddToEmptyArrayAndArrayToString) {
     EXPECT_FALSE(result.empty());
     EXPECT_NE(result.find("test"), std::string::npos);
     EXPECT_NE(result.find("value"), std::string::npos);
+}
+
+TEST(JSONParserTest, OkRejectsTrailingGarbage) {
+    JSONParser json(R"({"a":1}trailing)");
+    EXPECT_FALSE(json.ok());
+    EXPECT_FALSE(json.parseError().empty());
+    EXPECT_EQ(json.getInt("a"), 1);
+}
+
+TEST(JSONParserTest, OkAcceptsCompleteObject) {
+    JSONParser json(R"({"a":1})");
+    EXPECT_TRUE(json.ok());
+    EXPECT_TRUE(json.parseError().empty());
+}
+
+TEST(JSONParserTest, StrictModeThrowsOnInvalidJson) {
+    EXPECT_THROW(JSONParser(R"({not json})", true), std::runtime_error);
+}
+
+TEST(JSONParserTest, StrictModeThrowsOnTrailingData) {
+    EXPECT_THROW(JSONParser(R"({"a":1}extra)", true), std::runtime_error);
 }

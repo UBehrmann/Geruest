@@ -106,7 +106,7 @@ TEST(GeruestLifecycle, InitStartStopJoinsCleanly) {
         ASSERT_TRUE(server.isRunning()) << "accept loop should have set running";
 
         server.stop();
-        // Unblock accept() without waiting for SO_RCVTIMEO (TIMEOUT_SEC).
+        // Unblock accept() without waiting for socket receive timeout.
         wakeAcceptOnLocalhost(listenPort);
         t.join();
 

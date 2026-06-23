@@ -2,17 +2,26 @@
 
 ## Setup
 
-**Prerequisites:** C++20 compiler (GCC 10+, Clang 11+), CMake 3.10+, Git, **Boost** (`libboost-system-dev` on Debian/Ubuntu)
+**Prerequisites:** C++20 compiler (GCC 10+, Clang 11+), CMake 3.11+, Git, **Boost** (`libboost-system-dev` on Debian/Ubuntu)
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/Geruest.git && cd Geruest
-git remote add upstream https://github.com/ORIGINAL_OWNER/Geruest.git
+git clone https://github.com/UBehrmann/Geruest.git && cd Geruest
+git remote add upstream https://github.com/UBehrmann/Geruest.git
 
-# Linux/Unix
-mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug && make -j$(nproc)
+# Linux/Unix — library + unit tests from one build tree
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Debug -DGERUEST_BUILD_TESTS=ON
+cmake --build .
+ctest --output-on-failure
+```
 
-# Test
-cd src/unitTests && mkdir build && cd build && cmake .. && make && ctest --output-on-failure
+Standalone test project (optional; requires CMake 3.28+):
+
+```bash
+cd src/unitTests && mkdir -p build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Debug
+cmake --build .
+ctest --output-on-failure
 ```
 
 ## Code Style
@@ -37,20 +46,28 @@ close(fd);
 
 ## Testing
 
-```cpp
-#include <iostream>
-#include <cassert>
+Tests use **Google Test** (fetched automatically by `src/unitTests/CMakeLists.txt`). Follow the pattern in existing files such as `src/unitTests/Security/Security_tests.cpp`:
 
-void testFeature() {
-    assert(result == expected);
-    std::cout << "  ✓ Passed" << std::endl;
+```cpp
+#include <gtest/gtest.h>
+#include "../../security/Security.hpp"
+
+using namespace geruest;
+
+TEST(SecurityTest, EscapeHtmlEscapesAngleBrackets) {
+    EXPECT_EQ(Security::escapeHtml("<script>"), "&lt;script&gt;");
 }
 ```
 
-Add to `CMakeLists.txt`:
+Register a new executable in `src/unitTests/CMakeLists.txt`:
+
 ```cmake
-add_executable(Feature_Tests Feature/tests.cpp ../path/to/Feature.cpp)
+add_executable(MyFeature_Tests MyFeature/MyFeature_tests.cpp)
+target_link_libraries(MyFeature_Tests Geruest::Core GTest::gtest_main)
+gtest_discover_tests(MyFeature_Tests)
 ```
+
+Use `Geruest::Geruest`, `Geruest::Assets`, or another module target when the code under test lives outside Core.
 
 ## Pull Requests
 

@@ -46,11 +46,7 @@ class Handler {
     friend boost::asio::awaitable<bool> websocket::handleUpgrade(Handler&, HTTPRequest*);
 
    private:
-    static unsigned clientCount;
-
     boost::asio::ip::tcp::socket& clientSocket;
-
-    unsigned idling = 0;
 
     std::istringstream requestStream;
 

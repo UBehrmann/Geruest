@@ -63,6 +63,12 @@ Geruest::~Geruest() {
     if (_statusPersistenceThread.joinable()) {
         _statusPersistenceThread.join();
     }
+#if GERUEST_HAS_CURL && GERUEST_ENABLE_EMAIL
+    if (_emailSender) {
+        _emailSender->stop();
+        _emailSender.reset();
+    }
+#endif
     stopWorkers();
 
     sendToLogger("Server closed.");
@@ -71,12 +77,16 @@ Geruest::~Geruest() {
 // ========== Logging ==========
 
 void Geruest::sendToLogger(const std::string& message) const {
-    if (serverData.shouldLog(LogLevel::Info)) std::cout << message << std::endl;
+    serverData.emitLog(LogLevel::Info, message, "Geruest");
 }
 
 void Geruest::sendToLoggerError(const std::string& message) const {
-    if (serverData.shouldLog(LogLevel::Error)) std::cerr << "Error: " << message << std::endl;
+    serverData.emitLog(LogLevel::Error, message, "Geruest");
 }
+
+void Geruest::setLogSink(LogSink sink) { serverData.setLogSink(std::move(sink)); }
+
+void Geruest::clearLogSink() { serverData.clearLogSink(); }
 
 void Geruest::setLogLevel(LogLevel level) {
     serverData.setLogLevel(level);

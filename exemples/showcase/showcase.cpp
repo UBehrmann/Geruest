@@ -35,15 +35,6 @@ void signalHandler(int signum) {
     if (server) {
         server->stop();
     }
-#if GERUEST_HAS_CURL
-    // Stop email sender
-    try {
-        auto& emailSender = geruest::EmailSender::getInstance();
-        emailSender.stop();
-    } catch (...) {
-        // Not initialized, ignore
-    }
-#endif
 }
 
 void addRoutes(Geruest* serverToAddRoutes);
@@ -380,9 +371,12 @@ void addRoutes(Geruest* serverToAddRoutes) {
             emailBody += "IP: " + clientIP + "\n\n";
             emailBody += "Message:\n" + message + "\n";
             
-            // Queue email
-            auto& emailSender = geruest::EmailSender::getInstance();
-            bool queued = emailSender.enqueueEmail(
+            geruest::EmailSender* emailSender = serverToAddRoutes->emailSender();
+            if (emailSender == nullptr) {
+                response.setBody(R"({"status":"error","message":"Email sender not configured"})");
+                return response;
+            }
+            bool queued = emailSender->enqueueEmail(
                 "admin@example.com",  // Replace with your actual admin email
                 emailSubject,         // Using sanitized value
                 emailBody,
@@ -393,8 +387,8 @@ void addRoutes(Geruest* serverToAddRoutes) {
                 response.setBody(R"({
                     "status":"success",
                     "message":"Your message has been sent successfully!",
-                    "queue_size":)" + std::to_string(emailSender.getQueueSize()) + R"(,
-                    "emails_sent":)" + std::to_string(emailSender.getEmailsSent()) + R"(
+                    "queue_size":)" + std::to_string(emailSender->getQueueSize()) + R"(,
+                    "emails_sent":)" + std::to_string(emailSender->getEmailsSent()) + R"(
                 })");
             } else {
                 response.setBody(R"({
@@ -488,9 +482,12 @@ void addRoutes(Geruest* serverToAddRoutes) {
             emailBody += "Client IP: " + clientIP + "\n\n";
             emailBody += "If you received this email, your SMTP configuration is working correctly!\n";
             
-            // Queue email
-            auto& emailSender = geruest::EmailSender::getInstance();
-            bool queued = emailSender.enqueueEmail(
+            geruest::EmailSender* emailSender = serverToAddRoutes->emailSender();
+            if (emailSender == nullptr) {
+                response.setBody(R"({"status":"error","message":"Email sender not configured"})");
+                return response;
+            }
+            bool queued = emailSender->enqueueEmail(
                 safeToEmail,  // Using sanitized value
                 emailSubject,
                 emailBody,
@@ -501,9 +498,9 @@ void addRoutes(Geruest* serverToAddRoutes) {
                 response.setBody(R"({
                     "status":"success",
                     "message":"Test email sent successfully to )" + toEmail + R"(!",
-                    "queue_size":)" + std::to_string(emailSender.getQueueSize()) + R"(,
-                    "emails_sent":)" + std::to_string(emailSender.getEmailsSent()) + R"(,
-                    "emails_rejected":)" + std::to_string(emailSender.getEmailsRejected()) + R"(
+                    "queue_size":)" + std::to_string(emailSender->getQueueSize()) + R"(,
+                    "emails_sent":)" + std::to_string(emailSender->getEmailsSent()) + R"(,
+                    "emails_rejected":)" + std::to_string(emailSender->getEmailsRejected()) + R"(
                 })");
             } else {
                 response.setBody(R"({

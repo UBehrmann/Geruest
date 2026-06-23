@@ -11,23 +11,27 @@ JavaScript obfuscation transforms your code to make it difficult to read while m
 ### Basic Setup
 
 ```cpp
-#include <geruest/Geruest.hpp>
+#include <Geruest.hpp>
 
 int main() {
-    Geruest server(8080);
-    
+    using namespace geruest;
+
+    Geruest server;
+    server.setPort(8080);
+
     // Set obfuscation level (0=disabled, 1-3=increasing complexity)
     server.setObfuscationLevel(2);  // Medium obfuscation
-    
+
     // Optional: Change cache expiry (default: 7 days)
     server.setObfuscationCacheExpiry(14);
-    
+
     // Exclude external libraries from obfuscation
     server.addObfuscationExclusion("jquery.min.js");
     server.addObfuscationExclusion("bootstrap.min.js");
     server.addObfuscationExclusion("lodash.js");
-    
+
     server.addRoot("./website");
+    server.init();
     server.start();
 }
 ```
@@ -204,30 +208,35 @@ Obfuscated code runs at **near-identical speed** to original:
 ## 📝 Complete Example
 
 ```cpp
-#include <geruest/Geruest.hpp>
+#include <Geruest.hpp>
+#include <cstdlib>
 
 int main() {
-    Geruest server(8080);
-    
+    using namespace geruest;
+
+    Geruest server;
+    server.setPort(8080);
+
     // Production configuration
     server.setMergeAssets(true);           // Merge JS/CSS per page
     server.setObfuscationLevel(2);         // Medium obfuscation
     server.setObfuscationCacheExpiry(14);  // 2-week cache
     server.setRemoveComments(true);        // Strip comments
-    
+
     // Exclude external libraries
     server.addObfuscationExclusion("jquery-3.6.0.min.js");
     server.addObfuscationExclusion("bootstrap.bundle.min.js");
     server.addObfuscationExclusion("chart.min.js");
-    
+
     // Development override
-    if (getenv("DEV_MODE") != nullptr) {
+    if (std::getenv("DEV_MODE") != nullptr) {
         server.enableDevMode();  // Disables obfuscation automatically
     }
-    
+
     server.addRoot("./website");
+    server.init();
     server.start();
-    
+
     return 0;
 }
 ```

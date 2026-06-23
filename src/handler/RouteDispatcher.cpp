@@ -4,6 +4,7 @@
 
 #include "RouteDispatcher.hpp"
 
+#include "GzipResponse.hpp"
 #include "Handler.hpp"
 #include "StaticFileResolver.hpp"
 #include "data/CorsConfig.hpp"
@@ -34,6 +35,7 @@ boost::asio::awaitable<void> RouteDispatcher::dispatchRouteAndSendAsync(HTTPRequ
         }
 
         applyCorsHeaders(response, serverData_.getCorsConfig(), request);
+        applyResponseCompression(response, request);
         response.serializeTo(host.responseScratch_);
         failLog = "Failed to send route response for: ";
         if (handlerKind == "async route") {
@@ -43,6 +45,7 @@ boost::asio::awaitable<void> RouteDispatcher::dispatchRouteAndSendAsync(HTTPRequ
         HTTPResponse response = responseMethodNotAllowed(request, e.allowMethods());
         host.record4xxMetric();
         applyCorsHeaders(response, serverData_.getCorsConfig(), request);
+        applyResponseCompression(response, request);
         response.serializeTo(host.responseScratch_);
         failLog = "Failed to send 405 for: ";
     } catch (const std::exception& e) {
@@ -50,6 +53,7 @@ boost::asio::awaitable<void> RouteDispatcher::dispatchRouteAndSendAsync(HTTPRequ
         HTTPResponse response = responseInternalServerError(request);
         host.record5xxMetric();
         applyCorsHeaders(response, serverData_.getCorsConfig(), request);
+        applyResponseCompression(response, request);
         response.serializeTo(host.responseScratch_);
         failLog = "Failed to send 500 for: ";
     } catch (...) {
@@ -57,11 +61,12 @@ boost::asio::awaitable<void> RouteDispatcher::dispatchRouteAndSendAsync(HTTPRequ
         HTTPResponse response = responseInternalServerError(request);
         host.record5xxMetric();
         applyCorsHeaders(response, serverData_.getCorsConfig(), request);
+        applyResponseCompression(response, request);
         response.serializeTo(host.responseScratch_);
         failLog = "Failed to send 500 for: ";
     }
 
-    if (!co_await host.sendSocketAsync(host.responseScratch_.data(), host.responseScratch_.size())) {
+    if (failLog != nullptr && !co_await host.sendSocketAsync(host.responseScratch_.data(), host.responseScratch_.size())) {
         host.sendToLoggerError(std::string(failLog) + request->getPathString());
     }
     co_return;
@@ -73,6 +78,7 @@ boost::asio::awaitable<void> RouteDispatcher::tryDispatchRoute(HTTPRequest* requ
     if (auto denial = co_await host.checkRouteGateDenialAsync(*request)) {
         host.record4xxMetric();
         applyCorsHeaders(*denial, serverData_.getCorsConfig(), request);
+        applyResponseCompression(*denial, request);
         denial->serializeTo(host.responseScratch_);
         if (!co_await host.sendSocketAsync(host.responseScratch_.data(), host.responseScratch_.size())) {
             host.sendToLoggerError("Failed to send route gate denial for: " + path);
@@ -123,10 +129,6 @@ boost::asio::awaitable<void> RouteDispatcher::dispatchAsync(HTTPRequest* request
             }(),
             "route", host);
         co_return;
-    }
-
-    if (path.rfind("/api/", 0) == 0) {
-        host.sendToLoggerError("No API route matched. path=" + path + " request_line=" + request->getRawRequestLine());
     }
 
     std::string extension = StaticFileResolver::getExtension(path);
