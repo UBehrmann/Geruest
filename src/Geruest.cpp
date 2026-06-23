@@ -41,7 +41,6 @@ Geruest::Geruest() {
     std::cout.setf(std::ios::unitbuf);
     std::cerr.setf(std::ios::unitbuf);
 
-    modules::bindServerData(&serverData);
 #if GERUEST_ENABLE_ASSETS
     (void)assets::assetsModuleLinkAnchor();
     assets::ensureAssetsModuleRegistered();
@@ -53,6 +52,8 @@ Geruest::Geruest() {
     (void)email::emailModuleLinkAnchor();
     modules::registerEmailConfigApplier(email::applyFromConfigLoader);
 #endif
+
+    modules::bindServerData(&serverData);
 
     std::cout << "Geruest Framework v" << getVersion() << std::endl;
 
