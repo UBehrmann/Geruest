@@ -1,6 +1,8 @@
 #ifndef GERUEST_DATABASE_CLIENT_HPP
 #define GERUEST_DATABASE_CLIENT_HPP
 
+#include "geruest/BuildConfig.hpp"
+
 #include <boost/asio/awaitable.hpp>
 
 #include <memory>

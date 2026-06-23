@@ -1,30 +1,25 @@
 cmake_minimum_required(VERSION 3.11)
 
-# Define the project name and version
-project(GeruestLibrary VERSION 0.11.7 LANGUAGES CXX)
+project(GeruestLibrary VERSION 0.13.3 LANGUAGES CXX)
 
-# Configure version header
+set(GERUEST_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
+set(GERUEST_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}")
+
 configure_file(
-    "${PROJECT_SOURCE_DIR}/src/Version.hpp.in"
-    "${PROJECT_BINARY_DIR}/include/geruest/Version.hpp"
+    "${GERUEST_ROOT}/src/Version.hpp.in"
+    "${GERUEST_BINARY_DIR}/include/geruest/Version.hpp"
 )
 
-# C++20 required for Boost.Asio coroutines (co_await). Boost >= 1.75 recommended.
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Geruest currently supports Linux/Unix targets only.
 if(WIN32)
     message(FATAL_ERROR "Windows is no longer supported. Build on Linux/Unix.")
 endif()
 
-# Enable more warnings for all compilers
 add_compile_options(-Wall -Wextra -Wpedantic -Wconversion -Wshadow)
-
-# Output static libs to /lib
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
-# Required packages
 find_package(Threads REQUIRED)
 
 if(POLICY CMP0167)
@@ -34,160 +29,92 @@ find_package(Boost 1.75 REQUIRED COMPONENTS system)
 
 option(GERUEST_ENABLE_POSTGRESQL "Enable PostgreSQL backend support" OFF)
 option(GERUEST_ENABLE_SQLITE "Enable SQLite backend support" OFF)
+option(GERUEST_ENABLE_WEBSOCKET "Build WebSocket module" ON)
+option(GERUEST_ENABLE_ASSETS "Build Assets module (HTML merge, WebP)" ON)
+option(GERUEST_ENABLE_OBFUSCATION "Build Obfuscation module" ON)
+option(GERUEST_ENABLE_EMAIL "Build Email module (requires CURL)" ON)
+option(GERUEST_ENABLE_WEBP "Enable WebP image conversion (requires libwebp)" OFF)
 
-# Optional: Find CURL for email functionality
 find_package(CURL QUIET)
 if(CURL_FOUND)
-    message(STATUS "CURL library found - Email functionality enabled")
     set(GERUEST_HAS_CURL TRUE)
 else()
-    message(STATUS "CURL library not found - Email functionality disabled")
-    message(STATUS "To enable email functionality, install libcurl4-openssl-dev (apt) or curl (vcpkg)")
     set(GERUEST_HAS_CURL FALSE)
+    set(GERUEST_ENABLE_EMAIL OFF)
 endif()
 
-# Optional: Find PostgreSQL (libpq) for database backend
 set(GERUEST_HAS_LIBPQ FALSE)
 if(GERUEST_ENABLE_POSTGRESQL)
     find_package(PostgreSQL QUIET)
     if(PostgreSQL_FOUND)
-        message(STATUS "PostgreSQL library found - PostgreSQL backend enabled")
         set(GERUEST_HAS_LIBPQ TRUE)
-    else()
-        message(STATUS "PostgreSQL requested but not found - PostgreSQL backend disabled")
-        message(STATUS "To enable PostgreSQL backend, install libpq-dev (apt)")
     endif()
 endif()
 
-# Optional: Find SQLite for database backend
 set(GERUEST_HAS_SQLITE FALSE)
 if(GERUEST_ENABLE_SQLITE)
     find_package(SQLite3 QUIET)
     if(SQLite3_FOUND)
-        message(STATUS "SQLite library found - SQLite backend enabled")
         set(GERUEST_HAS_SQLITE TRUE)
-    else()
-        message(STATUS "SQLite requested but not found - SQLite backend disabled")
-        message(STATUS "To enable SQLite backend, install libsqlite3-dev (apt)")
     endif()
 endif()
 
-# Optional: Find libwebp for WebP image conversion
-# Users must install libwebp-dev (Linux) or webp (vcpkg/conan) for this feature
-find_package(WebP QUIET)
-if(WebP_FOUND)
-    message(STATUS "WebP library found via CMake config - WebP conversion enabled")
-    set(GERUEST_HAS_WEBP TRUE)
-    set(WEBP_LINK_TARGET WebP::webp)
-else()
-    # Fallback to pkg-config (required for libwebp-dev on Ubuntu/Debian)
-    find_package(PkgConfig QUIET)
-    if(PkgConfig_FOUND)
-        pkg_check_modules(LIBWEBP QUIET libwebp)
-        if(LIBWEBP_FOUND)
-            message(STATUS "WebP library found via pkg-config - WebP conversion enabled")
-            set(GERUEST_HAS_WEBP TRUE)
+find_package(ZLIB REQUIRED)
+
+set(GERUEST_HAS_WEBP FALSE)
+if(GERUEST_ENABLE_WEBP)
+    find_package(WebP QUIET)
+    if(WebP_FOUND)
+        set(GERUEST_HAS_WEBP TRUE)
+        set(WEBP_LINK_TARGET WebP::webp)
+    else()
+        find_package(PkgConfig QUIET)
+        if(PkgConfig_FOUND)
+            pkg_check_modules(LIBWEBP QUIET libwebp)
+            if(LIBWEBP_FOUND)
+                set(GERUEST_HAS_WEBP TRUE)
+            endif()
         endif()
     endif()
-    
-    if(NOT GERUEST_HAS_WEBP)
-        message(STATUS "WebP library not found - WebP conversion disabled")
-        message(STATUS "To enable WebP conversion, install libwebp-dev (apt) or webp (vcpkg)")
-        set(GERUEST_HAS_WEBP FALSE)
-    endif()
 endif()
 
-# Create the static library
-add_library(Geruest STATIC
-    src/Geruest.cpp
-    src/server/Config.cpp
-    src/server/Socket.cpp
-    src/server/Workers.cpp
-    src/server/HttpSession.cpp
-    src/server/WebSocket.cpp
-    src/server/Status.cpp
-    src/auth/BasicAuth.cpp
-    src/builders/AssetMerger.cpp
-    src/builders/ContentBuilder.cpp
-    src/builders/CSSBuilder.cpp
-    src/builders/HTMLBuilder.cpp
-    src/builders/JSBuilder.cpp
-    src/builders/JSObfuscator.cpp
-    src/builders/JSObfuscatorScope.cpp
-    src/builders/WebPConverter.cpp
-    src/config/ConfigLoader.cpp
-    src/data/HTTPRequest.cpp
-    src/data/HTTPResponse.cpp
-    src/data/MethodNotAllowed.cpp
-    src/data/ServerData.cpp
-    src/email/EmailSender.cpp
-    src/FileManagement/FileManagement.cpp
-    src/handler/Handler.cpp
-    src/parser/JSONParser.cpp
-    src/security/Security.cpp
-)
-
-if(GERUEST_HAS_LIBPQ OR GERUEST_HAS_SQLITE)
-    target_sources(Geruest PRIVATE
-        src/database/DatabaseClient.cpp
-        src/database/DbExecutor.cpp
-    )
-endif()
-
-# Public headers
-target_include_directories(Geruest PUBLIC
-    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
-    $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include>
-    $<INSTALL_INTERFACE:include>
-)
-
-target_link_libraries(Geruest PUBLIC Threads::Threads)
-target_link_libraries(Geruest PUBLIC Boost::system)
-
-# Link CURL library if found (PUBLIC because EmailSender needs it)
-if(GERUEST_HAS_CURL)
-    target_link_libraries(Geruest PUBLIC CURL::libcurl)
-    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_CURL=1)
-else()
-    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_CURL=0)
-endif()
-
-if(GERUEST_HAS_LIBPQ)
-    target_link_libraries(Geruest PUBLIC PostgreSQL::PostgreSQL)
-    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_LIBPQ=1)
-else()
-    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_LIBPQ=0)
-endif()
-
-if(GERUEST_HAS_SQLITE)
-    target_link_libraries(Geruest PUBLIC SQLite::SQLite3)
-    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_SQLITE=1)
-else()
-    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_SQLITE=0)
-endif()
-
-# Link WebP library if found (PRIVATE to avoid leaking to consumers)
-if(GERUEST_HAS_WEBP)
-    if(WEBP_LINK_TARGET)
-        # CMake config target (vcpkg, conan, etc.)
-        target_link_libraries(Geruest PRIVATE ${WEBP_LINK_TARGET})
+foreach(_flag CURL LIBPQ SQLITE WEBP)
+    if(GERUEST_HAS_${_flag})
+        set(GERUEST_HAS_${_flag}_NUM 1)
     else()
-        # pkg-config variables (libwebp-dev on Ubuntu/Debian)
-        target_include_directories(Geruest PRIVATE ${LIBWEBP_INCLUDE_DIRS})
-        target_link_libraries(Geruest PRIVATE ${LIBWEBP_LIBRARIES})
-        target_link_directories(Geruest PRIVATE ${LIBWEBP_LIBRARY_DIRS})
+        set(GERUEST_HAS_${_flag}_NUM 0)
     endif()
-    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_WEBP=1)
-else()
-    target_compile_definitions(Geruest PUBLIC GERUEST_HAS_WEBP=0)
+endforeach()
+unset(_flag)
+
+foreach(_mod WEBSOCKET ASSETS OBFUSCATION EMAIL WEBP)
+    if(GERUEST_ENABLE_${_mod})
+        set(GERUEST_ENABLE_${_mod}_NUM 1)
+    else()
+        set(GERUEST_ENABLE_${_mod}_NUM 0)
+    endif()
+endforeach()
+unset(_mod)
+
+configure_file(
+    "${GERUEST_ROOT}/src/geruest/BuildConfig.hpp.in"
+    "${GERUEST_BINARY_DIR}/include/geruest/BuildConfig.hpp"
+)
+
+include(${GERUEST_ROOT}/cmake/GeruestModules.cmake)
+
+set(GERUEST_CMAKE_FIND_DEPS "find_dependency(Threads REQUIRED)\nfind_dependency(Boost 1.75 REQUIRED COMPONENTS system)\n")
+if(GERUEST_HAS_CURL AND GERUEST_ENABLE_EMAIL)
+    string(APPEND GERUEST_CMAKE_FIND_DEPS "find_dependency(CURL REQUIRED)\n")
+endif()
+if(GERUEST_HAS_LIBPQ)
+    string(APPEND GERUEST_CMAKE_FIND_DEPS "find_dependency(PostgreSQL REQUIRED)\n")
+endif()
+if(GERUEST_HAS_SQLITE)
+    string(APPEND GERUEST_CMAKE_FIND_DEPS "find_dependency(SQLite3 REQUIRED)\n")
 endif()
 
-# -------------------
-# Installation rules
-# -------------------
-
-# Install the library and export config
-install(TARGETS Geruest
+install(TARGETS ${GERUEST_INSTALL_TARGETS}
     EXPORT GeruestTargets
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
@@ -195,25 +122,37 @@ install(TARGETS Geruest
     INCLUDES DESTINATION include
 )
 
-# Install headers
-install(DIRECTORY src/
-    DESTINATION include
-    FILES_MATCHING PATTERN "*.hpp"
-)
-
-# Install generated version header
-install(FILES "${PROJECT_BINARY_DIR}/include/geruest/Version.hpp"
+install(FILES
+    ${GERUEST_ROOT}/include/geruest/Core.hpp
+    ${GERUEST_ROOT}/include/geruest/WebSocket.hpp
+    ${GERUEST_ROOT}/include/geruest/Database.hpp
+    ${GERUEST_ROOT}/include/geruest/Email.hpp
+    ${GERUEST_ROOT}/include/geruest/Obfuscation.hpp
+    ${GERUEST_ROOT}/include/geruest/Assets.hpp
+    ${GERUEST_ROOT}/include/geruest/Geruest.hpp
     DESTINATION include/geruest
 )
 
-# Export the targets
+install(FILES ${GERUEST_ROOT}/src/Geruest.hpp DESTINATION include)
+
+# Preserve src/ subtree paths (Geruest.hpp uses "data/...", "parser/...", etc.)
+install(DIRECTORY ${GERUEST_ROOT}/src/
+        DESTINATION include
+        FILES_MATCHING PATTERN "*.hpp"
+        PATTERN "unitTests" EXCLUDE)
+
+install(FILES
+    "${GERUEST_BINARY_DIR}/include/geruest/Version.hpp"
+    "${GERUEST_BINARY_DIR}/include/geruest/BuildConfig.hpp"
+    DESTINATION include/geruest
+)
+
 install(EXPORT GeruestTargets
     FILE GeruestTargets.cmake
     NAMESPACE Geruest::
     DESTINATION lib/cmake/Geruest
 )
 
-# Generate config + version files
 include(CMakePackageConfigHelpers)
 
 write_basic_package_version_file(
@@ -223,7 +162,7 @@ write_basic_package_version_file(
 )
 
 configure_package_config_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GeruestConfig.cmake.in"
+    "${GERUEST_ROOT}/cmake/GeruestConfig.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/GeruestConfig.cmake"
     INSTALL_DESTINATION lib/cmake/Geruest
 )
@@ -233,3 +172,10 @@ install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/GeruestConfigVersion.cmake"
     DESTINATION lib/cmake/Geruest
 )
+
+# Optional: build unit tests from the same configure (uses targets defined above).
+option(GERUEST_BUILD_TESTS "Build unit tests" OFF)
+if(GERUEST_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(${GERUEST_ROOT}/src/unitTests ${CMAKE_BINARY_DIR}/unitTests)
+endif()

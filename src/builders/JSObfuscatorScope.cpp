@@ -9,6 +9,7 @@
 #include <cstring>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -337,11 +338,62 @@ static bool isIdentPart(char c) {
     return std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '$';
 }
 
+static bool isWsChar(char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+}
+
+static bool keywordEndingAt(const std::string& code, size_t endExclusive, const char* kw) {
+    const size_t len = std::strlen(kw);
+    if (endExclusive < len) {
+        return false;
+    }
+    const size_t start = endExclusive - len;
+    if (code.compare(start, len, kw) != 0) {
+        return false;
+    }
+    if (start > 0 && isIdentPart(code[start - 1])) {
+        return false;
+    }
+    if (endExclusive < code.size() && isIdentPart(code[endExclusive])) {
+        return false;
+    }
+    return true;
+}
+
+static bool isCaseOrDefaultLabelColon(const std::string& code, size_t colonPos) {
+    size_t j = colonPos;
+    while (j > 0 && isWsChar(code[j - 1])) {
+        --j;
+    }
+    if (j == 0) {
+        return false;
+    }
+    if (keywordEndingAt(code, j, "default")) {
+        return true;
+    }
+    size_t digitEnd = j;
+    while (j > 0 && std::isdigit(static_cast<unsigned char>(code[j - 1]))) {
+        --j;
+    }
+    return j < digitEnd;
+}
+
+static bool inObjectPropertyList(const std::string& segment, size_t identStart) {
+    for (int j = static_cast<int>(identStart) - 1; j >= 0; --j) {
+        char c = segment[static_cast<size_t>(j)];
+        if (isWsChar(c)) {
+            continue;
+        }
+        return c == '{' || c == ',';
+    }
+    return false;
+}
+
 static bool isObjectLiteralKey(const std::string& segment, size_t identStart, size_t identEnd) {
     bool followedByColon = false;
     for (size_t k = identEnd; k < segment.size(); ++k) {
         char c = segment[k];
-        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+        if (isWsChar(c)) {
             continue;
         }
         followedByColon = (c == ':');
@@ -350,14 +402,102 @@ static bool isObjectLiteralKey(const std::string& segment, size_t identStart, si
     if (!followedByColon) {
         return false;
     }
-    for (int j = static_cast<int>(identStart) - 1; j >= 0; --j) {
-        char c = segment[static_cast<size_t>(j)];
-        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+    return inObjectPropertyList(segment, identStart);
+}
+
+/// ES6 shorthand property `{ id }` / binding `{ id } = x` — identifier is the wire-format key.
+static bool isObjectLiteralShorthand(const std::string& segment, size_t identStart, size_t identEnd) {
+    if (!inObjectPropertyList(segment, identStart)) {
+        return false;
+    }
+    for (size_t k = identEnd; k < segment.size(); ++k) {
+        char c = segment[k];
+        if (isWsChar(c)) {
             continue;
         }
-        return (c == '{' || c == ',');
+        if (c == ':') {
+            return false;
+        }
+        if (c == '(') {
+            return false;
+        }
+        return c == ',' || c == '}' || c == '=';
     }
     return false;
+}
+
+static bool braceOpensBlock(const std::string& code, size_t bracePos) {
+    size_t j = bracePos;
+    while (j > 0 && isWsChar(code[j - 1])) {
+        --j;
+    }
+    if (j == 0) {
+        return false;
+    }
+    if (j >= 2 && code[j - 2] == '=' && code[j - 1] == '>') {
+        return true;
+    }
+    if (code[j - 1] == ')') {
+        return true;
+    }
+    if (keywordEndingAt(code, j, "else")) {
+        return true;
+    }
+    if (keywordEndingAt(code, j, "try")) {
+        return true;
+    }
+    if (keywordEndingAt(code, j, "finally")) {
+        return true;
+    }
+    if (keywordEndingAt(code, j, "do")) {
+        return true;
+    }
+    while (j > 0 && isWsChar(code[j - 1])) {
+        --j;
+    }
+    if (j > 0 && code[j - 1] == ':') {
+        return isCaseOrDefaultLabelColon(code, j - 1);
+    }
+    return false;
+}
+
+enum class BraceCtx { Block, ObjectOrPattern };
+
+static void collectObjectLiteralShorthandKeys(const std::string& code, const std::vector<Tok>& toks,
+                                              const std::unordered_set<std::string>* reserved,
+                                              std::unordered_set<std::string>& preserve) {
+    std::vector<BraceCtx> stack;
+    for (size_t k = 0; k < toks.size(); ++k) {
+        const Tok& t = toks[k];
+        if (t.kind == Tk::Pun) {
+            if (t.a >= code.size()) {
+                continue;
+            }
+            const char c = code[t.a];
+            if (c == '{') {
+                stack.push_back(braceOpensBlock(code, t.a) ? BraceCtx::Block : BraceCtx::ObjectOrPattern);
+            } else if (c == '}') {
+                if (!stack.empty()) {
+                    stack.pop_back();
+                }
+            }
+            continue;
+        }
+        if (t.kind != Tk::Ident || stack.empty() || stack.back() != BraceCtx::ObjectOrPattern) {
+            continue;
+        }
+        if (!isObjectLiteralShorthand(code, t.a, t.b)) {
+            continue;
+        }
+        const std::string name = code.substr(t.a, t.b - t.a);
+        if (name.empty() || name[0] == '_') {
+            continue;
+        }
+        if (reserved && reserved->find(name) != reserved->end()) {
+            continue;
+        }
+        preserve.insert(name);
+    }
 }
 
 static std::string tokTxt(const std::string& code, const Tok& t) {
@@ -1281,68 +1421,25 @@ static void collectBracketStringKeys(const std::string& code, const std::vector<
     }
 }
 
-static void legacySpellingMap(const std::string& code, const ScopeRenameOptions& opt,
-                              std::vector<RenameSpan>& spans) {
-    std::unordered_map<std::string, std::string> map;
-    std::vector<Tok> toks;
-    lexAll(code, toks);
-    for (const Tok& t : toks) {
-        if (t.kind != Tk::Ident) {
-            continue;
-        }
-        std::string id = code.substr(t.a, t.b - t.a);
-        if (id.empty() || id[0] == '_') {
-            continue;
-        }
-        if (opt.reserved && opt.reserved->find(id) != opt.reserved->end()) {
-            continue;
-        }
-        if (opt.preserve.find(id) != opt.preserve.end() || opt.externNames.find(id) != opt.externNames.end()) {
-            continue;
-        }
-        if (map.find(id) == map.end()) {
-            map[id] = opt.generateMangledName ? opt.generateMangledName() : id;
-        }
-    }
-    for (const Tok& t : toks) {
-        if (t.kind != Tk::Ident) {
-            continue;
-        }
-        std::string id = code.substr(t.a, t.b - t.a);
-        if (id.empty() || id[0] == '_') {
-            continue;
-        }
-        auto it = map.find(id);
-        if (it != map.end()) {
-            spans.push_back({t.a, t.b, it->second});
-        }
-    }
-}
-
 }  // namespace
 
 ScopeRenamePlan computeScopedRenames(const std::string& code, const ScopeRenameOptions& optIn,
                                      std::vector<std::string>* topLevelPreservedNamesOut) {
+    if (!optIn.reserved || !optIn.generateMangledName) {
+        throw std::invalid_argument("computeScopedRenames requires reserved and generateMangledName");
+    }
+
     ScopeRenameOptions opt = optIn;
     collectDirectives(code, opt.preserve);
 
     ScopeRenamePlan plan;
-    if (!opt.reserved || !opt.generateMangledName) {
-        plan.usedLegacyFallback = true;
-        if (opt.autoPreserveBracketStringKeys) {
-            std::vector<Tok> keyToks;
-            lexAll(code, keyToks);
-            collectBracketStringKeys(code, keyToks, opt.reserved, opt.preserve);
-        }
-        legacySpellingMap(code, opt, plan.spans);
-        return plan;
-    }
 
     std::vector<Tok> toks;
     lexAll(code, toks);
     if (opt.autoPreserveBracketStringKeys) {
         collectBracketStringKeys(code, toks, opt.reserved, opt.preserve);
     }
+    collectObjectLiteralShorthandKeys(code, toks, opt.reserved, opt.preserve);
     Parser p;
     p.opt = opt;
     p.code = &code;

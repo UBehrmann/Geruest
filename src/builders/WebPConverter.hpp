@@ -15,9 +15,7 @@
 
 #include <string>
 #include <vector>
-#include <deque>
 #include <memory>
-#include <unordered_map>
 #include <unordered_set>
 #include <mutex>
 #include <condition_variable>
@@ -39,12 +37,6 @@ public:
      * @brief Default WebP quality (0-100, where 100 is lossless)
      */
     static constexpr float WEBP_DEFAULT_QUALITY = 75.0f;
-
-    /**
-     * @brief Default maximum in-memory cache size (64 MB).
-     *        Oldest entries are evicted once this limit is reached.
-     */
-    static constexpr size_t WEBP_DEFAULT_MAX_CACHE_BYTES = 64ULL * 1024 * 1024;
 
     /**
      * @brief Default maximum pixel dimension (longest side) before downscaling.
@@ -83,20 +75,6 @@ public:
     static std::string replaceImageReferencesWithWebP(const std::string& htmlContent);
 
     /**
-     * @brief Get WebP data from the static in-memory cache (zero-copy).
-     * @param webpPath The path of the WebP file
-     * @return Shared pointer to the WebP binary data, or nullptr if not found
-     */
-    static std::shared_ptr<const std::vector<uint8_t>> getFromCache(const std::string& webpPath);
-
-    /**
-     * @brief Set the maximum total byte size of the in-memory cache.
-     *        Oldest entries are evicted to stay within the limit.
-     * @param maxBytes Maximum cache size in bytes
-     */
-    static void setMaxCacheBytes(size_t maxBytes);
-
-    /**
      * @brief Set the maximum pixel dimension (longest side) for conversion.
      *        Images larger than this are downscaled proportionally before
      *        encoding.  This bounds peak decode/encode memory to a predictable
@@ -113,18 +91,6 @@ public:
      * @param sd Pointer to the live ServerData instance (must outlive all conversions)
      */
     static void setServerData(const ServerData* sd);
-
-    /**
-     * @brief Check if a WebP image exists in static cache
-     * @param webpPath The path of the WebP file
-     * @return true if the image is in cache
-     */
-    static bool hasInCache(const std::string& webpPath);
-
-    /**
-     * @brief Clear the static in-memory WebP cache
-     */
-    static void clearStaticCache();
 
     /**
      * @brief Get the WebP path for a given source image path
@@ -181,16 +147,6 @@ private:
     bool _devMode;
     float _quality;
 
-    // Static cache for WebP images (shared across all instances).
-    // Values are shared_ptr so callers can hold a reference without copying.
-    // A parallel deque tracks insertion order for FIFO eviction.
-    // _staticCacheMutex also guards _inProgressConversions (see below).
-    static std::mutex _staticCacheMutex;
-    static std::unordered_map<std::string, std::shared_ptr<const std::vector<uint8_t>>> _staticWebpCache;
-    static std::deque<std::string> _staticCacheOrder;
-    static size_t _staticCacheSizeBytes;
-    static size_t _staticMaxCacheBytes;
-
     // Conversion serialisation — two-level scheme:
     //
     //  1. _conversionActive (global): only ONE decode/encode pipeline runs at a
@@ -201,9 +157,11 @@ private:
     //
     //  2. _inProgressConversions (per-path): when a second thread wants the same
     //     image that is already being converted it waits on _conversionCV and
-    //     picks up the result from cache instead of repeating the work.
+    //     picks up the result from DevAssetCache instead of repeating the work.
     //
-    // Both flags are guarded by _staticCacheMutex and signalled via _conversionCV.
+    // Both flags are guarded by _conversionMutex and signalled via _conversionCV.
+    // Lock order: acquire _conversionMutex before calling DevAssetCache methods.
+    static std::mutex _conversionMutex;
     static std::condition_variable _conversionCV;
     static std::unordered_set<std::string> _inProgressConversions;
     static bool _conversionActive;

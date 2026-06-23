@@ -17,143 +17,54 @@
 #ifndef GERUEST_ASSETMERGER_HPP
 #define GERUEST_ASSETMERGER_HPP
 
+#include "AssetHtmlDiscovery.hpp"
+
 #include <string>
 #include <vector>
-#include <regex>
 
 namespace geruest {
-
-/**
- * Structure to hold information about extracted asset references
- */
-struct AssetReference {
-    std::string href;           // The href/src value from the tag
-    size_t startPos;           // Start position of the tag in HTML
-    size_t endPos;             // End position of the tag in HTML
-    bool isExternal;           // True if href starts with http:// or https://
-};
 
 /**
  * Result of the asset merge operation
  */
 struct MergeResult {
-    std::string modifiedHtml;       // HTML with asset tags replaced
-    std::string mergedCss;          // Combined CSS content
-    std::string mergedJs;           // Combined JS content
-    std::vector<std::string> cssFiles;  // List of CSS files that were merged
-    std::vector<std::string> jsFiles;   // List of JS files that were merged
-    std::string cssSubdir;          // Subdirectory for CSS files (e.g., "subfoldertest" from "/assets/css/subfoldertest/file.css")
-    std::string jsSubdir;           // Subdirectory for JS files
-    bool hasCss;                    // True if any CSS files were found
-    bool hasJs;                     // True if any JS files were found
-};
-
-/** Local JS merge inputs from HTML (same rules as processHtml); no merge I/O. */
-struct JsMergeDiscovery {
-    bool hasJs = false;
-    std::vector<std::string> jsHrefs;
-    std::vector<std::string> localJsAbsolutePaths;
-    std::string jsSubdir;
-    std::vector<AssetReference> allJsRefs;
-};
-
-/** Local CSS merge inputs from HTML (same rules as processHtml); no merge I/O. */
-struct CssMergeDiscovery {
-    bool hasCss = false;
-    std::vector<std::string> cssHrefs;
-    std::vector<std::string> localCssAbsolutePaths;
+    std::string modifiedHtml;
+    std::string mergedCss;
+    std::string mergedJs;
+    std::vector<std::string> cssFiles;
+    std::vector<std::string> jsFiles;
     std::string cssSubdir;
+    std::string jsSubdir;
+    bool hasCss;
+    bool hasJs;
 };
 
 class AssetMerger {
 public:
-    /**
-     * Constructor
-     * @param serverRoot The root directory of the website
-     * @param removeComments Whether to remove comments from merged assets
-     * @param exclusions List of filenames to exclude from merging
-     */
-    AssetMerger(const std::string& serverRoot, bool removeComments = true, 
+    AssetMerger(const std::string& serverRoot, bool removeComments = true,
                 const std::vector<std::string>& exclusions = {});
 
-    /**
-     * Process HTML content to extract and merge CSS/JS assets
-     * @param htmlContent The original HTML content
-     * @param pageName The name of the page (used for merged file names)
-     * @return MergeResult containing modified HTML and merged assets
-     */
     MergeResult processHtml(const std::string& htmlContent, const std::string& pageName);
 
-    /**
-     * Discover local script hrefs and paths for JS merging (same filtering as processHtml).
-     * Does not read file bodies or write merged output.
-     */
     JsMergeDiscovery discoverJsMergeInputs(const std::string& htmlContent);
-
-    /**
-     * Discover local stylesheet hrefs for CSS merging (same filtering as processHtml).
-     */
     CssMergeDiscovery discoverCssMergeInputs(const std::string& htmlContent);
 
-    /**
-     * Predict public URL paths of merged JS/CSS bundles for a page template (no disk I/O).
-     */
     std::vector<std::string> predictMergedAssetUrls(const std::string& htmlContent,
                                                     const std::string& pageName);
 
-    /**
-     * Extract the page name (filename without extension) from an HTML filesystem path.
-     */
     static std::string pageNameFromHtmlPath(const std::string& htmlFilePath);
 
-    /**
-     * Map an HTML template file under htmlRoot to its site path (e.g. html/devices/x.html -> /devices/x).
-     */
     static std::string sitePathFromHtmlFile(const std::string& htmlRootDir,
                                             const std::string& htmlAbsolutePath);
 
-    /**
-     * Find the shallowest html/{...}/pageName.html under htmlRootDir.
-     */
     static std::string findHtmlTemplateByPageName(const std::string& htmlRootDir,
                                                   const std::string& pageName);
 
-    /**
-     * Extract all CSS <link> references from HTML
-     * @param htmlContent The HTML to scan
-     * @return Vector of AssetReference for each CSS link found
-     */
-    std::vector<AssetReference> extractCssReferences(const std::string& htmlContent);
-
-    /**
-     * Extract all JS <script> references from HTML
-     * @param htmlContent The HTML to scan
-     * @return Vector of AssetReference for each script found
-     */
-    std::vector<AssetReference> extractJsReferences(const std::string& htmlContent);
-
-    /**
-     * Merge multiple CSS files into one
-     * @param cssFiles Vector of file paths to merge
-     * @return Combined CSS content
-     */
     std::string mergeCssFiles(const std::vector<std::string>& cssFiles);
-
-    /**
-     * Merge multiple JS files into one
-     * @param jsFiles Vector of file paths to merge
-     * @return Combined JS content
-     */
     std::string mergeJsFiles(const std::vector<std::string>& jsFiles);
 
-    /**
-     * Remove comments from JS content (used when merging; exposed for tests / tooling).
-     */
     static std::string removeJsComments(const std::string& content);
 
-    /**
-     * Resolve a script or stylesheet href to an absolute filesystem path (same rules as merge).
-     */
     std::string resolveAssetPath(const std::string& href, const std::string& assetType);
 
 private:
@@ -161,34 +72,9 @@ private:
     bool _removeComments;
     std::vector<std::string> _exclusions;
 
-    /**
-     * Check if a file should be excluded from merging
-     * @param filename The filename to check
-     * @return true if file is excluded
-     */
     bool isExcluded(const std::string& filename) const;
-
-    /**
-     * Load a file's content
-     * @param filePath Path to the file
-     * @return File content as string
-     */
     static std::string loadFile(const std::string& filePath);
-
-    /**
-     * Check if a URL is external (starts with http:// or https://)
-     * @param url The URL to check
-     * @return true if external
-     */
-    static bool isExternalUrl(const std::string& url);
-
-    /**
-     * Remove comments from CSS content
-     * @param content CSS content
-     * @return Content with comments removed
-     */
     static std::string removeCssComments(const std::string& content);
-
 };
 
 }  // namespace geruest

@@ -1,10 +1,10 @@
 # WebSockets
 
-Geruest supports RFC 6455 WebSockets alongside existing HTTP routes. Register handlers with `addRouteWebSocket` — same path matching as `addRoute` / `addRouteAsync` (exact and `*` wildcards).
+Geruest supports RFC 6455 WebSockets alongside existing HTTP routes. Register handlers with `addRouteWebSocket` — same path matching as `addRoute` (exact and `*` wildcards). An optional third argument adds an access gate (same types as gated API routes).
 
 ## Coroutine API (recommended)
 
-Mirrors `addRouteAsync`: handler returns `boost::asio::awaitable<void>` and uses `co_await` on the connection.
+Mirrors async `addRoute`: handler returns `boost::asio::awaitable<void>` and uses `co_await` on the connection.
 
 ```cpp
 server.addRouteWebSocket("/chat", [](geruest::WebSocketConnection& ws,
@@ -39,6 +39,25 @@ chat.onClose = [](geruest::WebSocketConnection&, uint16_t code, std::string_view
 server.addRouteWebSocket("/chat-cb", chat);
 ```
 
+## Access gates (optional)
+
+Pass a gate as the third argument to block the upgrade before the handshake completes. Uses the same `RouteGateHandler` / `AsyncRouteGateHandler` types as `addRoute(..., gate)`. Omit the third argument for ungated routes (backward compatible).
+
+```cpp
+// Sync gate: deny → 403 Forbidden (handler never runs)
+server.addRouteWebSocket("/chat", chatHandler, [](const geruest::HTTPRequest& req) {
+    return req.getHeader("authorization") == "Bearer mytoken";
+});
+
+// Async gate (e.g. DB/session lookup)
+server.addRouteWebSocket("/chat", chatHandler, checkSessionAsync);
+
+// Callback API + gate
+server.addRouteWebSocket("/chat-cb", chat, gate);
+```
+
+Gate lookup uses the same path rules as HTTP route gates (exact/wildcard, longest match, language prefix). See [Gated Routes & Pages](GATED_ROUTES_PAGES.md).
+
 ## Configuration
 
 ```cpp
@@ -55,6 +74,7 @@ server.addWebSocketSubprotocol("chat");                // optional negotiation
 - After a successful `101 Switching Protocols`, the TCP connection stays in WebSocket mode until the handler returns. HTTP keep-alive does not resume on that connection.
 - Server automatically replies to client `ping` frames with `pong` (transparent to `recv()`).
 - Invalid upgrade requests on WebSocket-looking paths receive `400`; unknown WebSocket paths receive `404`.
+- Gated WebSocket routes: gate runs before the handshake; denial returns **403 Forbidden** (no upgrade).
 - Use a reverse proxy (nginx, Caddy) for WSS/TLS termination.
 
 ## Client example (browser)

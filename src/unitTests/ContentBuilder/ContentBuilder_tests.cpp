@@ -253,3 +253,16 @@ TEST_F(ContentBuilderTest, JSBuilderWithMergeAssetsBuildsOneBundleFromHtmlTempla
     EXPECT_NE(out.find("B_MERGE_MARKER"), std::string::npos) << out;
     EXPECT_EQ(out.find("DISK_STUB_SHOULD_NOT_APPEAR_IN_OUTPUT"), std::string::npos) << out;
 }
+
+TEST_F(ContentBuilderTest, TryLoadMergedAssetDevCacheUsesServerData) {
+    ServerData serverData;
+    serverData.enableDevMode();
+    serverData.setMergeAssets(true);
+
+    const std::string absPath = "/var/www/assets/css/page.css";
+    serverData.devAssetCache().putMergedAsset("/assets/css/page.css", "merged-css-body");
+
+    std::string out;
+    EXPECT_TRUE(ContentBuilder::tryLoadMergedAssetDevCache(absPath, serverData, out));
+    EXPECT_EQ(out, "merged-css-body");
+}

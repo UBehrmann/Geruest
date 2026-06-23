@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <fstream>
 
+#include "Geruest.hpp"
 #include "data/ServerData.hpp"
 
 using namespace geruest;
@@ -13,6 +14,9 @@ namespace {
 class ServerDataMergedAssetTest : public ::testing::Test {
    protected:
     void SetUp() override {
+        geruest::Geruest bootstrap;
+        (void)bootstrap;
+
         root_ = fs::temp_directory_path() / "geruest_merged_asset_test";
         fs::remove_all(root_);
         fs::create_directories(root_ / "html" / "secure");

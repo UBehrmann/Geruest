@@ -48,6 +48,7 @@ Testing/
 # All the build directories
 build*
 !builders
+!BuildConfig.hpp.in
 
 # All environment files
 .env

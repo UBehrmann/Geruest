@@ -119,7 +119,7 @@ TEST(WebSocketCodec, DecodeMaskedTextHi) {
 TEST(WebSocketCodec, RejectsUnmaskedClientFrame) {
     WebSocketLimits limits;
     const std::vector<uint8_t> bytes = {0x81, 0x02, 'h', 'i'};
-    EXPECT_THROW(decodeClientFrame(bytes, limits), std::runtime_error);
+    EXPECT_THROW({ (void)decodeClientFrame(bytes, limits); }, std::runtime_error);
 }
 
 TEST(WebSocketCodec, DecodeCloseFrame) {
@@ -138,5 +138,5 @@ TEST(WebSocketCodec, RejectsOversizedFrame) {
     limits.maxFrameBytes = 8;
     std::vector<uint8_t> payload(16, 'x');
     const auto bytes = encodeMaskedClientFrame(WSOpcode::Text, payload);
-    EXPECT_THROW(decodeClientFrame(bytes, limits), std::runtime_error);
+    EXPECT_THROW({ (void)decodeClientFrame(bytes, limits); }, std::runtime_error);
 }

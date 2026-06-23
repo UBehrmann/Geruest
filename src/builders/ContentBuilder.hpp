@@ -11,6 +11,7 @@
 #define CONTENTBUILDER_HPP
 
 #include <fstream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -30,6 +31,13 @@ public:
     [[nodiscard]] size_t size() const;
 
     [[nodiscard]] std::string file() const;
+
+    static std::unique_ptr<ContentBuilder> create(const std::string& contentType, const std::string& absolutePath,
+                                                  const ServerData& serverData);
+
+    /** Dev-mode merged asset from HtmlBuilder cache; returns true when out is set. */
+    static bool tryLoadMergedAssetDevCache(const std::string& absolutePath, const ServerData& serverData,
+                                           std::string& out);
 
 protected:
 

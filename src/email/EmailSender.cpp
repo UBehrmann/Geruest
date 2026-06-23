@@ -15,36 +15,26 @@
 #include <cctype>
 #include <cstring>
 #include <iostream>
+#include <mutex>
 
 #include <curl/curl.h>
 
 namespace geruest {
+namespace {
 
-EmailSender* EmailSender::instance = nullptr;
-std::mutex EmailSender::instanceMutex;
-
-void EmailSender::init(const Config& config) {
-    std::lock_guard<std::mutex> lock(instanceMutex);
-    if (!instance) {
-        curl_global_init(CURL_GLOBAL_DEFAULT);
-        static EmailSender singleton(config);
-        instance = &singleton;
-    }
+void ensureCurlGlobalInit() {
+    static std::once_flag once;
+    std::call_once(once, [] { curl_global_init(CURL_GLOBAL_DEFAULT); });
 }
 
-EmailSender& EmailSender::getInstance() {
-    if (!instance) {
-        throw std::runtime_error("EmailSender not initialized. Call init() first.");
-    }
-    return *instance;
-}
+}  // namespace
 
-EmailSender::EmailSender(const Config& cfg)
-    : config(cfg), shuttingDown(false) {}
+EmailSender::EmailSender(const Config& cfg) : config(cfg), shuttingDown(false) {
+    ensureCurlGlobalInit();
+}
 
 EmailSender::~EmailSender() {
     stop();
-    curl_global_cleanup();
 }
 
 void EmailSender::stop() {
@@ -361,12 +351,25 @@ bool EmailSender::sendEmail(const Email& email) {
     return (res == CURLE_OK);
 }
 
+void EmailSender::setLogCallbacks(LogFn info, LogFn error) {
+    _logInfo = std::move(info);
+    _logError = std::move(error);
+}
+
 void EmailSender::sendToLogger(const std::string& message) const {
-    std::cout << "[EmailSender] " << message << std::endl;
+    if (_logInfo) {
+        _logInfo(message);
+    } else {
+        std::cout << "[EmailSender] " << message << std::endl;
+    }
 }
 
 void EmailSender::sendToLoggerError(const std::string& message) const {
-    std::cerr << "[EmailSender ERROR] " << message << std::endl;
+    if (_logError) {
+        _logError(message);
+    } else {
+        std::cerr << "[EmailSender ERROR] " << message << std::endl;
+    }
 }
 
 }  // namespace geruest

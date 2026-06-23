@@ -26,7 +26,45 @@ constexpr const char* kOverloadedResponse =
     "Retry-After: 1\r\n"
     "\r\n"
     "Server overloaded.\n";
+
+bool isListenAnyBindAddress(const std::string& address) {
+    return address.empty() || address == "0.0.0.0";
 }
+
+boost::asio::ip::tcp::endpoint resolveBindEndpoint(boost::asio::io_context& io_ctx,
+                                                   const std::string& bindAddress,
+                                                   unsigned short port,
+                                                   boost::system::error_code& ec) {
+    using boost::asio::ip::tcp;
+
+    if (isListenAnyBindAddress(bindAddress)) {
+        ec.clear();
+        return tcp::endpoint(tcp::v4(), port);
+    }
+    if (bindAddress == "::" || bindAddress == "[::]") {
+        ec.clear();
+        return tcp::endpoint(tcp::v6(), port);
+    }
+
+    boost::asio::ip::address addr = boost::asio::ip::make_address(bindAddress, ec);
+    if (!ec) {
+        return tcp::endpoint(addr, port);
+    }
+
+    ec.clear();
+    tcp::resolver resolver(io_ctx);
+    const auto results = resolver.resolve(bindAddress, std::to_string(port), ec);
+    if (ec || results.empty()) {
+        return {};
+    }
+    for (const auto& entry : results) {
+        if (entry.endpoint().address().is_v4()) {
+            return tcp::endpoint(entry.endpoint().address(), port);
+        }
+    }
+    return tcp::endpoint(results.begin()->endpoint().address(), port);
+}
+}  // namespace
 
 void Geruest::statusPersistenceLoop() {
     while (running.load(std::memory_order_relaxed)) {
@@ -54,22 +92,53 @@ int Geruest::getListenPort() const {
     return static_cast<int>(ep.port());
 }
 
-void Geruest::init() {
-    using boost::asio::ip::tcp;
-
+bool Geruest::init() {
     boost::system::error_code ec;
 
-    acceptor_.emplace(io_ctx_, tcp::endpoint(tcp::v4(), static_cast<unsigned short>(port)));
+    const auto bind_ep =
+        resolveBindEndpoint(io_ctx_, bindAddress_, static_cast<unsigned short>(port), ec);
+    if (ec) {
+        sendToLoggerError("Bind address resolution failed for BIND_ADDRESS '" + bindAddress_ +
+                          "': " + ec.message());
+        return false;
+    }
+
+    acceptor_.emplace(io_ctx_);
+    acceptor_->open(bind_ep.protocol(), ec);
+    if (ec) {
+        sendToLoggerError("Acceptor open failed for " + bind_ep.address().to_string() + ":" +
+                          std::to_string(bind_ep.port()) + ": " + ec.message());
+        acceptor_.reset();
+        return false;
+    }
+
     acceptor_->set_option(boost::asio::socket_base::reuse_address(true), ec);
+    acceptor_->bind(bind_ep, ec);
+    if (ec) {
+        sendToLoggerError("Bind failed on " + bind_ep.address().to_string() + ":" +
+                          std::to_string(bind_ep.port()) + ": " + ec.message());
+        acceptor_.reset();
+        return false;
+    }
 
     acceptor_->listen(boost::asio::socket_base::max_listen_connections, ec);
     if (ec) {
-        sendToLoggerError("Listen failed: " + ec.message());
-        exit(EXIT_FAILURE);
+        sendToLoggerError("Listen failed on " + bind_ep.address().to_string() + ":" +
+                          std::to_string(bind_ep.port()) + ": " + ec.message());
+        acceptor_.reset();
+        return false;
     }
 
     const int boundPort = getListenPort();
-    sendToLogger("Server started on port " + std::to_string(boundPort >= 0 ? boundPort : port));
+    boost::system::error_code ep_ec;
+    const auto local = acceptor_->local_endpoint(ep_ec);
+    if (!ep_ec) {
+        sendToLogger("Server listening on " + local.address().to_string() + ":" +
+                     std::to_string(boundPort >= 0 ? boundPort : port));
+    } else {
+        sendToLogger("Server started on port " + std::to_string(boundPort >= 0 ? boundPort : port));
+    }
+    return true;
 }
 
 void Geruest::doAccept() {

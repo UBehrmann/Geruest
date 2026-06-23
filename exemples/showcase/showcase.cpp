@@ -1,5 +1,5 @@
 /**
- * @file exemple.cpp
+ * @file showcase.cpp
  * @date 11.07.2025
  *
  * @author Urs Behrmann
@@ -35,15 +35,6 @@ void signalHandler(int signum) {
     if (server) {
         server->stop();
     }
-#if GERUEST_HAS_CURL
-    // Stop email sender
-    try {
-        auto& emailSender = geruest::EmailSender::getInstance();
-        emailSender.stop();
-    } catch (...) {
-        // Not initialized, ignore
-    }
-#endif
 }
 
 void addRoutes(Geruest* serverToAddRoutes);
@@ -210,129 +201,14 @@ int main(int argc, char* argv[]) {
     std::vector<std::string> languages = {"en"};
     server->setAvailableLanguages(languages);
     
-    std::cout << "=== Language Configuration ===" << std::endl;
-    std::cout << "Available languages: en, de, fr" << std::endl;
-    std::cout << "Default language: en" << std::endl;
-    std::cout << "Language routing: ENABLED" << std::endl;
-    std::cout << "================================\n" << std::endl;
-    
     // To disable language routing, pass an empty vector:
     // server->setAvailableLanguages({});
 
-    // ============================================================
-    // ASSET MERGING CONFIGURATION (optional, must be called before init/start)
-    // ============================================================
-    
-    // Enable automatic CSS/JS merging per page
-    // When enabled, HTMLBuilder scans each page for <link> and <script> tags
-    // and merges all local CSS/JS files into single bundled files.
-    // This reduces the number of HTTP requests per page and eliminates the
-    // need for manual JSON file mappings.
-    //
-    // Default: false (serves individual files as-is)
-    //
-    // Benefits when enabled:
-    // - Single merged CSS file per page (e.g., index.css contains all CSS)
-    // - Single merged JS file per page (e.g., index.js contains all JS)
-    // - No manual configuration files needed
-    // - Automatically updates when HTML templates change
-    //
-    // WARNING: JavaScript files are concatenated directly without scope isolation.
-    // Ensure your JS files handle variable/function naming to avoid conflicts.
-    
-    server->setMergeAssets(true);  // ENABLED for testing
-    
-    std::cout << "=== Asset Merging Configuration ===" << std::endl;
-    std::cout << "Asset merging: ENABLED" << std::endl;
-    std::cout << "  ✓ CSS files will be merged per page" << std::endl;
-    std::cout << "  ✓ JS files will be merged per page" << std::endl;
-    std::cout << "  ✓ Merged files saved to /assets/css/ and /assets/js/" << std::endl;
-    std::cout << "  ✓ HTML automatically updated with merged includes" << std::endl;
-    std::cout << "===================================\n" << std::endl;
-
-    // ============================================================
-    // JAVASCRIPT OBFUSCATION CONFIGURATION (optional, must be called before init/start)
-    // ============================================================
-    
-    // Enable JavaScript obfuscation to protect your code from casual analysis
-    // When enabled, JavaScript files are obfuscated to make them harder to read
-    // while maintaining functionality.
-    //
-    // Obfuscation Levels:
-    // - Level 0: Disabled (default) - no obfuscation
-    // - Level 1: Basic - variable/function name mangling + whitespace removal
-    // - Level 2: Medium - Level 1 + string encoding + number obfuscation
-    // - Level 3: Advanced - Level 2 + dead code + control flow obfuscation
-    //
-    // Default: 0 (disabled)
-    //
-    // Key Features:
-    // - Automatic caching with configurable expiry (default: 7 days)
-    // - Respects dev mode (automatically disables obfuscation for easier debugging)
-    // - Works seamlessly with asset merging
-    // - Excluded files are not obfuscated or merged
-    //
-    // Benefits:
-    // - Protects intellectual property from casual copying
-    // - Makes reverse engineering more difficult
-    // - Deters script kiddies and automated tools
-    //
-    // IMPORTANT: Only applies when dev mode is OFF
-    // Dev mode automatically disables obfuscation for easier debugging
-    
-    server->setObfuscationLevel(1);        // Enable medium obfuscation (recommended)
-    server->setObfuscationCacheExpiry(7);  // Keep cached obfuscated files for 7 days
-    
-    // Exclude external libraries from obfuscation and merging
-    // External libraries should be served as-is to avoid breaking them
-    server->addObfuscationExclusion("jquery.min.js");
-    server->addObfuscationExclusion("bootstrap.min.js");
-    server->addObfuscationExclusion("lodash.js");
-    
-    std::cout << "=== JavaScript Obfuscation Configuration ===" << std::endl;
-    std::cout << "Obfuscation level: 2 (Medium)" << std::endl;
-    std::cout << "Cache expiry: 7 days" << std::endl;
-    std::cout << "  ✓ Variables/functions will be mangled" << std::endl;
-    std::cout << "  ✓ Whitespace removed (minification)" << std::endl;
-    std::cout << "  ✓ Strings encoded with hex escapes" << std::endl;
-    std::cout << "  ✓ Numbers obfuscated" << std::endl;
-    std::cout << "  ✓ Excluded libraries: jquery.min.js, bootstrap.min.js, lodash.js" << std::endl;
-    std::cout << "  ℹ Disabled in dev mode for easier debugging" << std::endl;
-    std::cout << "============================================\n" << std::endl;
-
-    // ============================================================
-    // WEBP CONVERSION CONFIGURATION (optional, must be called before init/start)
-    // ============================================================
-    
-    // Enable automatic PNG/JPG to WebP conversion
-    // When enabled, HTMLBuilder scans each page for <img src="..."> tags
-    // and CSS url() references with .png, .jpg, .jpeg extensions.
-    // Images are converted to WebP format for smaller file sizes.
-    //
-    // Default: false (serves original images as-is)
-    //
-    // Behavior depends on mode:
-    // - Dev mode: Images converted on-the-fly and cached in memory
-    //             (never saved to disk, regenerated each restart)
-    // - Production: Converted images saved to disk for efficiency
-    //
-    // Benefits:
-    // - 25-35% smaller file sizes compared to PNG/JPG
-    // - Faster page load times
-    // - Automatic format optimization
-    //
-    // NOTE: Requires libwebp library for WebP encoding
-    
-    server->setWebPConversion(true);   // Enable WebP conversion
-    server->setWebPQuality(80.0f);     // Set quality to 80% (default is 75%)
-    
-    std::cout << "=== WebP Conversion Configuration ===" << std::endl;
-    std::cout << "WebP conversion: ENABLED" << std::endl;
-    std::cout << "WebP quality: 80%" << std::endl;
-    std::cout << "  ✓ PNG/JPG images will be converted to WebP" << std::endl;
-    std::cout << "  ✓ HTML img tags automatically updated" << std::endl;
-    std::cout << "  ✓ CSS url() references automatically updated" << std::endl;
-    std::cout << "=====================================\n" << std::endl;
+    // Asset pipeline (defaults: merge off, obfuscation 0, WebP off — same as loadConfig/.env).
+    // Opt in via .env (MERGE_ASSETS, WEBP_CONVERSION) or uncomment:
+    // server->setMergeAssets(true);
+    // server->setObfuscationLevel(1);
+    // server->setWebPConversion(true);
 
     // Add basic auth
     server->setBasicAuth(true);
@@ -371,7 +247,9 @@ int main(int argc, char* argv[]) {
     std::cout << "  Workers will finish current requests before shutdown" << std::endl;
     std::cout << "===================\n" << std::endl;
 
-    server->init();
+    if (!server->init()) {
+        return EXIT_FAILURE;
+    }
 
     server->start();
 
@@ -493,9 +371,12 @@ void addRoutes(Geruest* serverToAddRoutes) {
             emailBody += "IP: " + clientIP + "\n\n";
             emailBody += "Message:\n" + message + "\n";
             
-            // Queue email
-            auto& emailSender = geruest::EmailSender::getInstance();
-            bool queued = emailSender.enqueueEmail(
+            geruest::EmailSender* emailSender = serverToAddRoutes->emailSender();
+            if (emailSender == nullptr) {
+                response.setBody(R"({"status":"error","message":"Email sender not configured"})");
+                return response;
+            }
+            bool queued = emailSender->enqueueEmail(
                 "admin@example.com",  // Replace with your actual admin email
                 emailSubject,         // Using sanitized value
                 emailBody,
@@ -506,8 +387,8 @@ void addRoutes(Geruest* serverToAddRoutes) {
                 response.setBody(R"({
                     "status":"success",
                     "message":"Your message has been sent successfully!",
-                    "queue_size":)" + std::to_string(emailSender.getQueueSize()) + R"(,
-                    "emails_sent":)" + std::to_string(emailSender.getEmailsSent()) + R"(
+                    "queue_size":)" + std::to_string(emailSender->getQueueSize()) + R"(,
+                    "emails_sent":)" + std::to_string(emailSender->getEmailsSent()) + R"(
                 })");
             } else {
                 response.setBody(R"({
@@ -601,9 +482,12 @@ void addRoutes(Geruest* serverToAddRoutes) {
             emailBody += "Client IP: " + clientIP + "\n\n";
             emailBody += "If you received this email, your SMTP configuration is working correctly!\n";
             
-            // Queue email
-            auto& emailSender = geruest::EmailSender::getInstance();
-            bool queued = emailSender.enqueueEmail(
+            geruest::EmailSender* emailSender = serverToAddRoutes->emailSender();
+            if (emailSender == nullptr) {
+                response.setBody(R"({"status":"error","message":"Email sender not configured"})");
+                return response;
+            }
+            bool queued = emailSender->enqueueEmail(
                 safeToEmail,  // Using sanitized value
                 emailSubject,
                 emailBody,
@@ -614,9 +498,9 @@ void addRoutes(Geruest* serverToAddRoutes) {
                 response.setBody(R"({
                     "status":"success",
                     "message":"Test email sent successfully to )" + toEmail + R"(!",
-                    "queue_size":)" + std::to_string(emailSender.getQueueSize()) + R"(,
-                    "emails_sent":)" + std::to_string(emailSender.getEmailsSent()) + R"(,
-                    "emails_rejected":)" + std::to_string(emailSender.getEmailsRejected()) + R"(
+                    "queue_size":)" + std::to_string(emailSender->getQueueSize()) + R"(,
+                    "emails_sent":)" + std::to_string(emailSender->getEmailsSent()) + R"(,
+                    "emails_rejected":)" + std::to_string(emailSender->getEmailsRejected()) + R"(
                 })");
             } else {
                 response.setBody(R"({

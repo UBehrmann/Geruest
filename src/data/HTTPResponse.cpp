@@ -51,6 +51,20 @@ void HTTPResponse::setBody(const std::string& responseBody) {
     headers.emplace_back("Content-Length", std::to_string(body.size()));
 }
 
+bool HTTPResponse::hasHeader(std::string_view key) const {
+    return hasHeaderKey(headers, std::string(key));
+}
+
+std::string HTTPResponse::getHeaderValue(std::string_view key) const {
+    const std::string keyStr(key);
+    for (const auto& header : headers) {
+        if (header.first == keyStr) {
+            return header.second;
+        }
+    }
+    return {};
+}
+
 void HTTPResponse::serializeTo(std::string& out) const {
     size_t estimatedSize = 32 + status.size() + body.size();
     for (const auto& header : headers) {
@@ -155,15 +169,7 @@ void addDefaultHeaders(HTTPResponse* response, const HTTPRequest* request) {
     response->setHeader("Keep-Alive", "timeout=5, max=100");
     response->setHeader("Cache-Control", "no-cache");
     response->setHeader("Content-Type", "text/plain");
-
-    if (request) {
-        const std::string_view origin = request->getHeaderView("origin");
-        if (!origin.empty()) {
-            response->setHeader("Access-Control-Allow-Origin", std::string(origin));
-            response->setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-            response->setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-        }
-    }
+    (void)request;
 }
 
 // Generic helper for building responses with status and body

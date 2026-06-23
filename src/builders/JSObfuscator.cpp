@@ -117,10 +117,6 @@ static const std::unordered_set<std::string> RESERVED_KEYWORDS = {
     "tagName", "innerHTML", "outerHTML", "textContent", "nodeType", "nodeName"
 };
 
-// Pre-compiled regex patterns for performance (compiled once, reused throughout)
-static const std::regex IDENTIFIER_REGEX(R"(\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b)");
-static const std::regex IDENTIFIER_WITH_DOT_REGEX(R"(([.]?)\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b)");
-
 static bool isRegexAllowedAfterChar(char c) {
     switch (c) {
         case '(': case '{': case '[':
@@ -467,6 +463,105 @@ static size_t skipTemplateLiteral(const std::string& code, size_t openTick) {
     return end;
 }
 
+static bool staticSpanLooksLikeHtml(const std::string& s) {
+    return s.find('<') != std::string::npos && s.find('>') != std::string::npos;
+}
+
+static std::string minifyHtmlLikeTemplateStaticSpan(const std::string& s) {
+    if (!staticSpanLooksLikeHtml(s)) {
+        return s;
+    }
+    size_t a = 0;
+    size_t b = s.size();
+    while (a < b && std::isspace(static_cast<unsigned char>(s[a]))) {
+        ++a;
+    }
+    while (b > a && std::isspace(static_cast<unsigned char>(s[b - 1]))) {
+        --b;
+    }
+    const std::string t = s.substr(a, b - a);
+    std::string out;
+    out.reserve(t.size());
+    for (size_t i = 0; i < t.size();) {
+        const char c = t[i];
+        out += c;
+        if (c == '>') {
+            size_t j = i + 1;
+            while (j < t.size() && std::isspace(static_cast<unsigned char>(t[j]))) {
+                ++j;
+            }
+            if (j < t.size() && t[j] == '<') {
+                i = j;
+                continue;
+            }
+        }
+        ++i;
+    }
+    return out;
+}
+
+static std::string minifyTemplateLiteral(const std::string& code, size_t openTick, size_t endExclusive);
+
+static std::string minifyTemplateLiteral(const std::string& code, size_t openTick, size_t endExclusive) {
+    if (openTick >= code.size() || code[openTick] != '`' || endExclusive <= openTick) {
+        if (openTick < endExclusive && endExclusive <= code.size()) {
+            return code.substr(openTick, endExclusive - openTick);
+        }
+        return "";
+    }
+    if (endExclusive <= openTick + 1) {
+        return "`";
+    }
+
+    std::string result;
+    result.reserve(endExclusive - openTick);
+    result += '`';
+    const size_t contentEnd = endExclusive - 1;
+    size_t i = openTick + 1;
+    while (i < contentEnd) {
+        if (code[i] == '\\' && i + 1 < contentEnd) {
+            result += code[i];
+            result += code[i + 1];
+            i += 2;
+            continue;
+        }
+        if (code[i] == '$' && i + 1 < contentEnd && code[i + 1] == '{') {
+            const size_t inner = i + 2;
+            const size_t close = templateInterpolationClose(code, inner);
+            if (close == std::string::npos || close >= contentEnd) {
+                result.append(code, i, contentEnd - i);
+                break;
+            }
+            result.append(code, i, close + 1 - i);
+            i = close + 1;
+            continue;
+        }
+        if (code[i] == '`') {
+            const size_t nestedEnd = skipTemplateLiteral(code, i);
+            result += minifyTemplateLiteral(code, i, nestedEnd);
+            i = nestedEnd;
+            continue;
+        }
+        const size_t spanStart = i;
+        while (i < contentEnd) {
+            if (code[i] == '\\' && i + 1 < contentEnd) {
+                i += 2;
+                continue;
+            }
+            if (code[i] == '$' && i + 1 < contentEnd && code[i + 1] == '{') {
+                break;
+            }
+            if (code[i] == '`') {
+                break;
+            }
+            ++i;
+        }
+        result += minifyHtmlLikeTemplateStaticSpan(code.substr(spanStart, i - spanStart));
+    }
+    result += '`';
+    return result;
+}
+
 /** Raw string between quotes (excluding delimiters), honoring backslash escapes. */
 static std::string extractQuotedInner(const std::string& tok) {
     if (tok.size() < 2) {
@@ -581,10 +676,11 @@ std::string JSObfuscator::removeWhitespace(const std::string& code) {
             inSingleQuote = !inSingleQuote;
             result += c;
         } else if (c == '`' && prevChar != '\\' && !inString && !inSingleQuote) {
-            size_t end = skipTemplateLiteral(code, i);
-            result.append(code, i, end - i);
-            if (end > i) {
-                prevChar = code[end - 1];
+            const size_t end = skipTemplateLiteral(code, i);
+            const std::string minified = minifyTemplateLiteral(code, i, end);
+            result += minified;
+            if (!minified.empty()) {
+                prevChar = minified.back();
             } else {
                 prevChar = c;
             }
@@ -767,19 +863,6 @@ std::vector<JSObfuscator::Token> JSObfuscator::tokenize(const std::string& code)
     return tokens;
 }
 
-std::string JSObfuscator::escapeForRegex(const std::string& str) {
-    static const std::string metacharacters = R"(\^$.|?*+()[]{}-)";
-    std::string escaped;
-    escaped.reserve(str.size() * 2);
-    for (char c : str) {
-        if (metacharacters.find(c) != std::string::npos) {
-            escaped += '\\';
-        }
-        escaped += c;
-    }
-    return escaped;
-}
-
 std::string JSObfuscator::mangleNames(const std::string& code) {
     _lastTopLevelPreserved.clear();
 
@@ -795,9 +878,6 @@ std::string JSObfuscator::mangleNames(const std::string& code) {
 
     js_scope::ScopeRenamePlan plan = js_scope::computeScopedRenames(code, opt, topPreservePtr);
 
-    if (plan.usedLegacyFallback) {
-        _lastDiagnostics.push_back("obfuscator: spelling-keyed rename fallback was used");
-    }
     for (const auto& u : plan.undefinedSymbols) {
         _lastDiagnostics.push_back(std::string("obfuscator: undefined symbol reference: ") + u);
     }
@@ -993,28 +1073,6 @@ std::string JSObfuscator::generateRandomName(int length) {
     }
     
     return name;
-}
-
-std::vector<std::string> JSObfuscator::extractIdentifiers(const std::string& code) {
-    std::vector<std::string> identifiers;
-    std::vector<Token> tokens = tokenize(code);
-
-    for (const auto& tok : tokens) {
-        if (tok.type != TokenType::CODE) continue;
-
-        auto searchStart = tok.text.cbegin();
-        std::smatch match;
-        while (std::regex_search(searchStart, tok.text.cend(), match, IDENTIFIER_WITH_DOT_REGEX)) {
-            std::string dotPrefix = match[1].str();
-            std::string identifier = match[2].str();
-            if (dotPrefix.empty() && !isReservedKeyword(identifier)) {
-                identifiers.push_back(identifier);
-            }
-            searchStart = match.suffix().first;
-        }
-    }
-
-    return identifiers;
 }
 
 bool JSObfuscator::isReservedKeyword(const std::string& word) {

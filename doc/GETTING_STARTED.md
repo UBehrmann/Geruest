@@ -5,7 +5,7 @@ Quick installation and first server setup for Geruest C++ web framework.
 ## Requirements
 
 - **C++20** compiler (GCC 10+, Clang 11+)
-- **CMake** 3.10 or newer (3.17+ recommended for `find_package` CONFIG patterns)
+- **CMake** 3.11 or newer (3.17+ recommended for `find_package` CONFIG patterns)
 - **Boost** 1.75+ with **Boost.System** (Asio uses it unless you build against header-only Boost as in the library’s FetchContent path). Examples:
   - Debian/Ubuntu: `sudo apt-get install libboost-system-dev`
   - Fedora: `sudo dnf install boost-devel`
@@ -13,14 +13,36 @@ Quick installation and first server setup for Geruest C++ web framework.
 - Optional: **libcurl** (email), **libwebp** (image conversion) — see main README
 - Platform support: **Linux/Unix only** (Windows removed)
 
-## Installation
+## Headers and dependencies
+
+`#include <Geruest.hpp>` (or `#include <geruest/Geruest.hpp>`) is the **umbrella** entry point: it pulls in every module header that was enabled when Geruest was built. For a smaller dependency surface, use module headers and link targets — see [MODULES.md](MODULES.md).
+
+- **Core only:** `#include <geruest/Core.hpp>` and `target_link_libraries(... Geruest::Core ...)`
+- **Full stack:** `#include <Geruest.hpp>` and `target_link_libraries(... Geruest::Geruest ...)`
+
+Core always provides HTTP routing, gates, static file passthrough (raw files when Assets is not linked), metrics, `JSONParser`, and `Security`. Optional modules add WebSocket upgrades, database clients, email, asset merge/HTML pipeline, and JS obfuscation.
+
+Include helper headers explicitly when needed — e.g. `<security/Security.hpp>`, `<FileManagement/FileManagement.hpp>`, `<auth/BasicAuth.hpp>`.
 
 ### Linux
+
+From the repo root (installs to `/usr/local` by default):
+
 ```bash
-git clone https://github.com/yourusername/Geruest.git
+git clone https://github.com/UBehrmann/Geruest.git
 cd Geruest
-chmod +x setup_scripts/linux_setup.sh
-./setup_scripts/linux_setup.sh
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake --build .
+sudo cmake --install .
+```
+
+Or install to `$HOME/.local` with the helper script:
+
+```bash
+git clone https://github.com/UBehrmann/Geruest.git
+cd Geruest
+./_install.sh
 ```
 
 ### Manual Build
@@ -40,12 +62,16 @@ sudo make install
 
 Route choice:
 
-- `addRoute(...)`: sync handler (`HTTPResponse` return). Use for static/simple API endpoints without `co_await`.
-- `addRouteAsync(...)`: coroutine handler (`geruest::AsyncResponse` return). Use for DB or other awaitable operations.
+- `addRoute(path, syncHandler)`: sync handler (`HTTPResponse` return). Use for static/simple API endpoints without `co_await`.
+- `addRoute(path, asyncHandler)`: coroutine handler (`geruest::AsyncResponse` return). Use for DB or other awaitable operations.
+- `addRoute(path, handler, gate)`: optional third argument for an access gate (403 on denial).
+- `addRouteWebSocket(path, handler)`: WebSocket handler (coroutine or callback API).
+- `addRouteWebSocket(path, handler, gate)`: optional gate blocks the upgrade before handshake (403 on denial).
+- When sync and async handlers share the same path pattern, **async wins** at dispatch.
 
 **Minimal Server (main.cpp):**
 ```cpp
-#include <Geruest.hpp>
+#include <geruest/Core.hpp>
 
 int main() {
     using namespace geruest;
@@ -66,7 +92,22 @@ int main() {
 }
 ```
 
-**CMakeLists.txt:**
+For WebSocket, asset merge, email, or database helpers, link `Geruest::Geruest` (or the specific module targets) and include `<Geruest.hpp>` — see [MODULES.md](MODULES.md).
+
+**CMakeLists.txt (Core-only API server):**
+```cmake
+cmake_minimum_required(VERSION 3.17)
+project(MyServer)
+set(CMAKE_CXX_STANDARD 20)
+
+find_package(Boost 1.75 REQUIRED COMPONENTS system)
+find_package(Threads REQUIRED)
+find_package(Geruest REQUIRED)
+add_executable(myserver main.cpp)
+target_link_libraries(myserver PRIVATE Geruest::Core Boost::system Threads::Threads)
+```
+
+**CMakeLists.txt (full stack — same as before v0.13):**
 ```cmake
 cmake_minimum_required(VERSION 3.17)
 project(MyServer)
@@ -85,6 +126,27 @@ mkdir build && cd build
 cmake .. && cmake --build .
 ./myserver  # Server on http://localhost:8080
 ```
+
+## First-hour adoption checklist
+
+Use this before turning on merge, obfuscation, or WebP:
+
+1. **Requirements** — C++20, CMake 3.11+, Boost.System (`libboost-system-dev`).
+2. **Start small** — Copy [exemples/minimal/](../exemples/minimal/) (~40 lines) or the snippet above.
+3. **Layout** — `website/html/index.html` + `server.addRoot(path)`; one `/v1/...` route to prove the API path.
+4. **Defaults** — Leave merge, obfuscation, and WebP **off** until you need them ([ASSET_MERGING.md](ASSET_MERGING.md), [OBFUSCATION.md](OBFUSCATION.md)).
+5. **Config** — Optional `.env` beside the binary (`PORT`, `HOSTNAME`); code setters override `.env`.
+6. **Run** — Build `exemples/`, then `./minimal/minimal` from the build tree; open `http://localhost:8080`.
+7. **Go deeper** — Run [exemples/showcase/](../exemples/showcase/) for WebSocket, gates, Basic Auth, email.
+
+## Examples in this repo
+
+| Path | Use when |
+|------|----------|
+| [exemples/minimal/minimal.cpp](../exemples/minimal/minimal.cpp) | First project, learning the API |
+| [exemples/showcase/showcase.cpp](../exemples/showcase/showcase.cpp) | Exploring advanced features |
+
+See [exemples/readme.md](../exemples/readme.md) for build instructions.
 
 ## Project Structure
 

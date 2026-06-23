@@ -45,6 +45,31 @@ TEST(GeruestLifecycle, DestructWithoutStartCompletes) {
     (void)server;
 }
 
+TEST(GeruestLifecycle, InitBindsToConfiguredLoopback) {
+    Geruest server;
+    server.setBindAddress("127.0.0.1");
+    server.setPort(0);
+    ASSERT_TRUE(server.init());
+    const int listenPort = server.getListenPort();
+    ASSERT_GT(listenPort, 0);
+    wakeAcceptOnLocalhost(listenPort);
+}
+
+TEST(GeruestLifecycle, InitFailsWhenPortAlreadyInUse) {
+    Geruest holder;
+    holder.setBindAddress("127.0.0.1");
+    holder.setPort(0);
+    ASSERT_TRUE(holder.init());
+    const int port = holder.getListenPort();
+    ASSERT_GT(port, 0);
+
+    Geruest server;
+    server.setBindAddress("127.0.0.1");
+    server.setPort(port);
+    EXPECT_FALSE(server.init());
+    EXPECT_EQ(server.getListenPort(), -1);
+}
+
 TEST(GeruestLifecycle, InitStartStopJoinsCleanly) {
     namespace fs = std::filesystem;
     const std::string tag =
@@ -61,7 +86,7 @@ TEST(GeruestLifecycle, InitStartStopJoinsCleanly) {
         server.setMaxQueueSize(8);
         server.setStatusPersistencePath(metricsPath);
 
-        server.init();
+        ASSERT_TRUE(server.init());
         const int listenPort = server.getListenPort();
         ASSERT_GT(listenPort, 0);
 
@@ -81,7 +106,7 @@ TEST(GeruestLifecycle, InitStartStopJoinsCleanly) {
         ASSERT_TRUE(server.isRunning()) << "accept loop should have set running";
 
         server.stop();
-        // Unblock accept() without waiting for SO_RCVTIMEO (TIMEOUT_SEC).
+        // Unblock accept() without waiting for socket receive timeout.
         wakeAcceptOnLocalhost(listenPort);
         t.join();
 

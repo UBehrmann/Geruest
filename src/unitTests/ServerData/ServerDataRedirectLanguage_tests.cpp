@@ -60,3 +60,22 @@ TEST(ServerDataRedirectLanguage, ExternalTargetNeverChanged) {
     ASSERT_TRUE(match.has_value());
     EXPECT_EQ(match->first, "https://example.com/path");
 }
+
+TEST(ServerDataRedirectLanguage, LanguagePrefixFromPathRejectsUnknownCode) {
+    ServerData sd;
+    sd.setAvailableLanguages({"en", "de"});
+
+    EXPECT_FALSE(sd.languagePrefixFromPath("/zz/foo").has_value());
+    EXPECT_EQ(sd.languagePrefixFromPath("/de/foo").value(), "de");
+}
+
+TEST(ServerDataRedirectLanguage, ResolvePreferredLanguageFromHeader) {
+    ServerData sd;
+    sd.setAvailableLanguages({"de", "en"});
+
+    EXPECT_EQ(sd.resolvePreferredLanguage("de,en;q=0.9"), "de");
+
+    sd.setAvailableLanguages({"en", "de"});
+    EXPECT_EQ(sd.resolvePreferredLanguage("fr,de;q=0.9"), "de");
+    EXPECT_EQ(sd.resolvePreferredLanguage(""), "en");
+}

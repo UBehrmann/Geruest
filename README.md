@@ -18,9 +18,8 @@ Geruest (German for "scaffold") is a lightweight C++ web framework designed to s
 - Multilanguage support
 - Static file serving
 - Routing
-  - Sync: `addRoute(path, handler)`
-  - Async (C++20 coroutines): `addRouteAsync(path, handler)` — DB and other `co_await` work
-  - WebSockets: `addRouteWebSocket(path, handler)` — RFC 6455, coroutine or callback API
+  - `addRoute(path, handler)` — sync or async (C++ overload); optional third argument for access gate
+  - WebSockets: `addRouteWebSocket(path, handler)` — RFC 6455, coroutine or callback API; optional gate blocks upgrade
 - **Async database** (optional PostgreSQL / SQLite at build time)
   - `request.database()` from async routes; `queryAsync`, `executeAsync`, `queryJsonAsync`
   - Pooling, `.env` configuration, dedicated SQLite executor threads
@@ -35,15 +34,12 @@ Geruest (German for "scaffold") is a lightweight C++ web framework designed to s
   - Exclude external libraries from obfuscation
   - Works seamlessly with asset merging
   - Respects development mode (auto-disables for debugging)
-- Security
+- Security utilities (see [Security Guide](doc/SECURITY.md))
   - SQL injection protection (`Security::buildQuery`, `Security::escapeSql`)
   - XSS protection (`Security::escapeHtml`)
   - JSON injection protection (`Security::escapeJson`, built into `JSONParser`)
   - Path traversal protection (`Security::isSafePath`, applied automatically to static files)
-  - Logic bomb for bots?
-  - Rate limiting
-  - IP blocking
-- CLI for easy management of the server while running
+  - Email per-IP send limits when SMTP is enabled (`setEmailMinInterval()`, `setEmailMaxPerIP()`) — not global HTTP rate limiting or IP blocking
 
 ## Roadmap
 
@@ -52,10 +48,10 @@ Geruest (German for "scaffold") is a lightweight C++ web framework designed to s
 - [X] Multilanguage support 
 - [X] Simple routing
 - [X] Test the first iteration with existing code base
-- [ ] Add CLI
-- [ ] Add Rate limiting
-- [ ] Add IP blocking
 - [X] Add websockets support
+- [ ] Runtime CLI (not implemented)
+- [ ] Global HTTP rate limiting (not implemented; email has per-IP send limits only)
+- [ ] IP blocking (not implemented)
 
 ## Requirements
 
@@ -89,7 +85,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Release -DGERUEST_ENABLE_POSTGRESQL=ON -DGERUEST_ENA
 
 - **[Getting Started Guide](doc/GETTING_STARTED.md)** - Installation, requirements, and your first server
 - **[Usage Guide](doc/USAGE_GUIDE.md)** - Local development, Docker deployment, production setup
-- **[Configuration Guide](doc/CONFIGURATION.md)** - .env files, environment variables, configuration hierarchy
+- **[Configuration Guide](doc/CONFIGURATION.md)** - .env files, environment variables, code setters, configuration hierarchy
 
 ### Core Features
 
@@ -100,7 +96,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Release -DGERUEST_ENABLE_POSTGRESQL=ON -DGERUEST_ENA
   - Multi-language support
   - Graceful shutdown
 - **[Data Classes Reference](doc/DATA_CLASSES.md)** - HTTPRequest, HTTPResponse, JSONParser API
-- **[Database Usage](doc/DATABASE.md)** - Async PostgreSQL/SQLite, pooling, `addRouteAsync`
+- **[Database Usage](doc/DATABASE.md)** - Async PostgreSQL/SQLite, pooling, async `addRoute`
 - **[WebSockets](doc/WEBSOCKETS.md)** - `addRouteWebSocket` coroutine and callback APIs
 
 ### Template System
@@ -133,11 +129,6 @@ cmake .. -DCMAKE_BUILD_TYPE=Release -DGERUEST_ENABLE_POSTGRESQL=ON -DGERUEST_ENA
 /components
 ├── footer.html
 └── header.html
-/configs
-└── restrictions.json
-/files_maps
-├── css_file_map.json
-└── js_file_map.json
 /html
 └── index.html
 ```
@@ -178,7 +169,8 @@ int main() {
 **For more examples, see:**
 - [Getting Started Guide](doc/GETTING_STARTED.md)
 - [Features Documentation](doc/FEATURES.md)
-- [Example Application](exemple/exemple.cpp)
+- [Minimal example](exemples/minimal/minimal.cpp) (~40 lines)
+- [Showcase application](exemples/showcase/showcase.cpp) (routes, WebSocket, gates)
 
 ## Installation
 
@@ -200,51 +192,33 @@ Geruest now targets Linux/Unix only. Windows support has been removed.
 
 ### Using Geruest in Your Project
 
-**See [Getting Started - CMakeLists.txt](doc/GETTING_STARTED.md#cmakeliststxt-for-your-project) for a complete example.**
+**See [Getting Started](doc/GETTING_STARTED.md) for Core-only vs full-stack CMake examples.**
+
+After `cmake --install`, point CMake at the install prefix (e.g. `/usr/local` or `$HOME/.local`):
 
 ```cmake
-cmake_minimum_required(VERSION 3.11)
+cmake_minimum_required(VERSION 3.17)
 project(MyWebsiteApp)
 set(CMAKE_CXX_STANDARD 20)
 
 find_package(Boost 1.75 REQUIRED COMPONENTS system)
 find_package(Threads REQUIRED)
+find_package(Geruest REQUIRED)
 
 add_executable(MyWebsiteApp main.cpp)
 
-# Geruest is built with Boost.Asio; consumers should link Boost.System (matches installed Geruest)
-target_link_libraries(MyWebsiteApp PRIVATE Geruest Boost::system Threads::Threads)
+# Full stack (WebSocket, assets, obfuscation, DB, email when built)
+target_link_libraries(MyWebsiteApp PRIVATE Geruest::Geruest Boost::system Threads::Threads)
 
-# Include the library headers
-target_include_directories(MyWebsiteApp
-    PRIVATE
-    /path/to/Geruest/src
-)
-
-# Add the library binary directory (where the static library is)
-link_directories(/path/to/Geruest/build)
+# Core-only API server instead:
+# target_link_libraries(MyWebsiteApp PRIVATE Geruest::Core Boost::system Threads::Threads)
 ```
 
-## CLI Commands
-
-To connect to the server's CLI:
+If Geruest is not on the default search path:
 
 ```bash
-nc ip_address port
+cmake .. -DCMAKE_PREFIX_PATH=/usr/local   # or $HOME/.local
 ```
-
-Available commands:
-
-| Command   | Description                            |
-| --------- | -------------------------------------- |
-| `version` | Show the current version of the server |
-| `status`  | Show the current status of the server  |
-| `help`    | Show available commands                |
-| `exit`    | Exit the CLI                           |
-| `clear`   | Clear the CLI screen                   |
-| `config`  | Show current server configuration      |
-| `uptime`  | Show server uptime                     |
-| `routes`  | Show all defined routes                |
 
 ## License
 

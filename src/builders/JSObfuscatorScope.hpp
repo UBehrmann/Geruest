@@ -27,17 +27,18 @@ struct ScopeRenamePlan {
     std::vector<std::string> undefinedSymbols;
     /// Human-readable messages (warnings / soft diagnostics).
     std::vector<std::string> warnings;
-    bool usedLegacyFallback = false;
 };
 
 struct ScopeRenameOptions {
+    /// Required. Reserved keywords and globals that must not be renamed.
     const std::unordered_set<std::string>* reserved = nullptr;
     std::unordered_set<std::string> preserve;
     std::unordered_set<std::string> externNames;
+    /// Required. Generates a unique mangled name for each binding.
     std::function<std::string()> generateMangledName;
     /// When true, free identifiers (no lexical binding) are reported in undefinedSymbols and left
-    /// unchanged so the caller can fail. When false, legacy spelling-keyed mangling applies (same as
-    /// old obfuscator for globals / skipped regions like class bodies).
+    /// unchanged so the caller can fail. When false, spelling-keyed implicit globals apply for
+    /// unresolved references (e.g. hoisted functions, class-body ids).
     bool strictFreeIdentifiers = false;
     /// Add identifiers from static computed-member keys ['name'] or ["name"] to preserve (aligns
     /// window['getCookie'] with bare getCookie() in merged bundles). Keys must be unescaped identifier spellings.

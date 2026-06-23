@@ -64,6 +64,12 @@ public:
      */
     const std::string& getStatus() const { return status; }
 
+    const std::string& getBody() const { return body; }
+
+    bool hasHeader(std::string_view key) const;
+
+    std::string getHeaderValue(std::string_view key) const;
+
     /**
      * Serializes the full HTTP response into @p out (cleared first).
      * Reuses @p out's capacity across requests when used from a connection scratch buffer.

@@ -20,6 +20,8 @@
  * - Dynamic property access with string literals (e.g. globalThis['api']) remains the supported
  *   boundary for names that must stay stable across bundles. Static ['name'] / ["name"] keys are
  *   merged into the preserve set by default (autoPreserveBracketStringKeys) so bare call sites match.
+ * - ES6 shorthand properties `{ id }` and binding patterns `const { id } = x` are collected into
+ *   the preserve set so JSON.stringify({ user_id }) keeps wire-format keys.
  */
 
 #ifndef GERUEST_JSOBFUSCATOR_HPP
@@ -98,9 +100,7 @@ private:
     };
 
     std::vector<Token> tokenize(const std::string& code);
-    static std::string escapeForRegex(const std::string& str);
     std::string generateRandomName(int length = 8);
-    std::vector<std::string> extractIdentifiers(const std::string& code);
     bool isReservedKeyword(const std::string& word);
     std::string encodeStringLiteral(const std::string& str);
     std::string createNumberExpression(int num);

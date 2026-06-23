@@ -1,301 +1,449 @@
 /**
  * @file ServerData.cpp
- * @brief Persistent metrics snapshot (JSON) for /status-related counters and windows.
+ * @brief ServerData facade helpers and merged-asset owner lookup.
  */
 
 #include "ServerData.hpp"
-#include "builders/AssetMerger.hpp"
-#include "parser/JSONParser.hpp"
 
-#include <chrono>
-#include <cctype>
-#include <ctime>
-#include <filesystem>
-#include <fstream>
-#include <iterator>
-#include <string>
+#include "modules/ModuleHooks.hpp"
+
+#include <algorithm>
+#include <iostream>
 
 namespace geruest {
 
-namespace {
+void ServerData::wireLanguagePointers_() {
+    _routes.setLanguageConfig(&_languages);
+    _gates.setLanguageConfig(&_languages);
+}
 
-constexpr int kMetricsSchemaVersion = 1;
+ServerData::ServerData() {
+    wireLanguagePointers_();
+}
 
-uint64_t parseJsonU64(JSONParser& j, const std::string& key, uint64_t fallback) {
-    if (!j.hasKey(key)) {
-        return fallback;
+ServerData::ServerData(const ServerData& other)
+    : _languages(other._languages),
+      _routes(other._routes),
+      _gates(other._gates),
+      _obfuscation(other._obfuscation),
+      _root(other._root),
+      _removeComments(other._removeComments),
+      _mergeAssets(other._mergeAssets),
+      _devMode(other._devMode),
+      _webpConversion(other._webpConversion),
+      _webpQuality(other._webpQuality),
+      _maxRequestsPerConnection(other._maxRequestsPerConnection),
+      _textResponseCacheMaxEntryBytes(other._textResponseCacheMaxEntryBytes),
+      _textResponseCacheMaxTotalBytes(other._textResponseCacheMaxTotalBytes),
+      _notFoundPage(other._notFoundPage),
+      _corsConfig(other._corsConfig),
+      _basicAuth(other._basicAuth),
+      _logLevel(other._logLevel.load(std::memory_order_relaxed)),
+      _logSink(other._logSink),
+      _databaseClient(other._databaseClient) {
+    wireLanguagePointers_();
+}
+
+ServerData& ServerData::operator=(const ServerData& other) {
+    if (this != &other) {
+        _languages = other._languages;
+        _routes = other._routes;
+        _gates = other._gates;
+        _obfuscation = other._obfuscation;
+        _root = other._root;
+        _removeComments = other._removeComments;
+        _mergeAssets = other._mergeAssets;
+        _devMode = other._devMode;
+        _webpConversion = other._webpConversion;
+        _webpQuality = other._webpQuality;
+        _maxRequestsPerConnection = other._maxRequestsPerConnection;
+        _textResponseCacheMaxEntryBytes = other._textResponseCacheMaxEntryBytes;
+        _textResponseCacheMaxTotalBytes = other._textResponseCacheMaxTotalBytes;
+        _notFoundPage = other._notFoundPage;
+        _corsConfig = other._corsConfig;
+        _basicAuth = other._basicAuth;
+        _logLevel.store(other._logLevel.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        _logSink = other._logSink;
+        _databaseClient = other._databaseClient;
+        wireLanguagePointers_();
     }
-    const std::string s = j.getString(key);
-    if (!s.empty()) {
-        bool allDigit = true;
-        for (char c : s) {
-            if (!std::isdigit(static_cast<unsigned char>(c))) {
-                allDigit = false;
-                break;
-            }
+    return *this;
+}
+
+ServerData::ServerData(const std::unordered_map<std::string, RouteHandler>& routes, std::string root) : _root(std::move(root)) {
+    for (const auto& entry : routes) {
+        _routes.addRoute(entry.first, entry.second);
+    }
+    wireLanguagePointers_();
+}
+
+std::unordered_map<std::string, RouteHandler> ServerData::getRoutes() {
+    return _routes.getRoutesMerged();
+}
+
+const std::unordered_map<std::string, RouteHandler>& ServerData::getRoutes() const {
+    return _routes.getExactRoutes();
+}
+
+void ServerData::addRoute(const std::string& path, RouteHandler routeHandler) {
+    _routes.addRoute(path, std::move(routeHandler));
+}
+
+void ServerData::addRoute(const std::string& path, AsyncRouteHandler routeHandler) {
+    _routes.addRoute(path, std::move(routeHandler));
+}
+
+void ServerData::addWebSocketRoute(const std::string& path, WebSocketHandler routeHandler) {
+    _routes.addWebSocketRoute(path, std::move(routeHandler));
+}
+
+bool ServerData::addRedirect(const std::string& from, const std::string& to, int status) {
+    return _routes.addRedirect(from, to, status);
+}
+
+size_t ServerData::addRedirects(const std::unordered_map<std::string, std::string>& redirects, int status) {
+    return _routes.addRedirects(redirects, status);
+}
+
+std::optional<std::pair<std::string, int>> ServerData::findMatchingRedirect(const std::string& path) const {
+    return _routes.findMatchingRedirect(path);
+}
+
+bool ServerData::addPageGate(const std::string& path, PageGateHandler handler, const std::string& redirectTo) {
+    return _gates.addPageGate(path, std::move(handler), redirectTo);
+}
+
+bool ServerData::addAsyncPageGate(const std::string& path, AsyncPageGateHandler handler,
+                                  const std::string& redirectTo) {
+    return _gates.addAsyncPageGate(path, std::move(handler), redirectTo);
+}
+
+bool ServerData::removePageGate(const std::string& path) { return _gates.removePageGate(path); }
+
+void ServerData::clearPageGates() { _gates.clearPageGates(); }
+
+std::optional<PageGateRule> ServerData::findMatchingPageGate(const std::string& path) const {
+    return _gates.findMatchingPageGate(path);
+}
+
+std::optional<AsyncPageGateRule> ServerData::findMatchingAsyncPageGate(const std::string& path) const {
+    return _gates.findMatchingAsyncPageGate(path);
+}
+
+std::optional<ResolvedPageGate> ServerData::findResolvedPageGate(const std::string& path) const {
+    return _gates.findResolvedPageGate(path);
+}
+
+std::string ServerData::resolvePageGateRedirect(const std::string& redirectTo,
+                                                const std::string& requestPath) const {
+    return _gates.resolvePageGateRedirect(redirectTo, requestPath);
+}
+
+bool ServerData::addRouteGate(const std::string& path, RouteGateHandler handler) {
+    return _gates.addRouteGate(path, std::move(handler));
+}
+
+bool ServerData::addAsyncRouteGate(const std::string& path, AsyncRouteGateHandler handler) {
+    return _gates.addAsyncRouteGate(path, std::move(handler));
+}
+
+bool ServerData::removeRouteGate(const std::string& path) { return _gates.removeRouteGate(path); }
+
+void ServerData::clearRouteGates() { _gates.clearRouteGates(); }
+
+std::optional<RouteGateRule> ServerData::findMatchingRouteGate(const std::string& path) const {
+    return _gates.findMatchingRouteGate(path);
+}
+
+std::optional<ResolvedRouteGate> ServerData::findResolvedRouteGate(const std::string& path) const {
+    return _gates.findResolvedRouteGate(path);
+}
+
+std::optional<RouteHandler> ServerData::findMatchingRoute(const std::string& path) const {
+    return _routes.findMatchingRoute(path);
+}
+
+std::optional<AsyncRouteHandler> ServerData::findMatchingAsyncRoute(const std::string& path) const {
+    return _routes.findMatchingAsyncRoute(path);
+}
+
+std::optional<WebSocketHandler> ServerData::findMatchingWebSocketRoute(const std::string& path) const {
+    return _routes.findMatchingWebSocketRoute(path);
+}
+
+void ServerData::setWebSocketMaxMessageBytes(size_t bytes) { _routes.setWebSocketMaxMessageBytes(bytes); }
+
+void ServerData::setWebSocketMaxFrameBytes(size_t bytes) { _routes.setWebSocketMaxFrameBytes(bytes); }
+
+void ServerData::setWebSocketIdleTimeout(std::chrono::seconds seconds) {
+    _routes.setWebSocketIdleTimeout(seconds);
+}
+
+void ServerData::setWebSocketPingInterval(std::chrono::seconds seconds) {
+    _routes.setWebSocketPingInterval(seconds);
+}
+
+void ServerData::addWebSocketSubprotocol(std::string name) { _routes.addWebSocketSubprotocol(std::move(name)); }
+
+const WebSocketLimits& ServerData::getWebSocketLimits() const { return _routes.getWebSocketLimits(); }
+
+const std::vector<std::string>& ServerData::getWebSocketSubprotocols() const {
+    return _routes.getWebSocketSubprotocols();
+}
+
+void ServerData::setAvailableLanguages(const std::vector<std::string>& languages) {
+    _languages.setAvailableLanguages(languages);
+}
+
+const std::vector<std::string>& ServerData::getAvailableLanguages() const {
+    return _languages.getAvailableLanguages();
+}
+
+const std::string& ServerData::getDefaultLanguage() const { return _languages.getDefaultLanguage(); }
+
+bool ServerData::isLanguageAvailable(const std::string& lang) const { return _languages.isLanguageAvailable(lang); }
+
+bool ServerData::hasLanguages() const { return _languages.hasLanguages(); }
+
+std::optional<std::string> ServerData::languagePrefixFromPath(const std::string& path) const {
+    return _languages.languagePrefixFromPath(path);
+}
+
+std::string ServerData::resolvePreferredLanguage(std::string_view acceptLanguage) const {
+    return _languages.resolvePreferredLanguage(acceptLanguage);
+}
+
+std::string ServerData::localizePathWithRequestLanguage(const std::string& path,
+                                                        const std::string& requestPath) const {
+    return _languages.localizePathWithRequestLanguage(path, requestPath);
+}
+
+void ServerData::setLogLevel(LogLevel level) { _logLevel.store(level, std::memory_order_relaxed); }
+
+LogLevel ServerData::getLogLevel() const { return _logLevel.load(std::memory_order_relaxed); }
+
+bool ServerData::shouldLog(LogLevel level) const {
+    return static_cast<int>(level) <= static_cast<int>(_logLevel.load(std::memory_order_relaxed));
+}
+
+void ServerData::setLogSink(LogSink sink) { _logSink = std::move(sink); }
+
+void ServerData::clearLogSink() { _logSink = nullptr; }
+
+void ServerData::emitLog(LogLevel level, std::string_view message, std::string_view context) const {
+    if (!shouldLog(level)) {
+        return;
+    }
+    if (_logSink) {
+        _logSink(level, message, context);
+        return;
+    }
+    if (level <= LogLevel::Error) {
+        if (context.empty()) {
+            std::cerr << "Error: " << message << std::endl;
+        } else {
+            std::cerr << "Error: " << message << " from " << context << std::endl;
         }
-        if (allDigit) {
-            try {
-                return std::stoull(s);
-            } catch (...) {
-                return fallback;
-            }
-        }
+        return;
     }
-    const long long v = j.getLongLong(key);
-    if (v < 0) {
-        return fallback;
+    if (context.empty()) {
+        std::cout << message << std::endl;
+    } else {
+        std::cout << message << " from " << context << std::endl;
     }
-    return static_cast<uint64_t>(v);
 }
 
-void appendIsoUtcNow(JSONParser& root) {
-    std::time_t now_t = std::time(nullptr);
-    char timeBuf[32] = {};
-    struct tm utcTm{};
-    gmtime_r(&now_t, &utcTm);
-    std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%dT%H:%M:%SZ", &utcTm);
-    root.setString("saved_at", timeBuf);
+void ServerData::setDatabaseClient(std::shared_ptr<db::DatabaseClient> client) {
+    _databaseClient = std::move(client);
 }
 
-}  // namespace
+std::shared_ptr<db::DatabaseClient> ServerData::getDatabaseClient() const { return _databaseClient; }
 
-void ServerData::clearAllMetrics_() {
-    _totalRequests.store(0, std::memory_order_relaxed);
-    _total4xx.store(0, std::memory_order_relaxed);
-    _total5xx.store(0, std::memory_order_relaxed);
-    _totalInternalErrors.store(0, std::memory_order_relaxed);
-    _queueRejections.store(0, std::memory_order_relaxed);
-    _acceptErrorsTotal.store(0, std::memory_order_relaxed);
-    _acceptEmfileTotal.store(0, std::memory_order_relaxed);
-    _fileOpenFailures.store(0, std::memory_order_relaxed);
-    _overloadHttpResponses.store(0, std::memory_order_relaxed);
-    _activeHandlers.store(0, std::memory_order_relaxed);
-    std::lock_guard<std::mutex> lock(_metricsMutex);
-    _minBuckets.fill({});
-    _latHead  = 0;
-    _latCount = 0;
-    _latSamples.fill({});
+void ServerData::setObfuscationLevel(unsigned int level) { _obfuscation.setLevel(level); }
+
+unsigned int ServerData::getObfuscationLevel() const { return _obfuscation.getLevel(); }
+
+void ServerData::setObfuscationCacheExpiry(int days) { _obfuscation.setCacheExpiryDays(days); }
+
+int ServerData::getObfuscationCacheExpiry() const { return _obfuscation.getCacheExpiryDays(); }
+
+void ServerData::addObfuscationExclusion(const std::string& filename) { _obfuscation.addExclusion(filename); }
+
+bool ServerData::isObfuscationExcluded(const std::string& filename) const { return _obfuscation.isExcluded(filename); }
+
+const std::vector<std::string>& ServerData::getObfuscationExclusions() const { return _obfuscation.getExclusions(); }
+
+void ServerData::addObfuscationPreserveIdent(const std::string& name) { _obfuscation.addPreserveIdent(name); }
+
+void ServerData::addObfuscationExternGlobal(const std::string& name) { _obfuscation.addExternGlobal(name); }
+
+const std::unordered_set<std::string>& ServerData::getObfuscationPreserveIdents() const {
+    return _obfuscation.getPreserveIdents();
 }
 
-bool ServerData::importPersistentMetricsJson_(JSONParser root) {
-    if (!root.hasKey("schema_version") || root.getInt("schema_version") != kMetricsSchemaVersion) {
-        return false;
-    }
-
-    const std::vector<JSONParser> bucketObjs = root.getArrayOfJSON("buckets");
-    if (bucketObjs.size() != 60) {
-        return false;
-    }
-
-    JSONParser latRoot;
-    if (root.hasKey("latency")) {
-        latRoot = root.getObject("latency");
-    }
-    const std::vector<JSONParser> latSamples = latRoot.hasKey("samples")
-        ? latRoot.getArrayOfJSON("samples")
-        : std::vector<JSONParser>{};
-    const uint64_t latCount = latRoot.hasKey("count")
-        ? parseJsonU64(latRoot, "count", 0)
-        : 0;
-    if (latCount > _LAT_CAP) {
-        return false;
-    }
-    if (latSamples.size() != latCount) {
-        return false;
-    }
-
-    const uint64_t baseline = parseJsonU64(root, "lifetime_uptime_seconds", 0);
-
-    const uint64_t tr = parseJsonU64(root, "total_requests", 0);
-    const uint64_t t4 = parseJsonU64(root, "total_4xx", 0);
-    const uint64_t t5 = parseJsonU64(root, "total_5xx", 0);
-    const uint64_t ti = parseJsonU64(root, "total_internal_errors", 0);
-    const uint64_t qr = parseJsonU64(root, "queue_rejections", 0);
-
-    std::array<RollingBucket, 60> buckets{};
-    for (size_t i = 0; i < 60; ++i) {
-        JSONParser b = bucketObjs[i];
-        buckets[i].epoch      = static_cast<uint32_t>(parseJsonU64(b, "epoch", 0));
-        buckets[i].requests   = static_cast<uint32_t>(parseJsonU64(b, "requests", 0));
-        buckets[i].errors_4xx = static_cast<uint32_t>(parseJsonU64(b, "errors_4xx", 0));
-        buckets[i].errors_5xx = static_cast<uint32_t>(parseJsonU64(b, "errors_5xx", 0));
-        buckets[i].errors_int = static_cast<uint32_t>(parseJsonU64(b, "errors_int", 0));
-        buckets[i].fill_sum   = b.hasKey("fill_sum") ? b.getFloat("fill_sum") : 0.f;
-        buckets[i].fill_count = static_cast<uint32_t>(parseJsonU64(b, "fill_count", 0));
-    }
-
-    std::array<LatencySample, _LAT_CAP> latBuf{};
-    for (uint64_t i = 0; i < latCount; ++i) {
-        JSONParser s = latSamples[static_cast<size_t>(i)];
-        latBuf[static_cast<size_t>(i)].epoch_s = static_cast<uint32_t>(parseJsonU64(s, "epoch_s", 0));
-        latBuf[static_cast<size_t>(i)].us      = static_cast<uint32_t>(parseJsonU64(s, "us", 0));
-    }
-
-    _totalRequests.store(tr, std::memory_order_relaxed);
-    _total4xx.store(t4, std::memory_order_relaxed);
-    _total5xx.store(t5, std::memory_order_relaxed);
-    _totalInternalErrors.store(ti, std::memory_order_relaxed);
-    _queueRejections.store(qr, std::memory_order_relaxed);
-    _activeHandlers.store(0, std::memory_order_relaxed);
-    _lifetimeUptimeBaselineSeconds = baseline;
-
-    {
-        std::lock_guard<std::mutex> lock(_metricsMutex);
-        _minBuckets = buckets;
-        _latCount   = static_cast<size_t>(latCount);
-        _latSamples = latBuf;
-        // Samples stored oldest-first in [0 .. count); ring head follows last slot (matches getLatencyStats).
-        _latHead = latCount > 0 ? (static_cast<size_t>(latCount) % _LAT_CAP) : 0;
-    }
-
-    return true;
+const std::unordered_set<std::string>& ServerData::getObfuscationExternGlobals() const {
+    return _obfuscation.getExternGlobals();
 }
+
+void ServerData::loadObfuscationExternsFromText(const std::string& text) {
+    _obfuscation.loadExternsFromText(text);
+}
+
+void ServerData::setObfuscationStrictUndefined(bool v) { _obfuscation.setStrictUndefined(v); }
+
+bool ServerData::getObfuscationStrictUndefined() const { return _obfuscation.getStrictUndefined(); }
+
+void ServerData::setObfuscationEmitGlobalThisAssignments(bool v) { _obfuscation.setEmitGlobalThisBracket(v); }
+
+bool ServerData::getObfuscationEmitGlobalThisAssignments() const { return _obfuscation.getEmitGlobalThisBracket(); }
+
+void ServerData::setObfuscationValidateWithAcorn(bool v) { _obfuscation.setValidateWithAcorn(v); }
+
+bool ServerData::getObfuscationValidateWithAcorn() const { return _obfuscation.getValidateWithAcorn(); }
+
+void ServerData::setObfuscationAutoBracketKeys(bool v) { _obfuscation.setAutoBracketKeys(v); }
+
+bool ServerData::getObfuscationAutoBracketKeys() const { return _obfuscation.getAutoBracketKeys(); }
+
+bool ServerData::shouldObfuscate() const { return !_devMode && _obfuscation.getLevel() > 0; }
+
+bool ServerData::isMetricsExcludedPath(const std::string& path) {
+    return ServerMetrics::isMetricsExcludedPath(path);
+}
+
+void ServerData::recordRequest() const { _metrics.recordRequest(); }
+
+void ServerData::recordError() const { _metrics.recordError(); }
+
+void ServerData::record4xx() const { _metrics.record4xx(); }
+
+void ServerData::record5xx() const { _metrics.record5xx(); }
+
+void ServerData::recordQueueRejection() const { _metrics.recordQueueRejection(); }
+
+void ServerData::recordAcceptError() const { _metrics.recordAcceptError(); }
+
+void ServerData::recordAcceptEmfile() const { _metrics.recordAcceptEmfile(); }
+
+void ServerData::recordFileOpenFailure() const { _metrics.recordFileOpenFailure(); }
+
+void ServerData::recordOverloadHttpResponse() const { _metrics.recordOverloadHttpResponse(); }
+
+void ServerData::recordQueueFill(float fillPct) const { _metrics.recordQueueFill(fillPct); }
+
+void ServerData::incrementActiveHandlers() const { _metrics.incrementActiveHandlers(); }
+
+void ServerData::decrementActiveHandlers() const { _metrics.decrementActiveHandlers(); }
+
+void ServerData::recordLatency(uint32_t us) const { _metrics.recordLatency(us); }
+
+uint64_t ServerData::getTotalRequests() const { return _metrics.getTotalRequests(); }
+
+uint64_t ServerData::getTotalErrors() const { return _metrics.getTotalErrors(); }
+
+uint64_t ServerData::getTotal4xx() const { return _metrics.getTotal4xx(); }
+
+uint64_t ServerData::getTotal5xx() const { return _metrics.getTotal5xx(); }
+
+uint64_t ServerData::getTotalInternalErrors() const { return _metrics.getTotalInternalErrors(); }
+
+uint64_t ServerData::getQueueRejections() const { return _metrics.getQueueRejections(); }
+
+uint64_t ServerData::getAcceptErrorsTotal() const { return _metrics.getAcceptErrorsTotal(); }
+
+uint64_t ServerData::getAcceptEmfileTotal() const { return _metrics.getAcceptEmfileTotal(); }
+
+uint64_t ServerData::getFileOpenFailures() const { return _metrics.getFileOpenFailures(); }
+
+uint64_t ServerData::getOverloadHttpResponses() const { return _metrics.getOverloadHttpResponses(); }
+
+int64_t ServerData::getActiveHandlers() const { return _metrics.getActiveHandlers(); }
+
+ServerData::WindowMetrics ServerData::getWindowMetricsHour() const { return _metrics.getWindowMetricsHour(); }
+
+ServerData::WindowMetrics ServerData::getRollingAveragePerHour() const {
+    return _metrics.getRollingAveragePerHour();
+}
+
+ServerData::LatencyStats ServerData::getLatencyStats(uint32_t windowSeconds) const {
+    return _metrics.getLatencyStats(windowSeconds);
+}
+
+uint64_t ServerData::getUptimeSeconds() const { return _metrics.getUptimeSeconds(); }
 
 bool ServerData::loadPersistentMetricsFromFile(const std::string& path) {
-    const auto resetSessionStart = [this] {
-        _startTime = std::chrono::steady_clock::now();
-    };
-
-    std::unique_ptr<JSONParser> parsed = getJSONFromFileSafe(path);
-    if (!parsed) {
-        _lifetimeUptimeBaselineSeconds = 0;
-        resetSessionStart();
-        return true;
-    }
-
-    if (!importPersistentMetricsJson_(std::move(*parsed))) {
-        clearAllMetrics_();
-        _lifetimeUptimeBaselineSeconds = 0;
-        resetSessionStart();
-        return false;
-    }
-
-    resetSessionStart();
-    return true;
+    return _metrics.loadPersistentMetricsFromFile(path);
 }
 
 bool ServerData::savePersistentMetricsToFile(const std::string& path) const {
-    std::array<RollingBucket, 60> bucketsCopy{};
-    std::array<LatencySample, _LAT_CAP> latCopy{};
-    size_t latHeadCopy = 0;
-    size_t latCountCopy = 0;
-    {
-        std::lock_guard<std::mutex> lock(_metricsMutex);
-        bucketsCopy  = _minBuckets;
-        latCopy      = _latSamples;
-        latHeadCopy  = _latHead;
-        latCountCopy = _latCount;
+    return _metrics.savePersistentMetricsToFile(path);
+}
+
+double ServerData::getUptimeHoursTotal() const { return _metrics.getUptimeHoursTotal(); }
+
+void ServerData::setWebPQuality(float quality) {
+    _webpQuality = quality;
+    if (_webpQuality < 0.0f) {
+        _webpQuality = 0.0f;
     }
-
-    const uint64_t tr = _totalRequests.load(std::memory_order_relaxed);
-    const uint64_t t4 = _total4xx.load(std::memory_order_relaxed);
-    const uint64_t t5 = _total5xx.load(std::memory_order_relaxed);
-    const uint64_t ti = _totalInternalErrors.load(std::memory_order_relaxed);
-    const uint64_t qr = _queueRejections.load(std::memory_order_relaxed);
-
-    const uint64_t sessionSec = getUptimeSeconds();
-    const uint64_t fileLifetime = _lifetimeUptimeBaselineSeconds + sessionSec;
-
-    JSONParser root;
-    root.setInt("schema_version", kMetricsSchemaVersion);
-    appendIsoUtcNow(root);
-    root.setString("lifetime_uptime_seconds", std::to_string(fileLifetime));
-    root.setLongLong("total_requests", static_cast<long long>(tr));
-    root.setLongLong("total_4xx", static_cast<long long>(t4));
-    root.setLongLong("total_5xx", static_cast<long long>(t5));
-    root.setLongLong("total_internal_errors", static_cast<long long>(ti));
-    root.setLongLong("queue_rejections", static_cast<long long>(qr));
-
-    std::vector<JSONParser> bucketJson;
-    bucketJson.reserve(60);
-    for (const RollingBucket& b : bucketsCopy) {
-        JSONParser o;
-        o.setLongLong("epoch", static_cast<long long>(b.epoch));
-        o.setLongLong("requests", static_cast<long long>(b.requests));
-        o.setLongLong("errors_4xx", static_cast<long long>(b.errors_4xx));
-        o.setLongLong("errors_5xx", static_cast<long long>(b.errors_5xx));
-        o.setLongLong("errors_int", static_cast<long long>(b.errors_int));
-        o.setDouble("fill_sum", static_cast<double>(b.fill_sum));
-        o.setLongLong("fill_count", static_cast<long long>(b.fill_count));
-        bucketJson.push_back(std::move(o));
+    if (_webpQuality > 100.0f) {
+        _webpQuality = 100.0f;
     }
-    root.setArrayOfJSON("buckets", bucketJson);
+}
 
-    JSONParser latRoot;
-    latRoot.setLongLong("head", static_cast<long long>(latHeadCopy));
-    latRoot.setLongLong("count", static_cast<long long>(latCountCopy));
-    std::vector<JSONParser> samplesJson;
-    samplesJson.reserve(latCountCopy);
-    if (latCountCopy > 0) {
-        const size_t start = (latHeadCopy + _LAT_CAP - latCountCopy) % _LAT_CAP;
-        for (size_t i = 0; i < latCountCopy; ++i) {
-            const LatencySample& s = latCopy[(start + i) % _LAT_CAP];
-            JSONParser sj;
-            sj.setLongLong("epoch_s", static_cast<long long>(s.epoch_s));
-            sj.setLongLong("us", static_cast<long long>(s.us));
-            samplesJson.push_back(std::move(sj));
-        }
-    }
-    latRoot.setArrayOfJSON("samples", samplesJson);
-    root.setJSON("latency", latRoot);
+void ServerData::enableDevMode() {
+    _devMode = true;
+    setLogLevel(LogLevel::Debug);
+    _removeComments = false;
+    _textResponseCacheMaxEntryBytes = 0;
+    _textResponseCacheMaxTotalBytes = 0;
+}
 
-    return saveJSONToFileAtomic(root, path);
+bool ServerData::pageRequiresAccessControl(const std::string& pagePath) const {
+    const std::string canon = canonicalRequestPath(pagePath);
+    return findResolvedPageGate(canon).has_value() || _basicAuth.requiresAuth(canon);
+}
+
+void ServerData::setRoot(const std::string& newRoot) {
+    _root = newRoot;
+    clearMergedAssetOwnerCache_();
+}
+
+void ServerData::setMergeAssets(bool value) {
+    _mergeAssets = value;
+    clearMergedAssetOwnerCache_();
+}
+
+void ServerData::clearMergedAssetOwnerCache_() {
+    std::lock_guard<std::mutex> lock(_mergedAssetOwnerCacheMutex);
+    _mergedAssetOwnerCache.clear();
+}
+
+bool ServerData::mightNeedMergedAssetOwnerLookup() const {
+    return _mergeAssets && !_root.empty() &&
+           (_gates.hasPageGates() || _basicAuth.protectedPageCount() > 0);
 }
 
 std::optional<std::string> ServerData::findMergedAssetOwnerPagePath(const std::string& assetRequestPath) const {
-    if (!_mergeAssets || _root.empty()) {
+    if (!mightNeedMergedAssetOwnerLookup()) {
         return std::nullopt;
     }
 
-    const std::string canon = canonicalRequestPath(assetRequestPath);
-    const bool isJs = canon.size() > 3 && canon.compare(canon.size() - 3, 3, ".js") == 0;
-    const bool isCss = canon.size() > 4 && canon.compare(canon.size() - 4, 4, ".css") == 0;
-    if (!isJs && !isCss) {
-        return std::nullopt;
-    }
-
-    const size_t dotPos = canon.find_last_of('.');
-    if (dotPos == std::string::npos || dotPos <= 1) {
-        return std::nullopt;
-    }
-
-    const size_t lastSlash = canon.find_last_of('/');
-    const std::string pageStem =
-        (lastSlash == std::string::npos) ? canon.substr(1, dotPos - 1)
-                                         : canon.substr(lastSlash + 1, dotPos - lastSlash - 1);
-    if (pageStem.empty()) {
-        return std::nullopt;
-    }
-
-    const std::string htmlRoot = _root + "/html";
-    if (!std::filesystem::is_directory(htmlRoot)) {
-        return std::nullopt;
-    }
-
-    const std::string templatePath = AssetMerger::findHtmlTemplateByPageName(htmlRoot, pageStem);
-    if (templatePath.empty()) {
-        return std::nullopt;
-    }
-
-    std::ifstream in(templatePath, std::ios::binary);
-    if (!in) {
-        return std::nullopt;
-    }
-    const std::string htmlContent((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    if (htmlContent.empty()) {
-        return std::nullopt;
-    }
-
-    AssetMerger merger(_root, _removeComments, _obfuscationExclusions);
-    const std::string pageName = AssetMerger::pageNameFromHtmlPath(templatePath);
-    const std::vector<std::string> predicted = merger.predictMergedAssetUrls(htmlContent, pageName);
-    for (const std::string& url : predicted) {
-        if (canonicalRequestPath(url) == canon) {
-            return AssetMerger::sitePathFromHtmlFile(htmlRoot, templatePath);
+    const std::string key = canonicalRequestPath(assetRequestPath);
+    {
+        std::lock_guard<std::mutex> lock(_mergedAssetOwnerCacheMutex);
+        const auto cached = _mergedAssetOwnerCache.find(key);
+        if (cached != _mergedAssetOwnerCache.end()) {
+            return cached->second;
         }
     }
-    return std::nullopt;
+
+    const std::optional<std::string> resolved = modules::findMergedAssetOwnerPage(*this, assetRequestPath);
+    {
+        std::lock_guard<std::mutex> lock(_mergedAssetOwnerCacheMutex);
+        _mergedAssetOwnerCache[key] = resolved;
+    }
+    return resolved;
 }
 
 }  // namespace geruest

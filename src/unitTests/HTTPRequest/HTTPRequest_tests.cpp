@@ -62,6 +62,19 @@ TEST(HTTPRequestTest, JsonBodyCommaInsideStringValue) {
     EXPECT_EQ(request.getParam("genre"), "fiction");
 }
 
+TEST(HTTPRequestTest, MalformedJsonBodyClearsParams) {
+    const std::string body = R"({"name":"John"}garbage)";
+    std::string rawRequest = "POST /api/users HTTP/1.1\r\n"
+                            "Host: api.example.com\r\n"
+                            "Content-Type: application/json\r\n"
+                            "Content-Length: " + std::to_string(body.size()) + "\r\n"
+                            "\r\n" + body;
+
+    HTTPRequest request(rawRequest, "127.0.0.1", "/test/root");
+
+    EXPECT_FALSE(request.hasParam("name"));
+}
+
 TEST(HTTPRequestTest, QueryParameters) {
     std::string rawRequest = "GET /search?q=test&limit=10 HTTP/1.1\r\n"
                             "Host: example.com\r\n"
@@ -127,4 +140,80 @@ TEST(HTTPRequestTest, HttpShouldCloseAfterResponse) {
     EXPECT_FALSE(httpShouldCloseAfterResponse("GET / HTTP/1.1", ""));
     EXPECT_TRUE(httpShouldCloseAfterResponse("GET / HTTP/1.0", ""));
     EXPECT_FALSE(httpShouldCloseAfterResponse("GET / HTTP/1.0", "keep-alive"));
+}
+
+TEST(HTTPRequestTest, SplitHttpHeadersCrlf) {
+    const std::string raw = "GET / HTTP/1.1\r\nHost: example.com\r\n\r\nbody";
+    const auto split = splitHttpHeaders(raw);
+    ASSERT_TRUE(split.has_value());
+    EXPECT_EQ(split->delimiterLength, 4u);
+    EXPECT_EQ(split->headerSectionEnd, raw.find("body"));
+    EXPECT_EQ(raw.substr(split->headerSectionEnd), "body");
+}
+
+TEST(HTTPRequestTest, SplitHttpHeadersLf) {
+    const std::string raw = "GET / HTTP/1.1\nHost: example.com\n\nbody";
+    const auto split = splitHttpHeaders(raw);
+    ASSERT_TRUE(split.has_value());
+    EXPECT_EQ(split->delimiterLength, 2u);
+    EXPECT_EQ(raw.substr(split->headerSectionEnd), "body");
+}
+
+TEST(HTTPRequestTest, SplitHttpHeadersCr) {
+    const std::string raw = "GET / HTTP/1.1\rHost: example.com\r\rbody";
+    const auto split = splitHttpHeaders(raw);
+    ASSERT_TRUE(split.has_value());
+    EXPECT_EQ(split->delimiterLength, 2u);
+    EXPECT_EQ(raw.substr(split->headerSectionEnd), "body");
+}
+
+TEST(HTTPRequestTest, SplitHttpHeadersNotFound) {
+    EXPECT_FALSE(splitHttpHeaders("GET / HTTP/1.1\r\nHost: x").has_value());
+}
+
+TEST(HTTPRequestTest, ParseHeaderPreflight) {
+    const std::string raw =
+        "POST / HTTP/1.1\r\n"
+        "Expect: 100-continue\r\n"
+        "Content-Length: 42\r\n"
+        "Transfer-Encoding: chunked\r\n"
+        "\r\n";
+    const auto split = splitHttpHeaders(raw);
+    ASSERT_TRUE(split.has_value());
+    const HeaderPreflight preflight = parseHeaderPreflight(std::string_view(raw.data(), split->headerSectionEnd));
+    EXPECT_EQ(preflight.expect, "100-continue");
+    EXPECT_EQ(preflight.contentLength, "42");
+    EXPECT_EQ(preflight.transferEncoding, "chunked");
+}
+
+TEST(HTTPRequestTest, HttpConnectionHeaderHasChunkedToken) {
+    EXPECT_TRUE(httpConnectionHeaderHasToken("chunked", "chunked"));
+    EXPECT_TRUE(httpConnectionHeaderHasToken("gzip, chunked", "chunked"));
+    EXPECT_FALSE(httpConnectionHeaderHasToken("gzip", "chunked"));
+}
+
+TEST(HTTPRequestTest, ParseContentLengthBytes) {
+    size_t bytes = 0;
+    EXPECT_TRUE(parseContentLengthBytes("0", &bytes));
+    EXPECT_EQ(bytes, 0u);
+    EXPECT_TRUE(parseContentLengthBytes("12345", &bytes));
+    EXPECT_EQ(bytes, 12345u);
+    EXPECT_FALSE(parseContentLengthBytes("", &bytes));
+    EXPECT_FALSE(parseContentLengthBytes("12x", &bytes));
+}
+
+TEST(HTTPRequestTest, FindChunkedBodyEndZeroChunk) {
+    const std::string raw = "POST / HTTP/1.1\r\nHost: x\r\n\r\n0\r\n\r\n";
+    const auto split = splitHttpHeaders(raw);
+    ASSERT_TRUE(split.has_value());
+    const size_t end = findChunkedBodyEnd(raw, split->headerSectionEnd);
+    EXPECT_EQ(end, raw.size());
+}
+
+TEST(HTTPRequestTest, FindChunkedBodyEndOneChunk) {
+    const std::string raw = "POST / HTTP/1.1\r\nHost: x\r\n\r\n5\r\nhello\r\n0\r\n\r\n";
+    const auto split = splitHttpHeaders(raw);
+    ASSERT_TRUE(split.has_value());
+    const size_t end = findChunkedBodyEnd(raw, split->headerSectionEnd);
+    EXPECT_EQ(end, raw.size());
 }
