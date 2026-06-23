@@ -1010,6 +1010,51 @@ function submitContact(formValues) {
     EXPECT_FALSE(contains(obfuscated, "payload"));
 }
 
+TEST(JSObfuscatorTest, JsonShorthandPreservedLevel3) {
+    JSObfuscator obfuscator(3);
+    std::string original = R"(
+function submitItem(userId, isbn) {
+    const user_id = userId;
+    const payload = { user_id, isbn };
+    return fetch('/v1/items', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+    });
+}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+
+    EXPECT_TRUE(matchesRegex(obfuscated, R"(\buser_id\b)"))
+        << "Shorthand JSON key 'user_id' must not be mangled";
+    EXPECT_TRUE(matchesRegex(obfuscated, R"(\bisbn\b)"))
+        << "Shorthand JSON key 'isbn' must not be mangled";
+    EXPECT_FALSE(contains(obfuscated, "submitItem"));
+    EXPECT_FALSE(contains(obfuscated, "userId"));
+    EXPECT_FALSE(contains(obfuscated, "payload"));
+}
+
+TEST(JSObfuscatorTest, BlockBodyDoesNotPreserveBareIdentifier) {
+    JSObfuscator obfuscator(3);
+    std::string original = R"(
+function demo() {
+    const secretName = 1;
+    if (false) {
+        secretName;
+    }
+    switch (0) {
+        case 1: {
+            secretName;
+        }
+    }
+}
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+
+    EXPECT_FALSE(contains(obfuscated, "secretName"))
+        << "Bare identifier in block body must still be mangled";
+    EXPECT_FALSE(contains(obfuscated, "demo"));
+}
+
 TEST(JSObfuscatorTest, TernaryValuesStillMangled) {
     JSObfuscator obfuscator(1);
     // Identifiers before ':' in a ternary (preceded by '?') must still
@@ -1162,6 +1207,34 @@ disclaimer.innerHTML = `
         << "HTML in template must not be garbled: " << obfuscated;
     EXPECT_TRUE(contains(obfuscated, "accept-cookies-btn"))
         << "HTML id attribute must stay intact: " << obfuscated;
+}
+
+TEST(JSObfuscatorTest, TemplateLiteralHtmlWhitespaceMinified) {
+    JSObfuscator obfuscator(2);
+    std::string original = R"(
+overlay.innerHTML = `
+        <span>We only use necessary cookies. <br>No tracking.</span>
+        <button id="accept-cookies-btn">OK</button>
+    `;
+)";
+    std::string obfuscated = obfuscator.obfuscate(original);
+
+    EXPECT_TRUE(contains(obfuscated, "`<span>"))
+        << "Leading HTML whitespace should be trimmed: " << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "</span><button"))
+        << "Whitespace between tags should be removed: " << obfuscated;
+    EXPECT_TRUE(contains(obfuscated, "We only use necessary cookies"))
+        << "Text content must be preserved: " << obfuscated;
+    EXPECT_FALSE(contains(obfuscated, "\n        <span>"))
+        << "Indented newline before tag should be gone: " << obfuscated;
+}
+
+TEST(JSObfuscatorTest, TemplateLiteralPlainTextWhitespacePreserved) {
+    JSObfuscator obfuscator(2);
+    std::string original = "const msg = `line one\nline two`;\n";
+    std::string obfuscated = obfuscator.obfuscate(original);
+    EXPECT_TRUE(contains(obfuscated, "line one\nline two"))
+        << "Non-HTML template literals must keep internal newlines: " << obfuscated;
 }
 
 TEST(JSObfuscatorTest, QuerySelectorStringWithBracketsPreserved) {
