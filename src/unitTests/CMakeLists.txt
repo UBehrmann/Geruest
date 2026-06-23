@@ -259,6 +259,11 @@ add_executable(GeruestLifecycle_Tests
 )
 target_link_libraries(GeruestLifecycle_Tests Geruest::Geruest GTest::gtest_main)
 
+add_executable(StatusEndpoint_Tests
+    Geruest/StatusEndpoint_tests.cpp
+)
+target_link_libraries(StatusEndpoint_Tests Geruest::Geruest GTest::gtest_main)
+
 add_executable(CoreOnly_Tests
     Geruest/CoreOnly_tests.cpp
 )
@@ -311,6 +316,7 @@ gtest_discover_tests(GateEvaluation_Tests)
 gtest_discover_tests(RouteRegistry_Tests)
 gtest_discover_tests(ServerDataMergedAsset_Tests)
 gtest_discover_tests(GeruestLifecycle_Tests)
+gtest_discover_tests(StatusEndpoint_Tests)
 gtest_discover_tests(CoreOnly_Tests)
 if(GERUEST_HAS_SQLITE)
     gtest_discover_tests(DatabaseSqlite_Tests)
@@ -340,13 +346,13 @@ exit $rc
 ]=])
     add_custom_target(run_tests
         COMMAND bash "${CMAKE_CURRENT_BINARY_DIR}/run_tests_pg.sh" "${CMAKE_CTEST_COMMAND}"
-        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests StaticFileResolver_Tests ServerDataPageGate_Tests ServerDataRouteGate_Tests GateEvaluation_Tests RouteRegistry_Tests GeruestLifecycle_Tests CoreOnly_Tests DatabasePostgres_Tests
+        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests StaticFileResolver_Tests ServerDataPageGate_Tests ServerDataRouteGate_Tests GateEvaluation_Tests RouteRegistry_Tests GeruestLifecycle_Tests StatusEndpoint_Tests CoreOnly_Tests DatabasePostgres_Tests
         COMMENT "Running all unit tests via CTest (with PostgreSQL container)"
     )
 else()
     add_custom_target(run_tests
         COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests StaticFileResolver_Tests ServerDataPageGate_Tests ServerDataRouteGate_Tests GateEvaluation_Tests RouteRegistry_Tests GeruestLifecycle_Tests CoreOnly_Tests
+        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests StaticFileResolver_Tests ServerDataPageGate_Tests ServerDataRouteGate_Tests GateEvaluation_Tests RouteRegistry_Tests GeruestLifecycle_Tests StatusEndpoint_Tests CoreOnly_Tests
         COMMENT "Running all unit tests via CTest"
     )
 endif()
