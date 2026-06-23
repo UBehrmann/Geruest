@@ -12,6 +12,7 @@
 
 #include <boost/asio.hpp>
 #include <chrono>
+#include <csignal>
 #include <cstring>
 #include <thread>
 
@@ -249,6 +250,16 @@ void Geruest::start() {
     sendToLogger("Waiting for connections...");
     sendToLogger("Worker threads: " + std::to_string(_workerThreadCount) +
                  ", Max concurrent sessions: " + std::to_string(_maxQueueSize));
+
+    // Handle SIGINT/SIGTERM on the io_context thread. Do not call stop() from a POSIX
+    // signal handler while io_ctx_.run() is active — that is async-signal-unsafe and
+    // can corrupt the heap (Docker stop / compose run often exits with 139).
+    boost::asio::signal_set signals(io_ctx_, SIGINT, SIGTERM);
+    signals.async_wait([this](const boost::system::error_code& ec, int) {
+        if (!ec) {
+            stop();
+        }
+    });
 
     io_ctx_.run();
 
