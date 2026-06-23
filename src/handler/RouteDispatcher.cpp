@@ -76,7 +76,11 @@ boost::asio::awaitable<void> RouteDispatcher::tryDispatchRoute(HTTPRequest* requ
                                                                boost::asio::awaitable<HTTPResponse> produced,
                                                                std::string_view handlerLabel, Handler& host) {
     if (auto denial = co_await host.checkRouteGateDenialAsync(*request)) {
-        host.record4xxMetric();
+        if (!denial->getStatus().empty() && denial->getStatus()[0] == '5') {
+            host.record5xxMetric();
+        } else {
+            host.record4xxMetric();
+        }
         applyCorsHeaders(*denial, serverData_.getCorsConfig(), request);
         applyResponseCompression(*denial, request);
         denial->serializeTo(host.responseScratch_);

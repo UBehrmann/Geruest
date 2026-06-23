@@ -62,6 +62,19 @@ TEST(HTTPRequestTest, JsonBodyCommaInsideStringValue) {
     EXPECT_EQ(request.getParam("genre"), "fiction");
 }
 
+TEST(HTTPRequestTest, MalformedJsonBodyClearsParams) {
+    const std::string body = R"({"name":"John"}garbage)";
+    std::string rawRequest = "POST /api/users HTTP/1.1\r\n"
+                            "Host: api.example.com\r\n"
+                            "Content-Type: application/json\r\n"
+                            "Content-Length: " + std::to_string(body.size()) + "\r\n"
+                            "\r\n" + body;
+
+    HTTPRequest request(rawRequest, "127.0.0.1", "/test/root");
+
+    EXPECT_FALSE(request.hasParam("name"));
+}
+
 TEST(HTTPRequestTest, QueryParameters) {
     std::string rawRequest = "GET /search?q=test&limit=10 HTTP/1.1\r\n"
                             "Host: example.com\r\n"

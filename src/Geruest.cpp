@@ -274,7 +274,7 @@ void Geruest::setWebPQuality(float quality) {
 }
 
 void Geruest::setWebPMaxDimension(int maxDimension) {
-#if GERUEST_HAS_WEBP
+#if GERUEST_ENABLE_ASSETS && GERUEST_HAS_WEBP
     modules::setWebpMaxDimension(maxDimension);
     if (maxDimension > 0) {
         sendToLogger("WebP max dimension set to " + std::to_string(maxDimension) + "px");

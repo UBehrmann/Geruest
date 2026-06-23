@@ -84,9 +84,18 @@ boost::asio::awaitable<bool> Handler::enforcePageAccessAsync(const HTTPRequest& 
         co_return true;
     }
 
-    const bool allowed = co_await evaluateResolvedGateAsync(
+    const auto allowed = co_await evaluateResolvedGateAsync(
         *gate, request, [this](const std::string& msg) { sendToLoggerError(msg); }, "page");
-    if (allowed) {
+    if (!allowed.has_value()) {
+        HTTPResponse err = responseInternalServerError(&request);
+        record5xxMetric();
+        err.serializeTo(responseScratch_);
+        if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
+            sendToLoggerError("Failed to send page gate error for: " + pagePath);
+        }
+        co_return false;
+    }
+    if (*allowed) {
         co_return true;
     }
 
@@ -117,9 +126,12 @@ boost::asio::awaitable<std::optional<HTTPResponse>> Handler::checkRouteGateDenia
         co_return std::nullopt;
     }
 
-    const bool allowed = co_await evaluateResolvedGateAsync(
+    const auto allowed = co_await evaluateResolvedGateAsync(
         *gate, request, [this](const std::string& msg) { sendToLoggerError(msg); }, "route");
-    if (allowed) {
+    if (!allowed.has_value()) {
+        co_return responseInternalServerError(&request);
+    }
+    if (*allowed) {
         co_return std::nullopt;
     }
 

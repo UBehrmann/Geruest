@@ -1,6 +1,6 @@
 /**
  * @file Geruest.hpp
- * @brief Umbrella include — full stack (Geruest::Geruest).
+ * @brief Umbrella include — full stack (Geruest::Geruest). Prefer this over <Geruest.hpp>.
  */
 #ifndef GERUEST_UMBRELLA_HPP
 #define GERUEST_UMBRELLA_HPP

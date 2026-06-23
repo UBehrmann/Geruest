@@ -404,8 +404,46 @@ bool ServerData::pageRequiresAccessControl(const std::string& pagePath) const {
     return findResolvedPageGate(canon).has_value() || _basicAuth.requiresAuth(canon);
 }
 
+void ServerData::setRoot(const std::string& newRoot) {
+    _root = newRoot;
+    clearMergedAssetOwnerCache_();
+}
+
+void ServerData::setMergeAssets(bool value) {
+    _mergeAssets = value;
+    clearMergedAssetOwnerCache_();
+}
+
+void ServerData::clearMergedAssetOwnerCache_() {
+    std::lock_guard<std::mutex> lock(_mergedAssetOwnerCacheMutex);
+    _mergedAssetOwnerCache.clear();
+}
+
+bool ServerData::mightNeedMergedAssetOwnerLookup() const {
+    return _mergeAssets && !_root.empty() &&
+           (_gates.hasPageGates() || _basicAuth.protectedPageCount() > 0);
+}
+
 std::optional<std::string> ServerData::findMergedAssetOwnerPagePath(const std::string& assetRequestPath) const {
-    return modules::findMergedAssetOwnerPage(*this, assetRequestPath);
+    if (!mightNeedMergedAssetOwnerLookup()) {
+        return std::nullopt;
+    }
+
+    const std::string key = canonicalRequestPath(assetRequestPath);
+    {
+        std::lock_guard<std::mutex> lock(_mergedAssetOwnerCacheMutex);
+        const auto cached = _mergedAssetOwnerCache.find(key);
+        if (cached != _mergedAssetOwnerCache.end()) {
+            return cached->second;
+        }
+    }
+
+    const std::optional<std::string> resolved = modules::findMergedAssetOwnerPage(*this, assetRequestPath);
+    {
+        std::lock_guard<std::mutex> lock(_mergedAssetOwnerCacheMutex);
+        _mergedAssetOwnerCache[key] = resolved;
+    }
+    return resolved;
 }
 
 }  // namespace geruest

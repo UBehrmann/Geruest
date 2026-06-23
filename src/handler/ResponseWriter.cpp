@@ -203,7 +203,7 @@ boost::asio::awaitable<void> ResponseWriter::sendFileAsync(const std::string& co
         const std::string requestPath = httpRequest != nullptr ? httpRequest->getPathString() : std::string();
         std::optional<std::string> mergedAssetOwnerPage;
         if (httpRequest != nullptr && (contentType == "text/javascript" || contentType == "text/css")) {
-            mergedAssetOwnerPage = modules::findMergedAssetOwnerPage(host.serverData, requestPath);
+            mergedAssetOwnerPage = host.serverData.findMergedAssetOwnerPagePath(requestPath);
         }
 
         const std::optional<ResolvedPageGate> resolvedPageGate =

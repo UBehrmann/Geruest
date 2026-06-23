@@ -242,16 +242,7 @@ std::optional<AsyncRouteHandler> RouteRegistry::findMatchingAsyncRoute(const std
 }
 
 std::optional<WebSocketHandler> RouteRegistry::findMatchingWebSocketRoute(const std::string& path) const {
-    auto exactMatch = _webSocketRoutes.find(path);
-    if (exactMatch != _webSocketRoutes.end()) {
-        return exactMatch->second;
-    }
-    for (const auto& route : _webSocketWildcardRoutes) {
-        if (matchesWildcardPattern(route.first, path)) {
-            return route.second;
-        }
-    }
-    return std::nullopt;
+    return findMatchingRouteImpl(_webSocketRoutes, _webSocketWildcardRoutes, canonicalRequestPath(path));
 }
 
 // Explicit template instantiations for link
@@ -261,5 +252,8 @@ template std::optional<RouteHandler> RouteRegistry::findMatchingRouteImpl(
 template std::optional<AsyncRouteHandler> RouteRegistry::findMatchingRouteImpl(
     const std::unordered_map<std::string, AsyncRouteHandler>&,
     const std::unordered_map<std::string, AsyncRouteHandler>&, const std::string&) const;
+template std::optional<WebSocketHandler> RouteRegistry::findMatchingRouteImpl(
+    const std::unordered_map<std::string, WebSocketHandler>&,
+    const std::unordered_map<std::string, WebSocketHandler>&, const std::string&) const;
 
 }  // namespace geruest

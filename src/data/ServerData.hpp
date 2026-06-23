@@ -14,6 +14,7 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -112,13 +113,13 @@ class ServerData {
     const std::vector<std::string>& getWebSocketSubprotocols() const;
 
     const std::string& getRoot() const { return _root; }
-    void setRoot(const std::string& newRoot) { _root = newRoot; }
+    void setRoot(const std::string& newRoot);
 
     bool getRemoveComments() const { return _removeComments; }
     void setRemoveComments(bool value) { _removeComments = value; }
     void keepComments() { _removeComments = false; }
 
-    void setMergeAssets(bool value) { _mergeAssets = value; }
+    void setMergeAssets(bool value);
     bool getMergeAssets() const { return _mergeAssets; }
 
     void setWebPConversion(bool value) { _webpConversion = value; }
@@ -234,6 +235,8 @@ class ServerData {
 
    private:
     void wireLanguagePointers_();
+    void clearMergedAssetOwnerCache_();
+    bool mightNeedMergedAssetOwnerLookup() const;
 
     LanguageConfig _languages;
     RouteRegistry _routes;
@@ -258,6 +261,9 @@ class ServerData {
     std::atomic<LogLevel> _logLevel{LogLevel::Error};
     LogSink _logSink;
     std::shared_ptr<db::DatabaseClient> _databaseClient;
+
+    mutable std::unordered_map<std::string, std::optional<std::string>> _mergedAssetOwnerCache;
+    mutable std::mutex _mergedAssetOwnerCacheMutex;
 };
 
 }  // namespace geruest

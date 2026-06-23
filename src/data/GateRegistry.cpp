@@ -276,4 +276,9 @@ std::optional<ResolvedRouteGate> GateRegistry::findResolvedRouteGate(const std::
         [this](const std::string& lookup) { return findBestWildcardRouteGate(lookup); });
 }
 
+bool GateRegistry::hasPageGates() const {
+    return !_pageGates.empty() || !_wildcardPageGates.empty() || !_asyncPageGates.empty() ||
+           !_wildcardAsyncPageGates.empty();
+}
+
 }  // namespace geruest

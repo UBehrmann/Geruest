@@ -528,6 +528,10 @@ void HTTPRequest::parseJsonBody() {
         return;
     }
     JSONParser parser(_bodyView, _backing);
+    if (!parser.ok()) {
+        _jsonParams.clear();
+        return;
+    }
     for (const std::string& key : parser.getKeys()) {
         _jsonParams[key] = parser.getString(key);
     }

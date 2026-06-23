@@ -45,7 +45,11 @@ boost::asio::awaitable<bool> handleUpgrade(Handler& host, HTTPRequest* request) 
     }
 
     if (auto denial = co_await host.checkRouteGateDenialAsync(*request)) {
-        host.record4xxMetric();
+        if (!denial->getStatus().empty() && denial->getStatus()[0] == '5') {
+            host.record5xxMetric();
+        } else {
+            host.record4xxMetric();
+        }
         applyCorsHeaders(*denial, host.serverData.getCorsConfig(), request);
         denial->serializeTo(host.responseScratch_);
         if (!co_await host.sendSocketAsync(host.responseScratch_.data(), host.responseScratch_.size())) {

@@ -5,6 +5,7 @@
 #include <boost/asio/use_future.hpp>
 
 #include <optional>
+#include <stdexcept>
 #include <thread>
 
 #include "data/HTTPRequest.hpp"
@@ -26,6 +27,7 @@ TEST(GateEvaluation, SyncGateRunsOffIoThread) {
     boost::asio::io_context io;
     const auto ioThreadId = std::this_thread::get_id();
     std::optional<std::thread::id> gateThreadId;
+    std::optional<bool> allowedResult;
 
     ResolvedRouteGate gate;
     gate.async = false;
@@ -37,14 +39,36 @@ TEST(GateEvaluation, SyncGateRunsOffIoThread) {
     auto future = boost::asio::co_spawn(
         io,
         [&]() -> boost::asio::awaitable<void> {
-            const bool allowed = co_await evaluateResolvedGateAsync(
+            allowedResult = co_await evaluateResolvedGateAsync(
                 gate, makeGetRequest("/v1/test"), [](const std::string&) {}, "route");
-            EXPECT_TRUE(allowed);
         }(),
         boost::asio::use_future);
     io.run();
     future.get();
 
+    ASSERT_TRUE(allowedResult.has_value());
+    EXPECT_TRUE(*allowedResult);
     ASSERT_TRUE(gateThreadId.has_value());
     EXPECT_NE(*gateThreadId, ioThreadId);
+}
+
+TEST(GateEvaluation, SyncGateExceptionReturnsNullopt) {
+    boost::asio::io_context io;
+    std::optional<bool> allowedResult;
+
+    ResolvedRouteGate gate;
+    gate.async = false;
+    gate.syncHandler = [](const HTTPRequest&) -> bool { throw std::runtime_error("gate boom"); };
+
+    auto future = boost::asio::co_spawn(
+        io,
+        [&]() -> boost::asio::awaitable<void> {
+            allowedResult = co_await evaluateResolvedGateAsync(
+                gate, makeGetRequest("/v1/test"), [](const std::string&) {}, "route");
+        }(),
+        boost::asio::use_future);
+    io.run();
+    future.get();
+
+    EXPECT_FALSE(allowedResult.has_value());
 }

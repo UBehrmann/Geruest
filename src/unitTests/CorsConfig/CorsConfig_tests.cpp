@@ -56,7 +56,11 @@ TEST(CorsConfigTest, ApplyHeadersOnMatchingRoute) {
 }
 
 TEST(CorsConfigTest, PreflightEchoesRequestedHeaders) {
-    const CorsConfig cors = enabledCors();
+    const CorsConfig cors = CorsConfig::fromOptions({
+        .origins = {"https://app.example.com"},
+        .paths = {"/v1/*", "/api/*"},
+        .allowHeaders = {"Content-Type", "Authorization", "X-Custom-Header"},
+    });
     HTTPRequest request = makeRequest(
         "OPTIONS", "/v1/items",
         "Origin: https://app.example.com\r\nAccess-Control-Request-Headers: X-Custom-Header\r\n");
@@ -66,6 +70,19 @@ TEST(CorsConfigTest, PreflightEchoesRequestedHeaders) {
     const std::string serialized = response.toString();
     EXPECT_NE(serialized.find("Access-Control-Allow-Headers: X-Custom-Header"), std::string::npos);
     EXPECT_NE(serialized.find("Access-Control-Max-Age: 86400"), std::string::npos);
+}
+
+TEST(CorsConfigTest, PreflightFiltersUnknownHeaders) {
+    const CorsConfig cors = enabledCors();
+    HTTPRequest request = makeRequest(
+        "OPTIONS", "/v1/items",
+        "Origin: https://app.example.com\r\nAccess-Control-Request-Headers: X-Evil-Header\r\n");
+    HTTPResponse response = responseNoContent(&request);
+    applyCorsHeaders(response, cors, &request, true);
+
+    const std::string serialized = response.toString();
+    EXPECT_EQ(serialized.find("X-Evil-Header"), std::string::npos);
+    EXPECT_NE(serialized.find("Access-Control-Allow-Headers:"), std::string::npos);
 }
 
 TEST(CorsConfigTest, SkipsDisallowedOrigin) {

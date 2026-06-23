@@ -42,6 +42,8 @@ class GateRegistry {
     std::optional<RouteGateRule> findMatchingRouteGate(const std::string& path) const;
     std::optional<ResolvedRouteGate> findResolvedRouteGate(const std::string& path) const;
 
+    bool hasPageGates() const;
+
    private:
     template <typename Rule>
     void storeGateRule(const std::string& path, Rule rule, std::unordered_map<std::string, Rule>& exactGates,

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.11)
 
-project(GeruestLibrary VERSION 0.13.2 LANGUAGES CXX)
+project(GeruestLibrary VERSION 0.13.3 LANGUAGES CXX)
 
 set(GERUEST_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 set(GERUEST_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}")
@@ -135,17 +135,11 @@ install(FILES
 
 install(FILES ${GERUEST_ROOT}/src/Geruest.hpp DESTINATION include)
 
-install(FILES
-    ${GERUEST_ROOT}/src/data/HTTPRequest.hpp
-    ${GERUEST_ROOT}/src/data/HTTPResponse.hpp
-    ${GERUEST_ROOT}/src/data/ServerTypes.hpp
-    ${GERUEST_ROOT}/src/data/CorsConfig.hpp
-    ${GERUEST_ROOT}/src/parser/JSONParser.hpp
-    ${GERUEST_ROOT}/src/security/Security.hpp
-    ${GERUEST_ROOT}/src/config/ConfigLoader.hpp
-    ${GERUEST_ROOT}/src/server/WebSocketTypes.hpp
-    DESTINATION include
-)
+# Preserve src/ subtree paths (Geruest.hpp uses "data/...", "parser/...", etc.)
+install(DIRECTORY ${GERUEST_ROOT}/src/
+        DESTINATION include
+        FILES_MATCHING PATTERN "*.hpp"
+        PATTERN "unitTests" EXCLUDE)
 
 install(FILES
     "${GERUEST_BINARY_DIR}/include/geruest/Version.hpp"

@@ -10,6 +10,8 @@
 #ifndef GERUEST_GERUEST_HPP
 #define GERUEST_GERUEST_HPP
 
+// ponytail: full server API; new projects should prefer #include <geruest/Geruest.hpp> (umbrella).
+
 #include "geruest/BuildConfig.hpp"
 
 #include <netinet/in.h>
@@ -86,6 +88,7 @@ class Geruest {
     void addRoute(const std::string& path, RouteHandler handler, RouteGateHandler gate);
     void addRoute(const std::string& path, RouteHandler handler, AsyncRouteGateHandler gate);
     void addRoute(const std::string& path, AsyncRouteHandler handler, AsyncRouteGateHandler gate);
+#if GERUEST_ENABLE_WEBSOCKET
     /**
      * @brief Register a WebSocket route handler (coroutine or callback API), optionally with an access gate.
      * @param path Route path (supports '*' wildcard)
@@ -104,6 +107,7 @@ class Geruest {
     void setWebSocketIdleTimeout(int seconds);
     void setWebSocketPingInterval(int seconds);
     void addWebSocketSubprotocol(const std::string& name);
+#endif
     void setDatabaseBackend(DatabaseBackend backend);
     void setDatabasePoolSize(size_t size);
     void setSqliteExecutorThreadCount(size_t count);
@@ -343,6 +347,7 @@ class Geruest {
      */
     void setWebPQuality(float quality);
 
+#if GERUEST_ENABLE_ASSETS
     /**
      * @brief Set the maximum pixel dimension for WebP conversion.
      *
@@ -359,6 +364,7 @@ class Geruest {
      *                     Set to 0 to disable automatic resizing.
      */
     void setWebPMaxDimension(int maxDimension);
+#endif
 
     /**
      * @brief Enable development mode for easier debugging and rapid development.

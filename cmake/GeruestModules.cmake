@@ -58,36 +58,43 @@ add_library(Geruest::Core ALIAS GeruestCore)
 _geruest_public_includes(GeruestCore)
 target_link_libraries(GeruestCore PUBLIC Threads::Threads Boost::system ZLIB::ZLIB)
 
-add_library(GeruestObfuscation STATIC
-    ${GERUEST_ROOT}/src/builders/JSObfuscator.cpp
-    ${GERUEST_ROOT}/src/builders/JSObfuscatorScope.cpp
-)
-add_library(Geruest::Obfuscation ALIAS GeruestObfuscation)
-_geruest_public_includes(GeruestObfuscation)
-target_link_libraries(GeruestObfuscation PUBLIC GeruestCore)
+if(GERUEST_ENABLE_OBFUSCATION)
+    add_library(GeruestObfuscation STATIC
+        ${GERUEST_ROOT}/src/builders/JSObfuscator.cpp
+        ${GERUEST_ROOT}/src/builders/JSObfuscatorScope.cpp
+    )
+    add_library(Geruest::Obfuscation ALIAS GeruestObfuscation)
+    _geruest_public_includes(GeruestObfuscation)
+    target_link_libraries(GeruestObfuscation PUBLIC GeruestCore)
+endif()
 
-add_library(GeruestAssets STATIC
-    ${GERUEST_ROOT}/src/assets/AssetsModule.cpp
-    ${GERUEST_ROOT}/src/assets/MergedAssetResolver.cpp
-    ${GERUEST_ROOT}/src/builders/AssetHtmlDiscovery.cpp
-    ${GERUEST_ROOT}/src/builders/AssetMerger.cpp
-    ${GERUEST_ROOT}/src/builders/ContentBuilder.cpp
-    ${GERUEST_ROOT}/src/builders/CSSBuilder.cpp
-    ${GERUEST_ROOT}/src/builders/HTMLBuilder.cpp
-    ${GERUEST_ROOT}/src/builders/JSBuilder.cpp
-    ${GERUEST_ROOT}/src/builders/WebPConverter.cpp
-)
-add_library(Geruest::Assets ALIAS GeruestAssets)
-_geruest_public_includes(GeruestAssets)
-target_include_directories(GeruestAssets PRIVATE ${GERUEST_ROOT}/third_party/stb)
-target_link_libraries(GeruestAssets PUBLIC GeruestCore GeruestObfuscation)
-if(GERUEST_HAS_WEBP)
-    if(WEBP_LINK_TARGET)
-        target_link_libraries(GeruestAssets PRIVATE ${WEBP_LINK_TARGET})
-    else()
-        target_include_directories(GeruestAssets PRIVATE ${LIBWEBP_INCLUDE_DIRS})
-        target_link_libraries(GeruestAssets PRIVATE ${LIBWEBP_LIBRARIES})
-        target_link_directories(GeruestAssets PRIVATE ${LIBWEBP_LIBRARY_DIRS})
+if(GERUEST_ENABLE_ASSETS)
+    if(NOT GERUEST_ENABLE_OBFUSCATION)
+        message(FATAL_ERROR "GERUEST_ENABLE_ASSETS requires GERUEST_ENABLE_OBFUSCATION")
+    endif()
+    add_library(GeruestAssets STATIC
+        ${GERUEST_ROOT}/src/assets/AssetsModule.cpp
+        ${GERUEST_ROOT}/src/assets/MergedAssetResolver.cpp
+        ${GERUEST_ROOT}/src/builders/AssetHtmlDiscovery.cpp
+        ${GERUEST_ROOT}/src/builders/AssetMerger.cpp
+        ${GERUEST_ROOT}/src/builders/ContentBuilder.cpp
+        ${GERUEST_ROOT}/src/builders/CSSBuilder.cpp
+        ${GERUEST_ROOT}/src/builders/HTMLBuilder.cpp
+        ${GERUEST_ROOT}/src/builders/JSBuilder.cpp
+        ${GERUEST_ROOT}/src/builders/WebPConverter.cpp
+    )
+    add_library(Geruest::Assets ALIAS GeruestAssets)
+    _geruest_public_includes(GeruestAssets)
+    target_include_directories(GeruestAssets PRIVATE ${GERUEST_ROOT}/third_party/stb)
+    target_link_libraries(GeruestAssets PUBLIC GeruestCore GeruestObfuscation)
+    if(GERUEST_HAS_WEBP)
+        if(WEBP_LINK_TARGET)
+            target_link_libraries(GeruestAssets PRIVATE ${WEBP_LINK_TARGET})
+        else()
+            target_include_directories(GeruestAssets PRIVATE ${LIBWEBP_INCLUDE_DIRS})
+            target_link_libraries(GeruestAssets PRIVATE ${LIBWEBP_LIBRARIES})
+            target_link_directories(GeruestAssets PRIVATE ${LIBWEBP_LIBRARY_DIRS})
+        endif()
     endif()
 endif()
 
@@ -149,7 +156,7 @@ endif()
 if(GERUEST_HAS_CURL AND GERUEST_ENABLE_EMAIL)
     list(APPEND _GERUEST_UMBRELLA_LIBS GeruestEmail)
 endif()
-list(APPEND _GERUEST_UMBRELLA_LIBS GeruestCore)
+list(APPEND _GERUEST_UMBRELLA_LIBS GeruestCore)  # Rescan group: Core last for optional-module symbols
 
 if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.24")
     target_link_libraries(Geruest INTERFACE "$<LINK_GROUP:RESCAN,${_GERUEST_UMBRELLA_LIBS}>")
@@ -158,7 +165,13 @@ else()
     target_link_libraries(Geruest INTERFACE GeruestCore)
 endif()
 
-set(GERUEST_INSTALL_TARGETS GeruestCore GeruestObfuscation GeruestAssets Geruest)
+set(GERUEST_INSTALL_TARGETS GeruestCore Geruest)
+if(GERUEST_ENABLE_OBFUSCATION)
+    list(APPEND GERUEST_INSTALL_TARGETS GeruestObfuscation)
+endif()
+if(GERUEST_ENABLE_ASSETS)
+    list(APPEND GERUEST_INSTALL_TARGETS GeruestAssets)
+endif()
 if(GERUEST_ENABLE_WEBSOCKET)
     list(APPEND GERUEST_INSTALL_TARGETS GeruestWebSocket)
 endif()

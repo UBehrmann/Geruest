@@ -19,28 +19,29 @@
 
 namespace geruest {
 
-/** Invoke a resolved page or route gate; returns true when access is granted. */
+/**
+ * Invoke a resolved page or route gate.
+ * @return true when granted, false when denied, nullopt when the handler failed (use 500, not 403).
+ */
 template <typename ResolvedGate>
-boost::asio::awaitable<bool> evaluateResolvedGateAsync(
+boost::asio::awaitable<std::optional<bool>> evaluateResolvedGateAsync(
     const ResolvedGate& gate, const HTTPRequest& request,
     const std::function<void(const std::string&)>& logError, std::string_view gateKind) {
-    bool allowed = false;
     try {
         if (gate.async) {
-            allowed = co_await gate.asyncHandler(request);
-        } else {
-            auto handler = gate.syncHandler;
-            allowed = co_await boost::asio::co_spawn(
-                syncGateThreadPool().get_executor(),
-                [handler, &request]() -> boost::asio::awaitable<bool> { co_return handler(request); },
-                boost::asio::use_awaitable);
+            co_return co_await gate.asyncHandler(request);
         }
+        auto handler = gate.syncHandler;
+        co_return co_await boost::asio::co_spawn(
+            syncGateThreadPool().get_executor(),
+            [handler, &request]() -> boost::asio::awaitable<bool> { co_return handler(request); },
+            boost::asio::use_awaitable);
     } catch (const std::exception& e) {
         logError(std::string("Exception in ") + std::string(gateKind) + " gate handler: " + e.what());
     } catch (...) {
         logError(std::string("Unknown exception in ") + std::string(gateKind) + " gate handler");
     }
-    co_return allowed;
+    co_return std::nullopt;
 }
 
 }  // namespace geruest
