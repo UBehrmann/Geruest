@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <string>
 
+#include "database/DatabaseClient.hpp"
 #include "parser/JSONParser.hpp"
 
 namespace {

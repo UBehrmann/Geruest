@@ -66,19 +66,19 @@ TEST(JSONParserTest, SimpleKeyFloatsFloat) {
 TEST(JSONParserTest, SimpleKeyFloatsDouble) {
     std::string input = R"({"key": 42.42})";
     JSONParser json(input);
-    float f = 42.42;
-    double d = f;
-    double parsed = json.getDouble("key");
+    const float f = 42.42f;
+    const double d = f;
+    const double parsed = json.getDouble("key");
     EXPECT_NEAR(parsed, d, 0.0001);
 }
 
 TEST(JSONParserTest, SimpleKeyFloatsLongDouble) {
     std::string input = R"({"key": 42.42})";
     JSONParser json(input);
-    float f = 42.42;
-    long double ld = f;
-    long double parsed = json.getLongDouble("key");
-    EXPECT_NEAR(parsed, ld, 0.0001);
+    const float f = 42.42f;
+    const long double ld = f;
+    const long double parsed = json.getLongDouble("key");
+    EXPECT_NEAR(static_cast<double>(parsed), static_cast<double>(ld), 0.0001);
 }
 
 TEST(JSONParserTest, SimpleKeyBooleans) {
@@ -151,10 +151,8 @@ TEST(JSONParserTest, ArrayOfFloats) {
 TEST(JSONParserTest, ArrayOfDoubles) {
     std::string input = R"({"key": [1.1, 2.2]})";
     JSONParser json(input);
-    float f1 = 1.1;
-    float f2 = 2.2;
-    std::vector<double> expected = {f1, f2};
-    std::vector<double> parsed = json.getDoubleArray("key");
+    const std::vector<double> expected = {1.1, 2.2};
+    const std::vector<double> parsed = json.getDoubleArray("key");
     ASSERT_EQ(parsed.size(), expected.size());
     for (size_t i = 0; i < expected.size(); ++i) {
         EXPECT_NEAR(parsed[i], expected[i], 0.0001);
@@ -164,13 +162,11 @@ TEST(JSONParserTest, ArrayOfDoubles) {
 TEST(JSONParserTest, ArrayOfLongDoubles) {
     std::string input = R"({"key": [1.1, 2.2]})";
     JSONParser json(input);
-    float f1 = 1.1;
-    float f2 = 2.2;
-    std::vector<long double> expected = {f1, f2};
-    std::vector<long double> parsed = json.getLongDoubleArray("key");
+    const std::vector<long double> expected = {1.1L, 2.2L};
+    const std::vector<long double> parsed = json.getLongDoubleArray("key");
     ASSERT_EQ(parsed.size(), expected.size());
     for (size_t i = 0; i < expected.size(); ++i) {
-        EXPECT_NEAR(parsed[i], expected[i], 0.0001);
+        EXPECT_NEAR(static_cast<double>(parsed[i]), static_cast<double>(expected[i]), 0.0001);
     }
 }
 
@@ -337,7 +333,7 @@ TEST(JSONParserTest, SetValues) {
     EXPECT_EQ(json.getLongLong("key5"), 42);
     EXPECT_FLOAT_EQ(json.getFloat("key6"), 42.42f);
     EXPECT_NEAR(json.getDouble("key7"), 42.42, 0.0001);
-    EXPECT_NEAR(json.getLongDouble("key8"), 42.42L, 0.0001);
+    EXPECT_NEAR(static_cast<double>(json.getLongDouble("key8")), 42.42, 0.0001);
     EXPECT_TRUE(json.getBool("key9"));
     EXPECT_EQ(json.getStringArray("key10"), stringArray);
     EXPECT_EQ(json.getShortArray("key11"), shortArray);
@@ -355,7 +351,8 @@ TEST(JSONParserTest, SetValues) {
     std::vector<long double> parsedLongDoubleArray = json.getLongDoubleArray("key17");
     ASSERT_EQ(parsedLongDoubleArray.size(), longDoubleArray.size());
     for (size_t i = 0; i < longDoubleArray.size(); ++i) {
-        EXPECT_NEAR(parsedLongDoubleArray[i], longDoubleArray[i], 0.0001);
+        EXPECT_NEAR(static_cast<double>(parsedLongDoubleArray[i]),
+                    static_cast<double>(longDoubleArray[i]), 0.0001);
     }
     
     EXPECT_EQ(json.getBoolArray("key18"), boolArray);

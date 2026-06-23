@@ -89,22 +89,67 @@ foreach(_geruest_flag CURL LIBPQ SQLITE)
     endif()
 endforeach()
 unset(_geruest_flag)
-set(GERUEST_HAS_WEBP_NUM 0)
+
+find_package(WebP QUIET)
+if(WebP_FOUND)
+    set(GERUEST_HAS_WEBP TRUE)
+    set(WEBP_LINK_TARGET WebP::webp)
+else()
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(LIBWEBP QUIET libwebp)
+        if(LIBWEBP_FOUND)
+            set(GERUEST_HAS_WEBP TRUE)
+        endif()
+    endif()
+    if(NOT GERUEST_HAS_WEBP)
+        set(GERUEST_HAS_WEBP FALSE)
+    endif()
+endif()
+if(GERUEST_HAS_WEBP)
+    set(GERUEST_HAS_WEBP_NUM 1)
+else()
+    set(GERUEST_HAS_WEBP_NUM 0)
+endif()
+
+set(GERUEST_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+set(GERUEST_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}")
+option(GERUEST_ENABLE_WEBSOCKET "Build WebSocket module in tests" ON)
+option(GERUEST_ENABLE_ASSETS "Build Assets module in tests" ON)
+option(GERUEST_ENABLE_OBFUSCATION "Build Obfuscation module in tests" ON)
+option(GERUEST_ENABLE_EMAIL "Build Email module in tests" ON)
+if(NOT GERUEST_HAS_CURL)
+    set(GERUEST_ENABLE_EMAIL OFF)
+endif()
+
+foreach(_mod WEBSOCKET ASSETS OBFUSCATION EMAIL)
+    if(GERUEST_ENABLE_${_mod})
+        set(GERUEST_ENABLE_${_mod}_NUM 1)
+    else()
+        set(GERUEST_ENABLE_${_mod}_NUM 0)
+    endif()
+endforeach()
+unset(_mod)
 
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/../geruest/BuildConfig.hpp.in"
     "${CMAKE_CURRENT_BINARY_DIR}/include/geruest/BuildConfig.hpp"
 )
 
+find_package(Threads REQUIRED)
+
+if(NOT TARGET GeruestCore)
+    include(${GERUEST_ROOT}/cmake/GeruestModules.cmake)
+endif()
+
 # Linux/Unix settings
-set(PLATFORM_LIBS pthread Boost::system)
+set(PLATFORM_LIBS Threads::Threads Boost::system)
 
 set(SERVERDATA_SOURCES
     ../data/DevAssetCache.cpp
     ../data/TextResponseCache.cpp
     ../data/GateRegistry.cpp
     ../data/LanguageConfig.cpp
-    ../data/ObfuscationSettings.cpp
     ../data/RouteRegistry.cpp
     ../data/ServerData.cpp
     ../data/ServerMetrics.cpp
@@ -219,29 +264,14 @@ add_executable(CorsConfig_Tests
 target_link_libraries(CorsConfig_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
 add_executable(ContentBuilder_Tests
-    ContentBuilder/ContentBuilder_tests.cpp 
-    ../auth/BasicAuth.cpp
-    ${SERVERDATA_SOURCES}
-    ${ASSET_MERGER_SOURCES}
-    ../builders/ContentBuilder.cpp
-    ../builders/HTMLBuilder.cpp
-    ../builders/CSSBuilder.cpp
-    ../builders/JSBuilder.cpp
-    ../builders/JSObfuscator.cpp
-    ../builders/JSObfuscatorScope.cpp
-    ../builders/WebPConverter.cpp
-    ../parser/JSONParser.cpp
-    ../security/Security.cpp
-    ../FileManagement/FileManagement.cpp
+    ContentBuilder/ContentBuilder_tests.cpp
 )
-target_link_libraries(ContentBuilder_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+target_link_libraries(ContentBuilder_Tests Geruest::Geruest GTest::gtest_main)
 
 add_executable(JSObfuscator_Tests 
-    JSObfuscator/JSObfuscator_tests.cpp 
-    ../builders/JSObfuscator.cpp
-    ../builders/JSObfuscatorScope.cpp
+    JSObfuscator/JSObfuscator_tests.cpp
 )
-target_link_libraries(JSObfuscator_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+target_link_libraries(JSObfuscator_Tests Geruest::Obfuscation GTest::gtest_main)
 # Optional syntax check: npm i acorn && js < tools/acorn_validate_stdin.js (repo root)
 
 add_executable(BasicAuth_Tests 
@@ -257,12 +287,9 @@ add_executable(ConfigLoader_Tests
 target_link_libraries(ConfigLoader_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
 add_executable(AssetMerger_Tests 
-    AssetMerger/AssetMerger_tests.cpp 
-    ${ASSET_MERGER_SOURCES}
-    ../builders/WebPConverter.cpp
-    ../FileManagement/FileManagement.cpp
+    AssetMerger/AssetMerger_tests.cpp
 )
-target_link_libraries(AssetMerger_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+target_link_libraries(AssetMerger_Tests PRIVATE Geruest::Core Geruest::Assets GTest::gtest_main)
 
 add_executable(AssetHtmlDiscovery_Tests
     AssetHtmlDiscovery/AssetHtmlDiscovery_tests.cpp
@@ -278,107 +305,48 @@ target_link_libraries(Security_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
 add_executable(WebSocketCodec_Tests
     WebSocket/WebSocketCodec_tests.cpp
-    ../server/WebSocket.cpp
-    ../data/HTTPRequest.cpp
-    ../parser/JSONParser.cpp
-    ../auth/BasicAuth.cpp
-    ../security/Security.cpp
 )
-target_link_libraries(WebSocketCodec_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+target_link_libraries(WebSocketCodec_Tests Geruest::WebSocket GTest::gtest_main)
 
 add_executable(WebSocketHandshake_Tests
     WebSocket/WebSocketHandshake_tests.cpp
-    ../server/WebSocket.cpp
-    ../data/HTTPRequest.cpp
-    ../data/HTTPResponse.cpp
-    ../data/MethodNotAllowed.cpp
-    ../parser/JSONParser.cpp
-    ../auth/BasicAuth.cpp
-    ../security/Security.cpp
 )
-target_link_libraries(WebSocketHandshake_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+target_link_libraries(WebSocketHandshake_Tests Geruest::WebSocket GTest::gtest_main)
 
 add_executable(WebSocketServerData_Tests
     WebSocket/WebSocketServerData_tests.cpp
-    ${SERVERDATA_SOURCES}
-    ../data/HTTPRequest.cpp
-    ../server/WebSocket.cpp
-    ../parser/JSONParser.cpp
-    ../auth/BasicAuth.cpp
-    ../security/Security.cpp
-    ${ASSET_MERGER_SOURCES}
 )
-target_link_libraries(WebSocketServerData_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+target_link_libraries(WebSocketServerData_Tests Geruest::Geruest GTest::gtest_main)
 
 add_executable(WebSocketIntegration_Tests
     WebSocket/WebSocketIntegration_tests.cpp
-    ${GERUEST_SOURCES}
 )
-target_link_libraries(WebSocketIntegration_Tests ${PLATFORM_LIBS} GTest::gtest_main)
-if(GERUEST_HAS_CURL)
-    target_link_libraries(WebSocketIntegration_Tests CURL::libcurl)
-endif()
-if(GERUEST_HAS_SQLITE)
-    target_link_libraries(WebSocketIntegration_Tests SQLite::SQLite3)
-endif()
-if(GERUEST_HAS_LIBPQ)
-    target_link_libraries(WebSocketIntegration_Tests PostgreSQL::PostgreSQL)
-endif()
+target_link_libraries(WebSocketIntegration_Tests Geruest::Geruest GTest::gtest_main)
 
 add_executable(ServerDataMetricsPersistence_Tests
     ServerData/ServerDataMetricsPersistence_tests.cpp
-    ${SERVERDATA_SOURCES}
-    ../parser/JSONParser.cpp
-    ../auth/BasicAuth.cpp
-    ../security/Security.cpp
-    ${ASSET_MERGER_SOURCES}
 )
-target_link_libraries(ServerDataMetricsPersistence_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+target_link_libraries(ServerDataMetricsPersistence_Tests Geruest::Core GTest::gtest_main)
 
 add_executable(ServerDataRedirectLanguage_Tests
     ServerData/ServerDataRedirectLanguage_tests.cpp
-    ${SERVERDATA_SOURCES}
-    ../parser/JSONParser.cpp
-    ../auth/BasicAuth.cpp
-    ../security/Security.cpp
-    ${ASSET_MERGER_SOURCES}
 )
-target_link_libraries(ServerDataRedirectLanguage_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+target_link_libraries(ServerDataRedirectLanguage_Tests Geruest::Core GTest::gtest_main)
 
 add_executable(StaticFileResolver_Tests
     Handler/StaticFileResolver_tests.cpp
-    ../handler/StaticFileResolver.cpp
-    ${SERVERDATA_SOURCES}
-    ../data/HTTPRequest.cpp
-    ../parser/JSONParser.cpp
-    ../auth/BasicAuth.cpp
-    ../security/Security.cpp
-    ${ASSET_MERGER_SOURCES}
 )
-target_link_libraries(StaticFileResolver_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+target_link_libraries(StaticFileResolver_Tests Geruest::Geruest GTest::gtest_main)
 
 add_executable(ServerDataPageGate_Tests
     ServerData/ServerDataPageGate_tests.cpp
-    ${SERVERDATA_SOURCES}
-    ../data/HTTPRequest.cpp
-    ../parser/JSONParser.cpp
-    ../auth/BasicAuth.cpp
-    ../security/Security.cpp
-    ${ASSET_MERGER_SOURCES}
 )
-target_link_libraries(ServerDataPageGate_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+target_link_libraries(ServerDataPageGate_Tests Geruest::Core GTest::gtest_main)
 
 add_executable(ServerDataRouteGate_Tests
     ServerData/ServerDataRouteGate_tests.cpp
-    ${SERVERDATA_SOURCES}
-    ../data/HTTPRequest.cpp
-    ../data/HTTPResponse.cpp
-    ../parser/JSONParser.cpp
-    ../auth/BasicAuth.cpp
-    ../security/Security.cpp
-    ${ASSET_MERGER_SOURCES}
 )
-target_link_libraries(ServerDataRouteGate_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+target_link_libraries(ServerDataRouteGate_Tests Geruest::Core GTest::gtest_main)
 
 add_executable(GateEvaluation_Tests
     GateEvaluation/GateEvaluation_tests.cpp
@@ -392,41 +360,23 @@ target_link_libraries(GateEvaluation_Tests ${PLATFORM_LIBS} GTest::gtest_main)
 
 add_executable(RouteRegistry_Tests
     RouteRegistry/RouteRegistry_tests.cpp
-    ${SERVERDATA_SOURCES}
-    ../data/HTTPRequest.cpp
-    ../data/HTTPResponse.cpp
-    ../parser/JSONParser.cpp
-    ../auth/BasicAuth.cpp
-    ../security/Security.cpp
-    ${ASSET_MERGER_SOURCES}
 )
-target_link_libraries(RouteRegistry_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+target_link_libraries(RouteRegistry_Tests Geruest::Core GTest::gtest_main)
 
 add_executable(ServerDataMergedAsset_Tests
     ServerData/ServerDataMergedAsset_tests.cpp
-    ${SERVERDATA_SOURCES}
-    ../data/HTTPRequest.cpp
-    ../parser/JSONParser.cpp
-    ../auth/BasicAuth.cpp
-    ../security/Security.cpp
-    ${ASSET_MERGER_SOURCES}
 )
-target_link_libraries(ServerDataMergedAsset_Tests ${PLATFORM_LIBS} GTest::gtest_main)
+target_link_libraries(ServerDataMergedAsset_Tests Geruest::Geruest GTest::gtest_main)
 
 add_executable(GeruestLifecycle_Tests
     Geruest/GeruestLifecycle_tests.cpp
-    ${GERUEST_SOURCES}
 )
-target_link_libraries(GeruestLifecycle_Tests ${PLATFORM_LIBS} GTest::gtest_main)
-if(GERUEST_HAS_CURL)
-    target_link_libraries(GeruestLifecycle_Tests CURL::libcurl)
-endif()
-if(GERUEST_HAS_SQLITE)
-    target_link_libraries(GeruestLifecycle_Tests SQLite::SQLite3)
-endif()
-if(GERUEST_HAS_LIBPQ)
-    target_link_libraries(GeruestLifecycle_Tests PostgreSQL::PostgreSQL)
-endif()
+target_link_libraries(GeruestLifecycle_Tests Geruest::Geruest GTest::gtest_main)
+
+add_executable(CoreOnly_Tests
+    Geruest/CoreOnly_tests.cpp
+)
+target_link_libraries(CoreOnly_Tests Geruest::Core GTest::gtest_main)
 
 if(GERUEST_HAS_SQLITE)
     add_executable(DatabaseSqlite_Tests
@@ -493,6 +443,7 @@ gtest_discover_tests(GateEvaluation_Tests)
 gtest_discover_tests(RouteRegistry_Tests)
 gtest_discover_tests(ServerDataMergedAsset_Tests)
 gtest_discover_tests(GeruestLifecycle_Tests)
+gtest_discover_tests(CoreOnly_Tests)
 if(GERUEST_HAS_SQLITE)
     gtest_discover_tests(DatabaseSqlite_Tests)
 endif()
@@ -521,13 +472,13 @@ exit $rc
 ]=])
     add_custom_target(run_tests
         COMMAND bash "${CMAKE_CURRENT_BINARY_DIR}/run_tests_pg.sh" "${CMAKE_CTEST_COMMAND}"
-        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests StaticFileResolver_Tests ServerDataPageGate_Tests ServerDataRouteGate_Tests GateEvaluation_Tests RouteRegistry_Tests GeruestLifecycle_Tests DatabasePostgres_Tests
+        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests StaticFileResolver_Tests ServerDataPageGate_Tests ServerDataRouteGate_Tests GateEvaluation_Tests RouteRegistry_Tests GeruestLifecycle_Tests CoreOnly_Tests DatabasePostgres_Tests
         COMMENT "Running all unit tests via CTest (with PostgreSQL container)"
     )
 else()
     add_custom_target(run_tests
         COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests StaticFileResolver_Tests ServerDataPageGate_Tests ServerDataRouteGate_Tests GateEvaluation_Tests RouteRegistry_Tests GeruestLifecycle_Tests
+        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests StaticFileResolver_Tests ServerDataPageGate_Tests ServerDataRouteGate_Tests GateEvaluation_Tests RouteRegistry_Tests GeruestLifecycle_Tests CoreOnly_Tests
         COMMENT "Running all unit tests via CTest"
     )
 endif()

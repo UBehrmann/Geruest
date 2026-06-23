@@ -13,7 +13,6 @@
  */
 
 #include "Geruest.hpp"
-#include "builders/WebPConverter.hpp"
 
 #include <fstream>
 #include <filesystem>
@@ -21,6 +20,16 @@
 #include <sstream>
 
 #include "geruest/Version.hpp"
+#include "modules/ModuleHooks.hpp"
+#if GERUEST_ENABLE_ASSETS
+#include "assets/AssetsModule.hpp"
+#endif
+#if GERUEST_ENABLE_WEBSOCKET
+#include "websocket/WebSocketUpgrade.hpp"
+#endif
+#if GERUEST_HAS_CURL && GERUEST_ENABLE_EMAIL
+#include "email/EmailConfig.hpp"
+#endif
 
 namespace geruest {
 
@@ -32,8 +41,18 @@ Geruest::Geruest() {
     std::cout.setf(std::ios::unitbuf);
     std::cerr.setf(std::ios::unitbuf);
 
-    // Share the single log-level source with WebPConverter.
-    WebPConverter::setServerData(&serverData);
+    modules::bindServerData(&serverData);
+#if GERUEST_ENABLE_ASSETS
+    (void)assets::assetsModuleLinkAnchor();
+    assets::ensureAssetsModuleRegistered();
+#endif
+#if GERUEST_ENABLE_WEBSOCKET
+    websocket::ensureWebSocketModuleRegistered();
+#endif
+#if GERUEST_HAS_CURL && GERUEST_ENABLE_EMAIL
+    (void)email::emailModuleLinkAnchor();
+    modules::registerEmailConfigApplier(email::applyFromConfigLoader);
+#endif
 
     std::cout << "Geruest Framework v" << getVersion() << std::endl;
 
@@ -127,81 +146,6 @@ void Geruest::addRoute(const std::string& path, AsyncRouteHandler handler, Async
     serverData.addRoute(path, std::move(handler));
     serverData.addAsyncRouteGate(path, std::move(gate));
     sendToLogger("Added async route with async gate: " + path);
-}
-
-void Geruest::addRouteWebSocket(const std::string& path, WebSocketHandler handler) {
-    serverData.addWebSocketRoute(path, std::move(handler));
-    sendToLogger("Added WebSocket route: " + path);
-}
-
-void Geruest::addRouteWebSocket(const std::string& path, WebSocketRoute route) {
-    serverData.addWebSocketRoute(path, adaptWebSocketRoute(std::move(route)));
-    sendToLogger("Added WebSocket callback route: " + path);
-}
-
-void Geruest::addRouteWebSocket(const std::string& path, WebSocketHandler handler, RouteGateHandler gate) {
-    if (path.empty() || !handler || !gate) {
-        sendToLoggerError("Failed to add WebSocket route with gate (path/handler/gate invalid): " + path);
-        return;
-    }
-    serverData.addWebSocketRoute(path, std::move(handler));
-    serverData.addRouteGate(path, std::move(gate));
-    sendToLogger("Added WebSocket route with gate: " + path);
-}
-
-void Geruest::addRouteWebSocket(const std::string& path, WebSocketHandler handler, AsyncRouteGateHandler gate) {
-    if (path.empty() || !handler || !gate) {
-        sendToLoggerError("Failed to add WebSocket route with async gate (path/handler/gate invalid): " + path);
-        return;
-    }
-    serverData.addWebSocketRoute(path, std::move(handler));
-    serverData.addAsyncRouteGate(path, std::move(gate));
-    sendToLogger("Added WebSocket route with async gate: " + path);
-}
-
-void Geruest::addRouteWebSocket(const std::string& path, WebSocketRoute route, RouteGateHandler gate) {
-    if (path.empty() || !gate) {
-        sendToLoggerError("Failed to add WebSocket callback route with gate (path/gate invalid): " + path);
-        return;
-    }
-    serverData.addWebSocketRoute(path, adaptWebSocketRoute(std::move(route)));
-    serverData.addRouteGate(path, std::move(gate));
-    sendToLogger("Added WebSocket callback route with gate: " + path);
-}
-
-void Geruest::addRouteWebSocket(const std::string& path, WebSocketRoute route, AsyncRouteGateHandler gate) {
-    if (path.empty() || !gate) {
-        sendToLoggerError("Failed to add WebSocket callback route with async gate (path/gate invalid): " + path);
-        return;
-    }
-    serverData.addWebSocketRoute(path, adaptWebSocketRoute(std::move(route)));
-    serverData.addAsyncRouteGate(path, std::move(gate));
-    sendToLogger("Added WebSocket callback route with async gate: " + path);
-}
-
-void Geruest::setWebSocketMaxMessageBytes(size_t bytes) {
-    serverData.setWebSocketMaxMessageBytes(bytes);
-    sendToLogger("WebSocket max message bytes set to: " + std::to_string(bytes));
-}
-
-void Geruest::setWebSocketMaxFrameBytes(size_t bytes) {
-    serverData.setWebSocketMaxFrameBytes(bytes);
-    sendToLogger("WebSocket max frame bytes set to: " + std::to_string(bytes));
-}
-
-void Geruest::setWebSocketIdleTimeout(int seconds) {
-    serverData.setWebSocketIdleTimeout(std::chrono::seconds(seconds));
-    sendToLogger("WebSocket idle timeout set to: " + std::to_string(seconds) + "s");
-}
-
-void Geruest::setWebSocketPingInterval(int seconds) {
-    serverData.setWebSocketPingInterval(std::chrono::seconds(seconds));
-    sendToLogger("WebSocket ping interval set to: " + std::to_string(seconds) + "s");
-}
-
-void Geruest::addWebSocketSubprotocol(const std::string& name) {
-    serverData.addWebSocketSubprotocol(name);
-    sendToLogger("Added WebSocket subprotocol: " + name);
 }
 
 void Geruest::setDatabaseBackend(DatabaseBackend backend) {
@@ -321,7 +265,7 @@ void Geruest::setWebPQuality(float quality) {
 
 void Geruest::setWebPMaxDimension(int maxDimension) {
 #if GERUEST_HAS_WEBP
-    WebPConverter::setMaxConversionDimension(maxDimension);
+    modules::setWebpMaxDimension(maxDimension);
     if (maxDimension > 0) {
         sendToLogger("WebP max dimension set to " + std::to_string(maxDimension) + "px");
     } else {
@@ -548,66 +492,5 @@ void Geruest::enableCors(const CorsOptions& options) {
         sendToLogger("CORS enabled for " + std::to_string(options.paths.size()) + " path pattern(s)");
     }
 }
-
-// ========== Email Configuration ==========
-
-#if GERUEST_HAS_CURL
-
-void Geruest::initEmail(const std::string& smtpServer, int smtpPort,
-                        const std::string& username, const std::string& password,
-                        const std::string& fromAddress, bool useTLS) {
-    EmailSender::Config config;
-    config.smtpServer  = smtpServer;
-    config.port        = smtpPort;
-    config.username    = username;
-    config.password    = password;
-    config.fromAddress = fromAddress;
-    config.useTLS      = useTLS;
-    EmailSender::init(config);
-    _configFlags.emailInitialized = true;
-    sendToLogger("Email sender initialized: " + smtpServer + ":" + std::to_string(smtpPort));
-}
-
-void Geruest::setEmailMinInterval(int seconds) {
-    try { 
-        EmailSender::getInstance().setMinEmailInterval(seconds); 
-        _configFlags.emailMinIntervalSet = true; 
-        sendToLogger("Email min interval set to: " + std::to_string(seconds) + "s"); 
-    } catch (const std::runtime_error&) { 
-        sendToLoggerError("Cannot set email interval - email sender not initialized"); 
-    }
-}
-
-void Geruest::setEmailMaxPerIP(size_t count) {
-    try { 
-        EmailSender::getInstance().setMaxEmailsPerIP(count); 
-        _configFlags.emailMaxPerIPSet = true; 
-        sendToLogger("Email max per IP set to: " + std::to_string(count)); 
-    } catch (const std::runtime_error&) { 
-        sendToLoggerError("Cannot set max emails per IP - email sender not initialized"); 
-    }
-}
-
-void Geruest::setEmailTrackingDuration(int seconds) {
-    try { 
-        EmailSender::getInstance().setIPTrackingDuration(seconds); 
-        _configFlags.emailTrackingDurationSet = true; 
-        sendToLogger("Email tracking duration set to: " + std::to_string(seconds) + "s"); 
-    } catch (const std::runtime_error&) { 
-        sendToLoggerError("Cannot set tracking duration - email sender not initialized"); 
-    }
-}
-
-void Geruest::setEmailMaxQueueSize(size_t size) {
-    try { 
-        EmailSender::getInstance().setMaxQueueSize(size); 
-        _configFlags.emailMaxQueueSizeSet = true; 
-        sendToLogger("Email max queue size set to: " + std::to_string(size)); 
-    } catch (const std::runtime_error&) { 
-        sendToLoggerError("Cannot set email queue size - email sender not initialized"); 
-    }
-}
-
-#endif  // GERUEST_HAS_CURL
 
 }  // namespace geruest

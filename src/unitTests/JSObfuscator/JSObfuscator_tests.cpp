@@ -183,7 +183,7 @@ function longFunctionName() {
     EXPECT_FALSE(contains(obfuscated, "longFunctionName"));
     EXPECT_FALSE(contains(obfuscated, "veryLongVariableName"));
     EXPECT_FALSE(contains(obfuscated, "anotherLongName"));
-    EXPECT_LT(obfuscated.length(), original.length() * 0.7);
+    EXPECT_LT(obfuscated.length(), original.length() * 70 / 100);
 }
 
 TEST(JSObfuscatorTest, PreservesBuiltinObjects) {

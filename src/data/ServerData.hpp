@@ -27,11 +27,16 @@
 #include "TextResponseCache.hpp"
 #include "GateRegistry.hpp"
 #include "LanguageConfig.hpp"
-#include "ObfuscationSettings.hpp"
+#include "obfuscation/ObfuscationSettings.hpp"
 #include "RouteRegistry.hpp"
 #include "ServerMetrics.hpp"
 #include "ServerTypes.hpp"
-#include "database/DatabaseClient.hpp"
+
+namespace geruest {
+namespace db {
+class DatabaseClient;
+}
+}
 
 namespace geruest {
 

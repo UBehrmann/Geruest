@@ -1,4 +1,4 @@
-#include "ObfuscationSettings.hpp"
+#include "obfuscation/ObfuscationSettings.hpp"
 
 #include <cctype>
 

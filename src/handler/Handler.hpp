@@ -32,9 +32,18 @@ namespace geruest {
 
 enum class PageAccessDenyStyle { Redirect, Forbidden };
 
+class Handler;
+class HTTPRequest;
+
+namespace websocket {
+boost::asio::awaitable<bool> handleUpgrade(Handler& host, HTTPRequest* request);
+void ensureWebSocketModuleRegistered();
+}
+
 class Handler {
     friend class RouteDispatcher;
     friend class ResponseWriter;
+    friend boost::asio::awaitable<bool> websocket::handleUpgrade(Handler&, HTTPRequest*);
 
    private:
     static unsigned clientCount;
@@ -90,6 +99,8 @@ class Handler {
     boost::asio::awaitable<void> handleRequestAsync(HTTPRequest* request);
 
     boost::asio::awaitable<bool> tryHandleWebSocketAsync(HTTPRequest* request);
+
+    void markUpgraded() { _upgraded = true; }
 
     boost::asio::awaitable<void> sendFileAsync(const std::string& contentType, const std::string& contentPath,
                                                HTTPRequest* httpRequest);

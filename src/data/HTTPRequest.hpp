@@ -20,9 +20,10 @@
 #include <utility>
 #include <vector>
 
-#include "database/DatabaseClient.hpp"
-
 namespace geruest {
+namespace db {
+class DatabaseClient;
+}
 
 constexpr size_t kMaxHttpHeaderBytes = 65536;
 constexpr size_t kMaxHttpBodyBytes = 16 * 1024 * 1024;

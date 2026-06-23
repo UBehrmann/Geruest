@@ -139,9 +139,7 @@ TEST_F(FileManagementTest, CreateFileInvalidPath) {
     // This should handle the error gracefully
     // Note: Actual behavior depends on implementation
     try {
-        bool result = FileManagement::createFile(invalidPath);
-        // If it returns false, that's expected
-        // If it throws, that should be caught
+        (void)FileManagement::createFile(invalidPath);
     } catch (...) {
         // Exception handling is acceptable for invalid paths
     }

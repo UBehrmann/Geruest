@@ -7,6 +7,7 @@ Welcome to the Geruest documentation! This guide will help you get started with 
 ### Getting Started
 
 - [**Getting Started**](GETTING_STARTED.md) - Prerequisites, installation, and your first server
+- [**Modules**](MODULES.md) - CMake targets (`Geruest::Core`, optional modules, umbrella `Geruest::Geruest`)
 - [**Usage Guide**](USAGE_GUIDE.md) - Local development, Docker deployment, Linux/Unix setup
 - [**Configuration**](CONFIGURATION.md) - .env files, environment variables, code setters, configuration hierarchy
 

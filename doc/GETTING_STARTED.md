@@ -15,7 +15,14 @@ Quick installation and first server setup for Geruest C++ web framework.
 
 ## Headers and dependencies
 
-`#include <Geruest.hpp>` is the usual entry point for server setup, routing, and core HTTP types. It is **not** a minimal single header: it transitively includes Boost.Asio, `JSONParser`, optional database and WebSocket headers, and (when built with curl) `EmailSender`. Include helper headers explicitly when needed — e.g. `<security/Security.hpp>`, `<FileManagement/FileManagement.hpp>`, `<auth/BasicAuth.hpp>`.
+`#include <Geruest.hpp>` (or `#include <geruest/Geruest.hpp>`) is the **umbrella** entry point: it pulls in every module header that was enabled when Geruest was built. For a smaller dependency surface, use module headers and link targets — see [MODULES.md](MODULES.md).
+
+- **Core only:** `#include <geruest/Core.hpp>` and `target_link_libraries(... Geruest::Core ...)`
+- **Full stack:** `#include <Geruest.hpp>` and `target_link_libraries(... Geruest::Geruest ...)`
+
+Core always provides HTTP routing, gates, static file passthrough (raw files when Assets is not linked), metrics, `JSONParser`, and `Security`. Optional modules add WebSocket upgrades, database clients, email, asset merge/HTML pipeline, and JS obfuscation.
+
+Include helper headers explicitly when needed — e.g. `<security/Security.hpp>`, `<FileManagement/FileManagement.hpp>`, `<auth/BasicAuth.hpp>`.
 
 ### Linux
 ```bash
@@ -51,7 +58,7 @@ Route choice:
 
 **Minimal Server (main.cpp):**
 ```cpp
-#include <Geruest.hpp>
+#include <geruest/Core.hpp>
 
 int main() {
     using namespace geruest;
@@ -72,7 +79,22 @@ int main() {
 }
 ```
 
-**CMakeLists.txt:**
+For WebSocket, asset merge, email, or database helpers, link `Geruest::Geruest` (or the specific module targets) and include `<Geruest.hpp>` — see [MODULES.md](MODULES.md).
+
+**CMakeLists.txt (Core-only API server):**
+```cmake
+cmake_minimum_required(VERSION 3.17)
+project(MyServer)
+set(CMAKE_CXX_STANDARD 20)
+
+find_package(Boost 1.75 REQUIRED COMPONENTS system)
+find_package(Threads REQUIRED)
+find_package(Geruest REQUIRED)
+add_executable(myserver main.cpp)
+target_link_libraries(myserver PRIVATE Geruest::Core Boost::system Threads::Threads)
+```
+
+**CMakeLists.txt (full stack — same as before v0.13):**
 ```cmake
 cmake_minimum_required(VERSION 3.17)
 project(MyServer)

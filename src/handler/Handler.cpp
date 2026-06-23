@@ -17,8 +17,8 @@
 #include "GateEvaluation.hpp"
 #include "data/CorsConfig.hpp"
 #include "data/HTTPResponse.hpp"
+#include "modules/ModuleHooks.hpp"
 #include "security/Security.hpp"
-#include "server/WebSocket.hpp"
 
 namespace geruest {
 
@@ -197,85 +197,10 @@ boost::asio::awaitable<void> Handler::runAsync() {
 }
 
 boost::asio::awaitable<bool> Handler::tryHandleWebSocketAsync(HTTPRequest* request) {
-    if (request == nullptr) {
-        co_return false;
+    if (const auto& fn = modules::webSocketUpgradeFn()) {
+        co_return co_await fn(*this, request);
     }
-
-    if (request->getMethod() != "GET") {
-        co_return false;
-    }
-
-    if (!isWebSocketUpgrade(*request)) {
-        if (isWebSocketUpgradeIntent(*request) && serverData.findMatchingWebSocketRoute(request->getPathString())) {
-            HTTPResponse br = responseBadRequest(request);
-            br.serializeTo(responseScratch_);
-            co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size());
-            _upgraded = true;
-            co_return true;
-        }
-        co_return false;
-    }
-
-    if (!request->getBody().empty()) {
-        HTTPResponse br = responseBadRequest(request);
-        br.serializeTo(responseScratch_);
-        co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size());
-        _upgraded = true;
-        co_return true;
-    }
-
-    auto wsHandler = serverData.findMatchingWebSocketRoute(request->getPathString());
-    if (!wsHandler) {
-        co_await writer_.sendNotFoundResponseAsync(request, *this);
-        _upgraded = true;
-        co_return true;
-    }
-
-    if (auto denial = co_await checkRouteGateDenialAsync(*request)) {
-        record4xxMetric();
-        applyCorsHeaders(*denial, serverData.getCorsConfig(), request);
-        denial->serializeTo(responseScratch_);
-        if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
-            sendToLoggerError("Failed to send WebSocket gate denial for: " + request->getPathString());
-        }
-        _upgraded = true;
-        co_return true;
-    }
-
-    const std::string secKey = request->getHeader("sec-websocket-key");
-    const std::string acceptKey = computeAcceptKey(secKey);
-    const std::string subprotocol =
-        pickSubprotocol(request->getHeaderView("sec-websocket-protocol"), serverData.getWebSocketSubprotocols());
-    const std::string handshake = buildHandshakeResponse(acceptKey, subprotocol);
-    if (!co_await sendSocketAsync(handshake.c_str(), handshake.size())) {
-        _upgraded = true;
-        co_return true;
-    }
-
-    WebSocketConnection ws(clientSocket, IP, subprotocol, serverData.getWebSocketLimits());
-    bool handlerFailed = false;
-    try {
-        co_await (*wsHandler)(ws, *request);
-    } catch (const std::exception& e) {
-        handlerFailed = true;
-        record5xxMetric();
-        sendToLoggerError(std::string("Exception in WebSocket handler: ") + e.what());
-    } catch (...) {
-        handlerFailed = true;
-        record5xxMetric();
-        sendToLoggerError("Unknown exception in WebSocket handler");
-    }
-
-    if (ws.isOpen()) {
-        if (handlerFailed) {
-            co_await ws.close(1011, "internal error");
-        } else {
-            co_await ws.close(1000, "");
-        }
-    }
-
-    _upgraded = true;
-    co_return true;
+    co_return false;
 }
 
 boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {

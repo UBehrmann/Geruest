@@ -13,6 +13,8 @@
 #include <cctype>
 #include <stdexcept>
 
+#include "modules/ModuleHooks.hpp"
+
 namespace geruest {
 
 void Geruest::loadConfig(const std::string& envFilePath) {
@@ -173,56 +175,10 @@ void Geruest::loadConfig(const std::string& envFilePath) {
     }
     
 #if GERUEST_HAS_CURL
-    // ========== Email Configuration ==========
-    
-    if (!_configFlags.emailInitialized) {
-        std::string smtpServer      = ConfigLoader::get("SMTP_SERVER", "");
-        std::string smtpUsername    = ConfigLoader::get("SMTP_USERNAME", "");
-        std::string smtpPassword    = ConfigLoader::get("SMTP_PASSWORD", "");
-        std::string smtpFromAddress = ConfigLoader::get("SMTP_FROM_ADDRESS", "");
-        
-        if (!smtpServer.empty() && !smtpUsername.empty() && !smtpPassword.empty()) {
-            int  smtpPort   = ConfigLoader::getInt("SMTP_PORT", 587);
-            bool smtpUseTLS = ConfigLoader::getBool("SMTP_USE_TLS", true);
-            
-            if (smtpFromAddress.empty()) smtpFromAddress = smtpUsername;
-            
-            EmailSender::Config emailConfig;
-            emailConfig.smtpServer   = smtpServer;
-            emailConfig.port         = smtpPort;
-            emailConfig.username     = smtpUsername;
-            emailConfig.password     = smtpPassword;
-            emailConfig.fromAddress  = smtpFromAddress;
-            emailConfig.useTLS       = smtpUseTLS;
-            
-            EmailSender::init(emailConfig);
-            sendToLogger("Email sender initialized from config: " + smtpServer + ":" + std::to_string(smtpPort));
-        }
+    if (const auto& applier = modules::emailConfigApplier()) {
+        applier(*this);
     }
-    
-    try {
-        auto& emailSender = EmailSender::getInstance();
-        
-        if (!_configFlags.emailMinIntervalSet) {
-            int v = ConfigLoader::getInt("EMAIL_MIN_INTERVAL", 60);
-            if (v > 0) { emailSender.setMinEmailInterval(v); sendToLogger("EMAIL_MIN_INTERVAL: " + std::to_string(v) + "s"); }
-        }
-        if (!_configFlags.emailMaxPerIPSet) {
-            size_t v = ConfigLoader::getSizeT("EMAIL_MAX_PER_IP", 10);
-            if (v > 0) { emailSender.setMaxEmailsPerIP(v); sendToLogger("EMAIL_MAX_PER_IP: " + std::to_string(v)); }
-        }
-        if (!_configFlags.emailTrackingDurationSet) {
-            int v = ConfigLoader::getInt("EMAIL_TRACKING_DURATION", 3600);
-            if (v > 0) { emailSender.setIPTrackingDuration(v); sendToLogger("EMAIL_TRACKING_DURATION: " + std::to_string(v) + "s"); }
-        }
-        if (!_configFlags.emailMaxQueueSizeSet) {
-            size_t v = ConfigLoader::getSizeT("EMAIL_MAX_QUEUE_SIZE", 1000);
-            if (v > 0) { emailSender.setMaxQueueSize(v); sendToLogger("EMAIL_MAX_QUEUE_SIZE: " + std::to_string(v)); }
-        }
-    } catch (const std::runtime_error&) {
-        // Email sender not initialized — email functionality is optional
-    }
-#endif  // GERUEST_HAS_CURL
+#endif
 
     {
         auto trimToken = [](std::string w) -> std::string {

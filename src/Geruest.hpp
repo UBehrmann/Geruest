@@ -33,13 +33,16 @@
 
 #include "data/HTTPRequest.hpp"
 #include "data/HTTPResponse.hpp"
+#include "data/ServerTypes.hpp"
 #include "data/CorsConfig.hpp"
 #include "data/ServerData.hpp"
-#include "server/WebSocket.hpp"
-#include "database/DatabaseClient.hpp"
 #include "parser/JSONParser.hpp"
 #include "config/ConfigLoader.hpp"
-#if GERUEST_HAS_CURL
+#include "database/DatabaseClient.hpp"
+#if GERUEST_ENABLE_WEBSOCKET
+#include "server/WebSocket.hpp"
+#endif
+#if GERUEST_HAS_CURL && GERUEST_ENABLE_EMAIL
 #include "email/EmailSender.hpp"
 #endif
 
@@ -53,10 +56,17 @@
 namespace geruest {
 
 class HttpSession;
+class Geruest;
 enum class DatabaseBackend { None, Postgres, Sqlite };
+
+namespace email {
+void applyFromConfigLoader(Geruest& server);
+void ensureEmailModuleRegistered();
+}
 
 class Geruest {
     friend class HttpSession;
+    friend void email::applyFromConfigLoader(Geruest&);
 
    public:
     Geruest();
@@ -526,7 +536,8 @@ class Geruest {
     void enableCors(const CorsOptions& options);
 
     // ========== Email Configuration Methods ==========
-#if GERUEST_HAS_CURL    /**
+#if GERUEST_HAS_CURL && GERUEST_ENABLE_EMAIL
+    /**
      * @brief Initialize the email sender with SMTP configuration
      * @param smtpServer SMTP server hostname (e.g., "smtp.gmail.com")
      * @param smtpPort SMTP port (default: 587 for TLS)
@@ -563,7 +574,7 @@ class Geruest {
      * @param size Maximum pending emails (default: 1000)
      */
     void setEmailMaxQueueSize(size_t size);
-#endif  // GERUEST_HAS_CURL
+#endif  // GERUEST_HAS_CURL && GERUEST_ENABLE_EMAIL
 
     // ========== Logging Configuration Methods ==========
 
@@ -718,7 +729,7 @@ class Geruest {
         bool sqliteConfigSet = false;
 #endif
         
-#if GERUEST_HAS_CURL
+#if GERUEST_HAS_CURL && GERUEST_ENABLE_EMAIL
         // Email configuration flags
         bool emailInitialized = false;
         bool emailMinIntervalSet = false;

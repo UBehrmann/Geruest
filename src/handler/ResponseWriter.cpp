@@ -22,8 +22,8 @@
 #include <unistd.h>
 #endif
 
-#include "builders/ContentBuilder.hpp"
-#include "builders/WebPConverter.hpp"
+#include "geruest/BuildConfig.hpp"
+#include "modules/ModuleHooks.hpp"
 #include "data/TextResponseCache.hpp"
 
 namespace {
@@ -155,11 +155,11 @@ boost::asio::awaitable<void> ResponseWriter::sendNotFoundResponseAsync(HTTPReque
 
         if (!resolvedNotFoundPath.empty()) {
             if (contentType == "text/html" || contentType == "text/javascript" || contentType == "text/css") {
-                std::unique_ptr<ContentBuilder> contentBuilder =
-                    ContentBuilder::create(contentType, resolvedNotFoundPath, host.serverData);
+                const std::optional<std::string> body =
+                    modules::processTextContent(contentType, resolvedNotFoundPath, host.serverData);
 
-                if (contentBuilder && contentBuilder->size() > 0) {
-                    co_await sendResponseAsync("404 Not Found", contentType, contentBuilder->file(),
+                if (body.has_value() && !body->empty()) {
+                    co_await sendResponseAsync("404 Not Found", contentType, *body,
                                                [ &host ](const std::string& msg) { host.sendToLoggerError(msg); });
                     co_return;
                 }
@@ -203,7 +203,7 @@ boost::asio::awaitable<void> ResponseWriter::sendFileAsync(const std::string& co
         const std::string requestPath = httpRequest != nullptr ? httpRequest->getPathString() : std::string();
         std::optional<std::string> mergedAssetOwnerPage;
         if (httpRequest != nullptr && (contentType == "text/javascript" || contentType == "text/css")) {
-            mergedAssetOwnerPage = host.serverData.findMergedAssetOwnerPagePath(requestPath);
+            mergedAssetOwnerPage = modules::findMergedAssetOwnerPage(host.serverData, requestPath);
         }
 
         const std::optional<ResolvedPageGate> resolvedPageGate =
@@ -236,14 +236,15 @@ boost::asio::awaitable<void> ResponseWriter::sendFileAsync(const std::string& co
             }
         }
 
-        std::unique_ptr<ContentBuilder> contentBuilder = ContentBuilder::create(contentType, contentPath, host.serverData);
+        const std::optional<std::string> processed =
+            modules::processTextContent(contentType, contentPath, host.serverData);
 
-        if (!contentBuilder) {
+        if (!processed.has_value()) {
             co_await sendNotFoundResponseAsync(httpRequest, host);
             co_return;
         }
 
-        if (contentBuilder->size() == 0) {
+        if (processed->empty()) {
             if (!contentPath.empty() && std::filesystem::exists(contentPath)) {
                 co_await sendServiceUnavailableResponseAsync(contentPath, host);
             } else {
@@ -254,7 +255,7 @@ boost::asio::awaitable<void> ResponseWriter::sendFileAsync(const std::string& co
 
         HTTPResponse htmlResponse("200 OK");
         htmlResponse.setHeader("Content-Type", contentType);
-        htmlResponse.setBody(contentBuilder->file());
+        htmlResponse.setBody(*processed);
         htmlResponse.serializeTo(responseScratch_);
         if (!perRequestText) {
             host.serverData.textResponseCache().store(cacheKey, contentPath, responseScratch_, host.serverData.isDevMode(),
@@ -267,6 +268,7 @@ boost::asio::awaitable<void> ResponseWriter::sendFileAsync(const std::string& co
         }
 
     } else {
+#if GERUEST_ENABLE_ASSETS
         if (contentType == "image/webp" && host.serverData.isDevMode() && host.serverData.getWebPConversion()) {
             auto cachedWebP = host.serverData.devAssetCache().getWebP(contentPath);
             if (cachedWebP && !cachedWebP->empty()) {
@@ -286,6 +288,7 @@ boost::asio::awaitable<void> ResponseWriter::sendFileAsync(const std::string& co
                 co_return;
             }
         }
+#endif
 
         std::error_code fsErr;
         const uintmax_t fileSizeRaw = std::filesystem::file_size(contentPath, fsErr);
@@ -334,7 +337,8 @@ boost::asio::awaitable<void> ResponseWriter::sendFileAsync(const std::string& co
 
                 if (!sourcePath.empty()) {
                     bool cacheOnly = host.serverData.isDevMode();
-                    if (WebPConverter::convertImage(sourcePath, contentPath, cacheOnly, host.serverData.getWebPQuality())) {
+                    if (modules::convertWebpImage(sourcePath, contentPath, cacheOnly,
+                                                  host.serverData.getWebPQuality())) {
                         if (cacheOnly) {
                             auto webpData = host.serverData.devAssetCache().getWebP(contentPath);
                             if (webpData && !webpData->empty()) {
