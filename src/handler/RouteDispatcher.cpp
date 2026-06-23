@@ -12,6 +12,14 @@
 
 namespace geruest {
 
+namespace {
+
+boost::asio::awaitable<HTTPResponse> awaitReadyResponse(HTTPResponse response) {
+    co_return std::move(response);
+}
+
+}  // namespace
+
 RouteDispatcher::RouteDispatcher(const ServerData& serverData, StaticFileResolver& fileResolver)
     : serverData_(serverData), fileResolver_(fileResolver) {}
 
@@ -126,11 +134,11 @@ boost::asio::awaitable<void> RouteDispatcher::dispatchAsync(HTTPRequest* request
     }
 
     if (auto routeHandler = serverData_.findMatchingRoute(path)) {
+        // ponytail: run sync handlers on the dispatcher coroutine stack (not inside a nested
+        // coroutine frame). /status builds a large JSON tree; nesting caused stack overflow → 139.
         co_await tryDispatchRoute(
             request, path,
-            [routeHandler, request]() -> boost::asio::awaitable<HTTPResponse> {
-                co_return (*routeHandler)(*request);
-            }(),
+            awaitReadyResponse((*routeHandler)(*request)),
             "route", host);
         co_return;
     }

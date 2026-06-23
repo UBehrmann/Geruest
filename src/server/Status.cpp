@@ -12,6 +12,7 @@
 #include <chrono>
 #include <ctime>
 #include <fstream>
+#include <mutex>
 #include <sstream>
 #include <sys/statvfs.h>
 
@@ -19,9 +20,11 @@
 
 namespace geruest {
 
-// ---------------------------------------------------------------------------
-// System metrics helpers
-// ---------------------------------------------------------------------------
+namespace {
+
+std::mutex g_cgroupCpuSampleMu;
+uint64_t   g_cgroupCpuPrevUsec = 0;
+std::chrono::steady_clock::time_point g_cgroupCpuPrevTp = std::chrono::steady_clock::now();
 
 struct SysMemInfo {
     uint64_t total_mb     = 0;
@@ -177,23 +180,20 @@ static SysCgroupCpuInfo collectCgroupCpuInfo() {
     }
 
     if (gotUsage) {
-        // Delta between consecutive calls — no blocking sleep needed
-        static uint64_t                            prev_usec = 0;
-        static std::chrono::steady_clock::time_point prev_tp = std::chrono::steady_clock::now();
-
-        const auto   now        = std::chrono::steady_clock::now();
+        const auto now = std::chrono::steady_clock::now();
+        std::lock_guard<std::mutex> lock(g_cgroupCpuSampleMu);
         const double elapsed_us = static_cast<double>(
-            std::chrono::duration_cast<std::chrono::microseconds>(now - prev_tp).count());
+            std::chrono::duration_cast<std::chrono::microseconds>(now - g_cgroupCpuPrevTp).count());
 
-        if (elapsed_us > 0 && prev_usec > 0 && usage_usec >= prev_usec) {
-            const double cpu_delta = static_cast<double>(usage_usec - prev_usec);
+        if (elapsed_us > 0 && g_cgroupCpuPrevUsec > 0 && usage_usec >= g_cgroupCpuPrevUsec) {
+            const double cpu_delta = static_cast<double>(usage_usec - g_cgroupCpuPrevUsec);
             info.usage_percent = (cpu_delta / (elapsed_us * allocated)) * 100.0;
             if (info.usage_percent > 100.0) info.usage_percent = 100.0;
             if (info.usage_percent <   0.0) info.usage_percent =   0.0;
         }
 
-        prev_usec = usage_usec;
-        prev_tp   = now;
+        g_cgroupCpuPrevUsec = usage_usec;
+        g_cgroupCpuPrevTp   = now;
     }
     return info;
 }
@@ -222,161 +222,170 @@ static SysDiskInfo collectDiskInfo() {
     return info;
 }
 
+}  // namespace
+
 // ---------------------------------------------------------------------------
+
+HTTPResponse Geruest::handleStatusRequest(const HTTPRequest& req) const {
+    if (!_statusActive) {
+        HTTPResponse resp("503 Service Unavailable");
+        resp.setHeader("Content-Type", "application/json");
+        resp.setBody(R"({"error":"Status endpoint not active"})");
+        return resp;
+    }
+
+    if (!serverData.isDevMode()) {
+        const std::string authHeader = req.getHeader("authorization");
+        const std::string queryToken = req.getParam("token");
+        const std::string expected   = "Bearer " + _statusToken;
+        const bool validHeader = (authHeader == expected);
+        const bool validQuery  = (!queryToken.empty() && queryToken == _statusToken);
+        if (!validHeader && !validQuery) {
+            HTTPResponse resp("401 Unauthorized");
+            resp.setHeader("WWW-Authenticate", "Bearer realm=\"status\"");
+            resp.setHeader("Content-Type", "application/json");
+            resp.setBody(R"({"error":"Unauthorized"})");
+            return resp;
+        }
+    }
+
+    const SysMemInfo       sysMem       = collectMemoryInfo();
+    const SysCgroupMemInfo sysCgroupMem = collectCgroupMemInfo();
+    const SysCgroupCpuInfo sysCgroupCpu = collectCgroupCpuInfo();
+    const SysCpuInfo       sysCpu       = collectCpuInfo();
+    const SysDiskInfo      sysDisk      = collectDiskInfo();
+
+    const uint64_t uptime   = serverData.getUptimeSeconds();
+    const ServerData::WindowMetrics wmHour  = serverData.getWindowMetricsHour();
+    const ServerData::WindowMetrics avgHour = serverData.getRollingAveragePerHour();
+    const uint64_t totalR   = serverData.getTotalRequests();
+    const uint64_t totalE   = serverData.getTotalErrors();
+    const uint64_t total4xx = serverData.getTotal4xx();
+    const uint64_t total5xx = serverData.getTotal5xx();
+    const uint64_t totalInt = serverData.getTotalInternalErrors();
+    const uint64_t rejTotal = serverData.getQueueRejections();
+    const uint64_t acceptErrTotal = serverData.getAcceptErrorsTotal();
+    const uint64_t acceptEmfileTotal = serverData.getAcceptEmfileTotal();
+    const uint64_t fileOpenFailures = serverData.getFileOpenFailures();
+    const uint64_t overloadHttpResponses = serverData.getOverloadHttpResponses();
+    const int64_t  active   = serverData.getActiveHandlers();
+    const ServerData::LatencyStats lat = serverData.getLatencyStats(60);
+    const uint64_t curQueue = _activeSessions.load(std::memory_order_relaxed);
+
+    std::string health = "ok";
+    if (wmHour.avg_queue_fill >= 80.0 || wmHour.requests >= 1000) {
+        health = "overloaded";
+    } else if (wmHour.avg_queue_fill >= 50.0 || wmHour.requests >= 500) {
+        health = "degraded";
+    }
+
+    std::time_t now_t = std::time(nullptr);
+    char timeBuf[32]  = {};
+    struct tm utcTm{};
+    gmtime_r(&now_t, &utcTm);
+    std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%dT%H:%M:%SZ", &utcTm);
+
+    JSONParser requests;
+    requests.setLongLong("total",        static_cast<long long>(totalR));
+    requests.setLongLong("active",       static_cast<long long>(active));
+    requests.setLongLong("last_hour",    static_cast<long long>(wmHour.requests));
+    requests.setLongLong("avg_per_hour", static_cast<long long>(avgHour.requests));
+
+    JSONParser errors;
+    errors.setLongLong("total",            static_cast<long long>(totalE));
+    errors.setLongLong("client_4xx",       static_cast<long long>(total4xx));
+    errors.setLongLong("server_5xx",       static_cast<long long>(total5xx));
+    errors.setLongLong("internal",         static_cast<long long>(totalInt));
+    errors.setLongLong("last_hour_4xx",    static_cast<long long>(wmHour.errors_4xx));
+    errors.setLongLong("last_hour_5xx",    static_cast<long long>(wmHour.errors_5xx));
+    errors.setLongLong("last_hour_int",    static_cast<long long>(wmHour.errors_int));
+    errors.setLongLong("avg_per_hour_4xx", static_cast<long long>(avgHour.errors_4xx));
+    errors.setLongLong("avg_per_hour_5xx", static_cast<long long>(avgHour.errors_5xx));
+    errors.setLongLong("avg_per_hour_int", static_cast<long long>(avgHour.errors_int));
+
+    JSONParser queue;
+    queue.setLongLong("current_size",             static_cast<long long>(curQueue));
+    queue.setLongLong("max_size",                 static_cast<long long>(_maxQueueSize));
+    queue.setLongLong("rejections_total",         static_cast<long long>(rejTotal));
+    queue.setLongLong("overload_http_responses",  static_cast<long long>(overloadHttpResponses));
+    queue.setDouble("avg_fill_percent_hour",      wmHour.avg_queue_fill);
+    queue.setDouble("avg_fill_percent_per_hour",  avgHour.avg_queue_fill);
+
+    JSONParser io;
+    io.setLongLong("accept_errors_total", static_cast<long long>(acceptErrTotal));
+    io.setLongLong("accept_emfile_total", static_cast<long long>(acceptEmfileTotal));
+    io.setLongLong("file_open_failures_total", static_cast<long long>(fileOpenFailures));
+
+    JSONParser latency;
+    latency.setDouble("p50", lat.p50);
+    latency.setDouble("p95", lat.p95);
+    latency.setDouble("p99", lat.p99);
+
+    JSONParser memory;
+    memory.setLongLong("total_mb",   static_cast<long long>(sysMem.total_mb));
+    memory.setLongLong("used_mb",    static_cast<long long>(sysMem.used_mb));
+    memory.setLongLong("free_mb",    static_cast<long long>(sysMem.free_mb));
+    memory.setDouble("percent_used", sysMem.percent_used);
+
+    JSONParser cpu;
+    cpu.setInt("count",       static_cast<int>(sysCpu.cpu_count));
+    cpu.setDouble("load_1m",  sysCpu.load_1m);
+    cpu.setDouble("load_5m",  sysCpu.load_5m);
+    cpu.setDouble("load_15m", sysCpu.load_15m);
+
+    JSONParser disk;
+    disk.setLongLong("total_gb",   static_cast<long long>(sysDisk.total_gb));
+    disk.setLongLong("used_gb",    static_cast<long long>(sysDisk.used_gb));
+    disk.setLongLong("free_gb",    static_cast<long long>(sysDisk.free_gb));
+    disk.setDouble("percent_used", sysDisk.percent_used);
+
+    JSONParser system;
+    system.setJSON("memory", memory);
+    system.setJSON("cpu",    cpu);
+    system.setJSON("disk",   disk);
+
+    if (sysCgroupMem.available) {
+        JSONParser cgMem;
+        cgMem.setLongLong("limit_mb",   static_cast<long long>(sysCgroupMem.limit_mb));
+        cgMem.setLongLong("used_mb",    static_cast<long long>(sysCgroupMem.used_mb));
+        cgMem.setLongLong("free_mb",    static_cast<long long>(sysCgroupMem.free_mb));
+        cgMem.setDouble("percent_used", sysCgroupMem.percent_used);
+        system.setJSON("cgroup_memory", cgMem);
+    }
+
+    if (sysCgroupCpu.available) {
+        JSONParser cgCpu;
+        cgCpu.setDouble("allocated_cores", sysCgroupCpu.allocated_cores);
+        cgCpu.setDouble("usage_percent",   sysCgroupCpu.usage_percent);
+        system.setJSON("cgroup_cpu", cgCpu);
+    }
+
+    JSONParser root;
+    root.setString("health",           health);
+    root.setString("version",          getVersion());
+    root.setString("timestamp",        timeBuf);
+    root.setLongLong("uptime_seconds", static_cast<long long>(uptime));
+    root.setDouble("uptime_hours_total", serverData.getUptimeHoursTotal());
+    root.setJSON("requests",           requests);
+    root.setJSON("errors",             errors);
+    root.setJSON("queue",              queue);
+    root.setJSON("io",                 io);
+    root.setJSON("latency_ms",         latency);
+    root.setJSON("system",             system);
+
+    HTTPResponse resp("200 OK");
+    resp.setHeader("Content-Type",  "application/json");
+    resp.setHeader("Cache-Control", "no-store");
+    resp.setBody(root.toString());
+    return resp;
+}
 
 void Geruest::enableStatus(const std::string& token) {
     _statusToken  = token;
     _statusActive = true;
 
-    serverData.addRoute("/status", [this, token](const HTTPRequest& req) -> HTTPResponse {
-        if (!serverData.isDevMode()) {
-            const std::string authHeader  = req.getHeader("authorization");
-            const std::string queryToken  = req.getParam("token");
-            const std::string expected    = "Bearer " + token;
-            const bool validHeader = (authHeader == expected);
-            const bool validQuery  = (!queryToken.empty() && queryToken == token);
-            if (!validHeader && !validQuery) {
-                HTTPResponse resp("401 Unauthorized");
-                resp.setHeader("WWW-Authenticate", "Bearer realm=\"status\"");
-                resp.setHeader("Content-Type", "application/json");
-                resp.setBody(R"({"error":"Unauthorized"})");
-                return resp;
-            }
-        }
-
-        // Collect system metrics
-        const SysMemInfo       sysMem       = collectMemoryInfo();
-        const SysCgroupMemInfo sysCgroupMem = collectCgroupMemInfo();
-        const SysCgroupCpuInfo sysCgroupCpu = collectCgroupCpuInfo();
-        const SysCpuInfo       sysCpu       = collectCpuInfo();
-        const SysDiskInfo      sysDisk      = collectDiskInfo();
-
-        // Collect server metrics
-        const uint64_t uptime   = serverData.getUptimeSeconds();
-        const ServerData::WindowMetrics wmHour  = serverData.getWindowMetricsHour();
-        const ServerData::WindowMetrics avgHour = serverData.getRollingAveragePerHour();
-        const uint64_t totalR   = serverData.getTotalRequests();
-        const uint64_t totalE   = serverData.getTotalErrors();
-        const uint64_t total4xx = serverData.getTotal4xx();
-        const uint64_t total5xx = serverData.getTotal5xx();
-        const uint64_t totalInt = serverData.getTotalInternalErrors();
-        const uint64_t rejTotal = serverData.getQueueRejections();
-        const uint64_t acceptErrTotal = serverData.getAcceptErrorsTotal();
-        const uint64_t acceptEmfileTotal = serverData.getAcceptEmfileTotal();
-        const uint64_t fileOpenFailures = serverData.getFileOpenFailures();
-        const uint64_t overloadHttpResponses = serverData.getOverloadHttpResponses();
-        const int64_t  active   = serverData.getActiveHandlers();
-        const ServerData::LatencyStats lat = serverData.getLatencyStats(60);
-        const uint64_t curQueue = static_cast<uint64_t>(_activeSessions.load(std::memory_order_relaxed));
-
-        std::string health = "ok";
-        if (wmHour.avg_queue_fill >= 80.0 || wmHour.requests >= 1000) {
-            health = "overloaded";
-        } else if (wmHour.avg_queue_fill >= 50.0 || wmHour.requests >= 500) {
-            health = "degraded";
-        }
-
-        // Build ISO 8601 UTC timestamp
-        std::time_t now_t = std::time(nullptr);
-        char timeBuf[32]  = {};
-        struct tm utcTm{};
-        gmtime_r(&now_t, &utcTm);
-        std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%dT%H:%M:%SZ", &utcTm);
-
-        // Build JSON objects
-        JSONParser requests;
-        requests.setLongLong("total",        static_cast<long long>(totalR));
-        requests.setLongLong("active",       static_cast<long long>(active));
-        requests.setLongLong("last_hour",    static_cast<long long>(wmHour.requests));
-        requests.setLongLong("avg_per_hour", static_cast<long long>(avgHour.requests));
-
-        JSONParser errors;
-        errors.setLongLong("total",            static_cast<long long>(totalE));
-        errors.setLongLong("client_4xx",       static_cast<long long>(total4xx));
-        errors.setLongLong("server_5xx",       static_cast<long long>(total5xx));
-        errors.setLongLong("internal",         static_cast<long long>(totalInt));
-        errors.setLongLong("last_hour_4xx",    static_cast<long long>(wmHour.errors_4xx));
-        errors.setLongLong("last_hour_5xx",    static_cast<long long>(wmHour.errors_5xx));
-        errors.setLongLong("last_hour_int",    static_cast<long long>(wmHour.errors_int));
-        errors.setLongLong("avg_per_hour_4xx", static_cast<long long>(avgHour.errors_4xx));
-        errors.setLongLong("avg_per_hour_5xx", static_cast<long long>(avgHour.errors_5xx));
-        errors.setLongLong("avg_per_hour_int", static_cast<long long>(avgHour.errors_int));
-
-        JSONParser queue;
-        queue.setLongLong("current_size",             static_cast<long long>(curQueue));
-        queue.setLongLong("max_size",                 static_cast<long long>(_maxQueueSize));
-        queue.setLongLong("rejections_total",         static_cast<long long>(rejTotal));
-        queue.setLongLong("overload_http_responses",  static_cast<long long>(overloadHttpResponses));
-        queue.setDouble("avg_fill_percent_hour",      wmHour.avg_queue_fill);
-        queue.setDouble("avg_fill_percent_per_hour",  avgHour.avg_queue_fill);
-
-        JSONParser io;
-        io.setLongLong("accept_errors_total", static_cast<long long>(acceptErrTotal));
-        io.setLongLong("accept_emfile_total", static_cast<long long>(acceptEmfileTotal));
-        io.setLongLong("file_open_failures_total", static_cast<long long>(fileOpenFailures));
-
-        JSONParser latency;
-        latency.setDouble("p50", lat.p50);
-        latency.setDouble("p95", lat.p95);
-        latency.setDouble("p99", lat.p99);
-
-        JSONParser memory;
-        memory.setLongLong("total_mb",   static_cast<long long>(sysMem.total_mb));
-        memory.setLongLong("used_mb",    static_cast<long long>(sysMem.used_mb));
-        memory.setLongLong("free_mb",    static_cast<long long>(sysMem.free_mb));
-        memory.setDouble("percent_used", sysMem.percent_used);
-
-        JSONParser cpu;
-        cpu.setInt("count",       static_cast<int>(sysCpu.cpu_count));
-        cpu.setDouble("load_1m",  sysCpu.load_1m);
-        cpu.setDouble("load_5m",  sysCpu.load_5m);
-        cpu.setDouble("load_15m", sysCpu.load_15m);
-
-        JSONParser disk;
-        disk.setLongLong("total_gb",   static_cast<long long>(sysDisk.total_gb));
-        disk.setLongLong("used_gb",    static_cast<long long>(sysDisk.used_gb));
-        disk.setLongLong("free_gb",    static_cast<long long>(sysDisk.free_gb));
-        disk.setDouble("percent_used", sysDisk.percent_used);
-
-        JSONParser system;
-        system.setJSON("memory", memory);
-        system.setJSON("cpu",    cpu);
-        system.setJSON("disk",   disk);
-
-        if (sysCgroupMem.available) {
-            JSONParser cgMem;
-            cgMem.setLongLong("limit_mb",   static_cast<long long>(sysCgroupMem.limit_mb));
-            cgMem.setLongLong("used_mb",    static_cast<long long>(sysCgroupMem.used_mb));
-            cgMem.setLongLong("free_mb",    static_cast<long long>(sysCgroupMem.free_mb));
-            cgMem.setDouble("percent_used", sysCgroupMem.percent_used);
-            system.setJSON("cgroup_memory", cgMem);
-        }
-
-        if (sysCgroupCpu.available) {
-            JSONParser cgCpu;
-            cgCpu.setDouble("allocated_cores", sysCgroupCpu.allocated_cores);
-            cgCpu.setDouble("usage_percent",   sysCgroupCpu.usage_percent);
-            system.setJSON("cgroup_cpu", cgCpu);
-        }
-
-        JSONParser root;
-        root.setString("health",           health);
-        root.setString("version",          getVersion());
-        root.setString("timestamp",        timeBuf);
-        root.setLongLong("uptime_seconds", static_cast<long long>(uptime));
-        root.setDouble("uptime_hours_total", serverData.getUptimeHoursTotal());
-        root.setJSON("requests",           requests);
-        root.setJSON("errors",             errors);
-        root.setJSON("queue",              queue);
-        root.setJSON("io",                 io);
-        root.setJSON("latency_ms",         latency);
-        root.setJSON("system",             system);
-
-        HTTPResponse resp("200 OK");
-        resp.setHeader("Content-Type",  "application/json");
-        resp.setHeader("Cache-Control", "no-store");
-        resp.setBody(root.toString());
-        return resp;
+    serverData.addRoute("/status", [this](const HTTPRequest& req) -> HTTPResponse {
+        return handleStatusRequest(req);
     });
 
     sendToLogger("Status endpoint activated at /status (token-protected)");

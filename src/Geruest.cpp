@@ -60,9 +60,7 @@ Geruest::Geruest() {
 }
 
 Geruest::~Geruest() {
-    if (running.load(std::memory_order_relaxed)) {
-        stop();
-    }
+    running.store(false, std::memory_order_relaxed);
     if (_statusPersistenceThread.joinable()) {
         _statusPersistenceThread.join();
     }
