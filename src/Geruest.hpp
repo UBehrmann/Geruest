@@ -785,6 +785,8 @@ class Geruest {
 
     void statusPersistenceLoop();
 
+    HTTPResponse handleStatusRequest(const HTTPRequest& req) const;
+
     void workerRunLoop();
     void initializeDatabaseFromConfig();
 };

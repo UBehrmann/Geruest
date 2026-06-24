@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.11)
 
-project(GeruestLibrary VERSION 0.13.3 LANGUAGES CXX)
+project(GeruestLibrary VERSION 0.14.3 LANGUAGES CXX)
 
 set(GERUEST_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 set(GERUEST_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}")
