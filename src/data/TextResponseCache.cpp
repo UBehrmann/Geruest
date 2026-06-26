@@ -4,6 +4,9 @@
 
 #include "TextResponseCache.hpp"
 
+#include "HTTPRequest.hpp"
+#include "handler/StaticHttpCache.hpp"
+
 #include <filesystem>
 
 namespace geruest {
@@ -12,34 +15,52 @@ std::string TextResponseCache::makeKey(const std::string& contentType, const std
     return contentType + "|" + contentPath;
 }
 
-std::shared_ptr<const std::string> TextResponseCache::lookup(const std::string& key, const std::string& contentPath,
-                                                               bool devMode, size_t maxEntryBytes,
-                                                               size_t maxTotalBytes) const {
+TextCacheLookup TextResponseCache::lookup(const std::string& key, const std::string& contentPath,
+                                          const HTTPRequest* request, bool devMode, size_t maxEntryBytes,
+                                          size_t maxTotalBytes) const {
+    TextCacheLookup result;
     if (devMode || maxEntryBytes == 0 || maxTotalBytes == 0) {
-        return {};
+        return result;
     }
+
     std::lock_guard<std::mutex> lock(_mutex);
     const auto it = _entries.find(key);
     if (it == _entries.end()) {
-        return {};
+        return result;
     }
     if (!it->second.hasMtime) {
         _totalBytes -= it->second.sizeBytes;
         _entries.erase(it);
-        return {};
+        return result;
     }
+
     std::error_code ec;
     const auto currentMtime = std::filesystem::last_write_time(contentPath, ec);
     if (ec || currentMtime != it->second.mtime) {
         _totalBytes -= it->second.sizeBytes;
         _entries.erase(it);
-        return {};
+        return result;
     }
-    return it->second.payload;
+
+    if (request != nullptr) {
+        StaticCacheHeaders headers;
+        headers.etag = it->second.etag;
+        headers.lastModified = it->second.lastModified;
+        if (matchesNotModified(*request, headers)) {
+            result.notModified = true;
+            result.etag = it->second.etag;
+            result.lastModified = it->second.lastModified;
+            return result;
+        }
+    }
+
+    result.payload = it->second.payload;
+    return result;
 }
 
 void TextResponseCache::store(const std::string& key, const std::string& contentPath, const std::string& payload,
-                              bool devMode, size_t maxEntryBytes, size_t maxTotalBytes) const {
+                              const std::string& etag, const std::string& lastModified, bool devMode,
+                              size_t maxEntryBytes, size_t maxTotalBytes) const {
     if (devMode || payload.empty() || maxEntryBytes == 0 || maxTotalBytes == 0 || payload.size() > maxEntryBytes) {
         return;
     }
@@ -47,6 +68,8 @@ void TextResponseCache::store(const std::string& key, const std::string& content
     Entry entry;
     entry.payload = std::make_shared<const std::string>(payload);
     entry.sizeBytes = payload.size();
+    entry.etag = etag;
+    entry.lastModified = lastModified;
     std::error_code ec;
     entry.mtime = std::filesystem::last_write_time(contentPath, ec);
     entry.hasMtime = !ec;

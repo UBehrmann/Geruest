@@ -137,6 +137,16 @@ class ServerData {
     void setTextResponseCacheMaxTotalBytes(size_t bytes) { _textResponseCacheMaxTotalBytes = bytes; }
     size_t getTextResponseCacheMaxTotalBytes() const { return _textResponseCacheMaxTotalBytes; }
 
+    void setStaticCacheMaxAge(int seconds);
+    int getStaticCacheMaxAge() const { return _staticCacheMaxAge; }
+
+    void setStaticHtmlCacheMaxAge(int seconds);
+    int getStaticHtmlCacheMaxAge() const { return _staticHtmlCacheMaxAge; }
+
+    void setCacheBustToken(const std::string& token);
+    const std::string& getCacheBustToken() const { return _cacheBustToken; }
+    void ensureCacheBustToken();
+
     void enableDevMode();
     bool isDevMode() const { return _devMode; }
 
@@ -255,6 +265,10 @@ class ServerData {
     size_t _maxRequestsPerConnection = 1000;
     size_t _textResponseCacheMaxEntryBytes = 512 * 1024;
     size_t _textResponseCacheMaxTotalBytes = 32 * 1024 * 1024;
+    int _staticCacheMaxAge = 31536000;
+    int _staticHtmlCacheMaxAge = 0;
+    std::string _cacheBustToken;
+    bool _cacheBustTokenManual = false;
     std::string _notFoundPage;
     CorsConfig _corsConfig;
     BasicAuth _basicAuth;

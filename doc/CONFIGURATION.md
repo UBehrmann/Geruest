@@ -65,6 +65,12 @@ MERGE_ASSETS=true
 WEBP_CONVERSION=true
 WEBP_QUALITY=75
 
+# Browser cache (static files served by Geruest)
+STATIC_CACHE_MAX_AGE=31536000
+STATIC_HTML_CACHE_MAX_AGE=0
+# Optional override; default is auto site-revision hash at init()
+# CACHE_BUST_TOKEN=20250626a
+
 # SMTP Configuration
 SMTP_SERVER=smtp.gmail.com
 SMTP_PORT=587
@@ -106,6 +112,26 @@ bool hasKey = geruest::ConfigLoader::has("SMTP_SERVER");
 // Clear all loaded .env values
 geruest::ConfigLoader::clear();
 ```
+
+## Browser cache (static files)
+
+Geruest sets `Cache-Control`, `ETag`, and `Last-Modified` on static responses and supports `304 Not Modified`.
+
+| Setting | Default | Effect |
+| ------- | ------- | ------ |
+| `STATIC_CACHE_MAX_AGE` | `31536000` (1 year) | CSS, JS, images, fonts, binaries: `public, max-age=…, immutable` |
+| `STATIC_HTML_CACHE_MAX_AGE` | `0` | HTML: `public, max-age=0, must-revalidate` (cheap ETag revalidation each visit) |
+| `CACHE_BUST_TOKEN` | auto at `init()` | Appended as `?v=` on asset URLs in generated HTML (`/app.js?v=…`) |
+
+Code API:
+
+```cpp
+server.setStaticCacheMaxAge(31536000);
+server.setStaticHtmlCacheMaxAge(0);
+server.setCacheBustToken("optional-deploy-id");  // else site-revision hash at init()
+```
+
+`enableDevMode()` forces `Cache-Control: no-store` and skips cache-bust URL rewriting.
 
 ## Common Patterns
 

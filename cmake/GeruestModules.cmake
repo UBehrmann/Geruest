@@ -54,6 +54,7 @@ set(_GERUEST_CORE_SOURCES
     ${GERUEST_ROOT}/src/data/CorsConfig.cpp
     ${GERUEST_ROOT}/src/data/ServerData.cpp
     ${GERUEST_ROOT}/src/data/TextResponseCache.cpp
+    ${GERUEST_ROOT}/src/data/SiteRevision.cpp
     ${GERUEST_ROOT}/src/data/ServerMetrics.cpp
     ${GERUEST_ROOT}/src/data/WildcardMatch.cpp
     ${GERUEST_ROOT}/src/data/DevAssetCache.cpp
@@ -65,6 +66,7 @@ set(_GERUEST_CORE_SOURCES
     ${GERUEST_ROOT}/src/handler/StaticFileResolver.cpp
     ${GERUEST_ROOT}/src/handler/RouteDispatcher.cpp
     ${GERUEST_ROOT}/src/handler/GzipResponse.cpp
+    ${GERUEST_ROOT}/src/handler/StaticHttpCache.cpp
     ${GERUEST_ROOT}/src/modules/ModuleHooks.cpp
     ${GERUEST_ROOT}/src/obfuscation/ObfuscationSettings.cpp
     ${GERUEST_ROOT}/src/parser/JSONParser.cpp
@@ -101,6 +103,7 @@ if(GERUEST_ENABLE_ASSETS)
         ${GERUEST_ROOT}/src/builders/CSSBuilder.cpp
         ${GERUEST_ROOT}/src/builders/HTMLBuilder.cpp
         ${GERUEST_ROOT}/src/builders/JSBuilder.cpp
+        ${GERUEST_ROOT}/src/builders/CacheBustQuery.cpp
         ${GERUEST_ROOT}/src/builders/WebPConverter.cpp
     )
     add_library(Geruest::Assets ALIAS GeruestAssets)

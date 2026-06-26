@@ -419,6 +419,21 @@ class Geruest {
      */
     void setTextResponseCacheMaxTotalBytes(size_t bytes);
 
+    /**
+     * @brief Browser cache max-age in seconds for static assets (css/js/images). Default 31536000 (1 year).
+     */
+    void setStaticCacheMaxAge(int seconds);
+
+    /**
+     * @brief Browser cache max-age in seconds for HTML pages. Default 0 (must-revalidate each visit).
+     */
+    void setStaticHtmlCacheMaxAge(int seconds);
+
+    /**
+     * @brief Override automatic cache-bust token (?v= in asset URLs). Default: site revision hash at init().
+     */
+    void setCacheBustToken(const std::string& token);
+
     // ========== Basic Authentication Methods ==========
     
     /**
@@ -738,6 +753,9 @@ class Geruest {
         bool maxRequestsPerConnectionSet = false;
         bool textResponseCacheMaxEntryBytesSet = false;
         bool textResponseCacheMaxTotalBytesSet = false;
+        bool staticCacheMaxAgeSet = false;
+        bool staticHtmlCacheMaxAgeSet = false;
+        bool cacheBustTokenSet = false;
         bool logLevelSet = false;
         bool databaseBackendSet = false;
         bool databasePoolSizeSet = false;

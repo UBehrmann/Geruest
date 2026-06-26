@@ -231,6 +231,21 @@ add_executable(StaticFileResolver_Tests
 )
 target_link_libraries(StaticFileResolver_Tests Geruest::Geruest GTest::gtest_main)
 
+add_executable(SiteRevision_Tests
+    Data/SiteRevision_tests.cpp
+)
+target_link_libraries(SiteRevision_Tests Geruest::Core GTest::gtest_main)
+
+add_executable(StaticHttpCache_Tests
+    Handler/StaticHttpCache_tests.cpp
+)
+target_link_libraries(StaticHttpCache_Tests Geruest::Core GTest::gtest_main)
+
+add_executable(CacheBustQuery_Tests
+    Builders/CacheBustQuery_tests.cpp
+)
+target_link_libraries(CacheBustQuery_Tests Geruest::Geruest GTest::gtest_main)
+
 add_executable(ServerDataPageGate_Tests
     ServerData/ServerDataPageGate_tests.cpp
 )
@@ -310,6 +325,9 @@ gtest_discover_tests(WebSocketIntegration_Tests)
 gtest_discover_tests(ServerDataMetricsPersistence_Tests)
 gtest_discover_tests(ServerDataRedirectLanguage_Tests)
 gtest_discover_tests(StaticFileResolver_Tests)
+gtest_discover_tests(SiteRevision_Tests)
+gtest_discover_tests(StaticHttpCache_Tests)
+gtest_discover_tests(CacheBustQuery_Tests)
 gtest_discover_tests(ServerDataPageGate_Tests)
 gtest_discover_tests(ServerDataRouteGate_Tests)
 gtest_discover_tests(GateEvaluation_Tests)
@@ -346,13 +364,13 @@ exit $rc
 ]=])
     add_custom_target(run_tests
         COMMAND bash "${CMAKE_CURRENT_BINARY_DIR}/run_tests_pg.sh" "${CMAKE_CTEST_COMMAND}"
-        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests StaticFileResolver_Tests ServerDataPageGate_Tests ServerDataRouteGate_Tests GateEvaluation_Tests RouteRegistry_Tests GeruestLifecycle_Tests StatusEndpoint_Tests CoreOnly_Tests DatabasePostgres_Tests
+        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests StaticFileResolver_Tests SiteRevision_Tests StaticHttpCache_Tests CacheBustQuery_Tests ServerDataPageGate_Tests ServerDataRouteGate_Tests GateEvaluation_Tests RouteRegistry_Tests GeruestLifecycle_Tests StatusEndpoint_Tests CoreOnly_Tests DatabasePostgres_Tests
         COMMENT "Running all unit tests via CTest (with PostgreSQL container)"
     )
 else()
     add_custom_target(run_tests
         COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests StaticFileResolver_Tests ServerDataPageGate_Tests ServerDataRouteGate_Tests GateEvaluation_Tests RouteRegistry_Tests GeruestLifecycle_Tests StatusEndpoint_Tests CoreOnly_Tests
+        DEPENDS JSONParser_Tests HTTPRequest_Tests HTTPResponse_Tests FileManagement_Tests ContentBuilder_Tests JSObfuscator_Tests BasicAuth_Tests ConfigLoader_Tests AssetMerger_Tests Security_Tests WebSocketCodec_Tests WebSocketHandshake_Tests WebSocketServerData_Tests WebSocketIntegration_Tests ServerDataMetricsPersistence_Tests ServerDataRedirectLanguage_Tests StaticFileResolver_Tests SiteRevision_Tests StaticHttpCache_Tests CacheBustQuery_Tests ServerDataPageGate_Tests ServerDataRouteGate_Tests GateEvaluation_Tests RouteRegistry_Tests GeruestLifecycle_Tests StatusEndpoint_Tests CoreOnly_Tests
         COMMENT "Running all unit tests via CTest"
     )
 endif()

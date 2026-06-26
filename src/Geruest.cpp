@@ -407,6 +407,36 @@ void Geruest::setTextResponseCacheMaxTotalBytes(size_t bytes) {
     sendToLogger("TEXT_RESPONSE_CACHE_MAX_TOTAL_BYTES set to: " + std::to_string(bytes));
 }
 
+void Geruest::setStaticCacheMaxAge(int seconds) {
+    if (running.load(std::memory_order_relaxed) || _workersRunning.load(std::memory_order_relaxed)) {
+        sendToLoggerError("Cannot change static cache max-age while server is running");
+        return;
+    }
+    serverData.setStaticCacheMaxAge(seconds);
+    _configFlags.staticCacheMaxAgeSet = true;
+    sendToLogger("STATIC_CACHE_MAX_AGE set to: " + std::to_string(seconds));
+}
+
+void Geruest::setStaticHtmlCacheMaxAge(int seconds) {
+    if (running.load(std::memory_order_relaxed) || _workersRunning.load(std::memory_order_relaxed)) {
+        sendToLoggerError("Cannot change HTML cache max-age while server is running");
+        return;
+    }
+    serverData.setStaticHtmlCacheMaxAge(seconds);
+    _configFlags.staticHtmlCacheMaxAgeSet = true;
+    sendToLogger("STATIC_HTML_CACHE_MAX_AGE set to: " + std::to_string(seconds));
+}
+
+void Geruest::setCacheBustToken(const std::string& token) {
+    if (running.load(std::memory_order_relaxed) || _workersRunning.load(std::memory_order_relaxed)) {
+        sendToLoggerError("Cannot change cache bust token while server is running");
+        return;
+    }
+    serverData.setCacheBustToken(token);
+    _configFlags.cacheBustTokenSet = true;
+    sendToLogger("CACHE_BUST_TOKEN set explicitly");
+}
+
 // ========== Basic Authentication ==========
 
 void Geruest::setBasicAuth(bool enabled) {

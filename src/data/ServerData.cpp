@@ -5,6 +5,7 @@
 
 #include "ServerData.hpp"
 
+#include "SiteRevision.hpp"
 #include "modules/ModuleHooks.hpp"
 
 #include <algorithm>
@@ -35,6 +36,10 @@ ServerData::ServerData(const ServerData& other)
       _maxRequestsPerConnection(other._maxRequestsPerConnection),
       _textResponseCacheMaxEntryBytes(other._textResponseCacheMaxEntryBytes),
       _textResponseCacheMaxTotalBytes(other._textResponseCacheMaxTotalBytes),
+      _staticCacheMaxAge(other._staticCacheMaxAge),
+      _staticHtmlCacheMaxAge(other._staticHtmlCacheMaxAge),
+      _cacheBustToken(other._cacheBustToken),
+      _cacheBustTokenManual(other._cacheBustTokenManual),
       _notFoundPage(other._notFoundPage),
       _corsConfig(other._corsConfig),
       _basicAuth(other._basicAuth),
@@ -59,6 +64,10 @@ ServerData& ServerData::operator=(const ServerData& other) {
         _maxRequestsPerConnection = other._maxRequestsPerConnection;
         _textResponseCacheMaxEntryBytes = other._textResponseCacheMaxEntryBytes;
         _textResponseCacheMaxTotalBytes = other._textResponseCacheMaxTotalBytes;
+        _staticCacheMaxAge = other._staticCacheMaxAge;
+        _staticHtmlCacheMaxAge = other._staticHtmlCacheMaxAge;
+        _cacheBustToken = other._cacheBustToken;
+        _cacheBustTokenManual = other._cacheBustTokenManual;
         _notFoundPage = other._notFoundPage;
         _corsConfig = other._corsConfig;
         _basicAuth = other._basicAuth;
@@ -397,6 +406,26 @@ void ServerData::enableDevMode() {
     _removeComments = false;
     _textResponseCacheMaxEntryBytes = 0;
     _textResponseCacheMaxTotalBytes = 0;
+}
+
+void ServerData::setStaticCacheMaxAge(int seconds) {
+    _staticCacheMaxAge = seconds < 0 ? 0 : seconds;
+}
+
+void ServerData::setStaticHtmlCacheMaxAge(int seconds) {
+    _staticHtmlCacheMaxAge = seconds < 0 ? 0 : seconds;
+}
+
+void ServerData::setCacheBustToken(const std::string& token) {
+    _cacheBustToken = token;
+    _cacheBustTokenManual = true;
+}
+
+void ServerData::ensureCacheBustToken() {
+    if (_cacheBustTokenManual || !_cacheBustToken.empty()) {
+        return;
+    }
+    _cacheBustToken = computeSiteRevision(_root);
 }
 
 bool ServerData::pageRequiresAccessControl(const std::string& pagePath) const {

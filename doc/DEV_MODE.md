@@ -41,6 +41,10 @@ When `enableDevMode()` is called, the following changes are automatically applie
 - Content is regenerated on every request
 - Perfect for rapid iteration during development
 
+### 2b. **Browser cache disabled** 🌐
+- Static responses use `Cache-Control: no-store` (browser does not keep cached copies)
+- Asset URLs are not rewritten with `?v=` cache-bust query parameters
+
 ### 3. **Asset Merging Preserved** 🔗
 - Asset merging setting is **not changed** by dev mode
 - If you have `setMergeAssets(true)`, merging still happens (but merged files aren't cached)

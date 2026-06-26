@@ -93,6 +93,11 @@ int Geruest::getListenPort() const {
 }
 
 bool Geruest::init() {
+    serverData.ensureCacheBustToken();
+    if (!serverData.getCacheBustToken().empty()) {
+        sendToLogger("Cache bust token: " + serverData.getCacheBustToken());
+    }
+
     boost::system::error_code ec;
 
     const auto bind_ep =

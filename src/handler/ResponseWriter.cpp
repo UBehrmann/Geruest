@@ -25,15 +25,51 @@
 #include "geruest/BuildConfig.hpp"
 #include "modules/ModuleHooks.hpp"
 #include "data/TextResponseCache.hpp"
+#include "data/ServerData.hpp"
+#include "handler/StaticFileResolver.hpp"
+#include "handler/StaticHttpCache.hpp"
 
+namespace geruest {
 namespace {
 
 std::atomic<uint64_t> gSendfileHitCount{0};
 std::atomic<uint64_t> gSendfileFallbackCount{0};
 
-}  // namespace
+std::string extensionFromContentPath(const std::string& contentPath) {
+    const std::size_t slash = contentPath.find_last_of('/');
+    const std::string filePart = slash == std::string::npos ? contentPath : contentPath.substr(slash);
+    return StaticFileResolver::getExtension(filePart);
+}
 
-namespace geruest {
+StaticCacheHeaders buildTextValidators(const ServerData& serverData, const std::string& contentType,
+                                       const std::string& contentPath, bool perRequestPrivate,
+                                       std::string_view body) {
+    StaticCacheHeaders headers = resolveStaticCacheHeaders(serverData, contentType,
+                                                           extensionFromContentPath(contentPath), perRequestPrivate);
+    headers.etag = makeEtagFromBody(body);
+    std::error_code ec;
+    const auto mtime = std::filesystem::last_write_time(contentPath, ec);
+    if (!ec) {
+        headers.lastModified = formatHttpDate(mtime);
+    }
+    return headers;
+}
+
+StaticCacheHeaders buildFileValidators(const ServerData& serverData, const std::string& contentType,
+                                       const std::string& contentPath, bool perRequestPrivate,
+                                       std::uintmax_t fileSize) {
+    StaticCacheHeaders headers = resolveStaticCacheHeaders(serverData, contentType,
+                                                           extensionFromContentPath(contentPath), perRequestPrivate);
+    headers.etag = makeEtagFromFile(contentPath, fileSize);
+    std::error_code ec;
+    const auto mtime = std::filesystem::last_write_time(contentPath, ec);
+    if (!ec) {
+        headers.lastModified = formatHttpDate(mtime);
+    }
+    return headers;
+}
+
+}  // namespace
 
 ResponseWriter::ResponseWriter(boost::asio::ip::tcp::socket& socket) : socket_(socket) {}
 
@@ -193,6 +229,32 @@ boost::asio::awaitable<void> ResponseWriter::sendServiceUnavailableResponseAsync
     co_return;
 }
 
+boost::asio::awaitable<void> ResponseWriter::sendNotModifiedAsync(const StaticCacheHeaders& headers, Handler& host) {
+    HTTPResponse response("304 Not Modified");
+    applyCacheHeaders(response, headers);
+    response.serializeTo(responseScratch_);
+    if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
+        host.sendToLoggerError("Failed to send 304 Not Modified");
+    }
+    co_return;
+}
+
+boost::asio::awaitable<bool> ResponseWriter::sendBinaryFileHeaderAsync(const std::string& status,
+                                                                     const std::string& contentType,
+                                                                     const StaticCacheHeaders& headers, size_t fileSize,
+                                                                     Handler& host) {
+    HTTPResponse response(status);
+    response.setHeader("Content-Type", contentType);
+    response.setHeader("Content-Length", std::to_string(fileSize));
+    applyCacheHeaders(response, headers);
+    response.serializeTo(responseScratch_);
+    const bool ok = co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size());
+    if (!ok) {
+        host.sendToLoggerError("Failed to send binary file header");
+    }
+    co_return ok;
+}
+
 boost::asio::awaitable<void> ResponseWriter::sendFileAsync(const std::string& contentType,
                                                            const std::string& contentPath, HTTPRequest* httpRequest,
                                                            Handler& host) {
@@ -226,10 +288,19 @@ boost::asio::awaitable<void> ResponseWriter::sendFileAsync(const std::string& co
         }
 
         if (!perRequestText) {
-            if (const std::shared_ptr<const std::string> cached = host.serverData.textResponseCache().lookup(
-                    cacheKey, contentPath, host.serverData.isDevMode(), host.serverData.getTextResponseCacheMaxEntryBytes(),
-                    host.serverData.getTextResponseCacheMaxTotalBytes())) {
-                if (!co_await sendSocketAsync(cached->data(), cached->size())) {
+            const TextCacheLookup cached = host.serverData.textResponseCache().lookup(
+                cacheKey, contentPath, httpRequest, host.serverData.isDevMode(),
+                host.serverData.getTextResponseCacheMaxEntryBytes(), host.serverData.getTextResponseCacheMaxTotalBytes());
+            if (cached.notModified) {
+                StaticCacheHeaders validators =
+                    resolveStaticCacheHeaders(host.serverData, contentType, extensionFromContentPath(contentPath), false);
+                validators.etag = cached.etag;
+                validators.lastModified = cached.lastModified;
+                co_await sendNotModifiedAsync(validators, host);
+                co_return;
+            }
+            if (cached.payload) {
+                if (!co_await sendSocketAsync(cached.payload->data(), cached.payload->size())) {
                     host.sendToLoggerError("Failed to send cached file: " + contentPath);
                 }
                 co_return;
@@ -253,12 +324,21 @@ boost::asio::awaitable<void> ResponseWriter::sendFileAsync(const std::string& co
             co_return;
         }
 
+        const StaticCacheHeaders validators =
+            buildTextValidators(host.serverData, contentType, contentPath, perRequestText, *processed);
+        if (httpRequest != nullptr && matchesNotModified(*httpRequest, validators)) {
+            co_await sendNotModifiedAsync(validators, host);
+            co_return;
+        }
+
         HTTPResponse htmlResponse("200 OK");
         htmlResponse.setHeader("Content-Type", contentType);
+        applyCacheHeaders(htmlResponse, validators);
         htmlResponse.setBody(*processed);
         htmlResponse.serializeTo(responseScratch_);
         if (!perRequestText) {
-            host.serverData.textResponseCache().store(cacheKey, contentPath, responseScratch_, host.serverData.isDevMode(),
+            host.serverData.textResponseCache().store(cacheKey, contentPath, responseScratch_, validators.etag,
+                                                      validators.lastModified, host.serverData.isDevMode(),
                                                       host.serverData.getTextResponseCacheMaxEntryBytes(),
                                                       host.serverData.getTextResponseCacheMaxTotalBytes());
         }
@@ -272,13 +352,16 @@ boost::asio::awaitable<void> ResponseWriter::sendFileAsync(const std::string& co
         if (contentType == "image/webp" && host.serverData.isDevMode() && host.serverData.getWebPConversion()) {
             auto cachedWebP = host.serverData.devAssetCache().getWebP(contentPath);
             if (cachedWebP && !cachedWebP->empty()) {
-                HTTPResponse htmlResponse("200 OK");
-                htmlResponse.setHeader("Content-Type", contentType);
-                htmlResponse.setHeader("Content-Length", std::to_string(cachedWebP->size()));
-                htmlResponse.serializeTo(responseScratch_);
+                StaticCacheHeaders validators =
+                    resolveStaticCacheHeaders(host.serverData, contentType, extensionFromContentPath(contentPath), false);
+                validators.etag = makeEtagFromBody(std::string_view(
+                    reinterpret_cast<const char*>(cachedWebP->data()), cachedWebP->size()));
+                if (httpRequest != nullptr && matchesNotModified(*httpRequest, validators)) {
+                    co_await sendNotModifiedAsync(validators, host);
+                    co_return;
+                }
 
-                if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
-                    host.sendToLoggerError("Failed to send cached WebP header: " + contentPath);
+                if (!co_await sendBinaryFileHeaderAsync("200 OK", contentType, validators, cachedWebP->size(), host)) {
                     co_return;
                 }
 
@@ -294,14 +377,14 @@ boost::asio::awaitable<void> ResponseWriter::sendFileAsync(const std::string& co
         const uintmax_t fileSizeRaw = std::filesystem::file_size(contentPath, fsErr);
         if (!fsErr && fileSizeRaw <= static_cast<uintmax_t>(SIZE_MAX)) {
             const size_t fileSize = static_cast<size_t>(fileSizeRaw);
+            const StaticCacheHeaders validators =
+                buildFileValidators(host.serverData, contentType, contentPath, false, fileSize);
+            if (httpRequest != nullptr && matchesNotModified(*httpRequest, validators)) {
+                co_await sendNotModifiedAsync(validators, host);
+                co_return;
+            }
 
-            HTTPResponse htmlResponse("200 OK");
-            htmlResponse.setHeader("Content-Type", contentType);
-            htmlResponse.setHeader("Content-Length", std::to_string(fileSize));
-            htmlResponse.serializeTo(responseScratch_);
-
-            if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
-                host.sendToLoggerError("Failed to send binary file header: " + contentPath);
+            if (!co_await sendBinaryFileHeaderAsync("200 OK", contentType, validators, fileSize, host)) {
                 co_return;
             }
 
@@ -342,13 +425,17 @@ boost::asio::awaitable<void> ResponseWriter::sendFileAsync(const std::string& co
                         if (cacheOnly) {
                             auto webpData = host.serverData.devAssetCache().getWebP(contentPath);
                             if (webpData && !webpData->empty()) {
-                                HTTPResponse webpResponse("200 OK");
-                                webpResponse.setHeader("Content-Type", contentType);
-                                webpResponse.setHeader("Content-Length", std::to_string(webpData->size()));
-                                webpResponse.serializeTo(responseScratch_);
+                                StaticCacheHeaders validators = resolveStaticCacheHeaders(
+                                    host.serverData, contentType, extensionFromContentPath(contentPath), false);
+                                validators.etag = makeEtagFromBody(std::string_view(
+                                    reinterpret_cast<const char*>(webpData->data()), webpData->size()));
+                                if (httpRequest != nullptr && matchesNotModified(*httpRequest, validators)) {
+                                    co_await sendNotModifiedAsync(validators, host);
+                                    co_return;
+                                }
 
-                                if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
-                                    host.sendToLoggerError("Failed to send on-demand WebP header: " + contentPath);
+                                if (!co_await sendBinaryFileHeaderAsync("200 OK", contentType, validators,
+                                                                        webpData->size(), host)) {
                                     co_return;
                                 }
 
@@ -372,13 +459,14 @@ boost::asio::awaitable<void> ResponseWriter::sendFileAsync(const std::string& co
 
                             const std::string origType =
                                 StaticFileResolver::getContentType(StaticFileResolver::getExtension(sourcePath));
-                            HTTPResponse origResp("200 OK");
-                            origResp.setHeader("Content-Type", origType);
-                            origResp.setHeader("Content-Length", std::to_string(origSize));
-                            origResp.serializeTo(responseScratch_);
+                            const StaticCacheHeaders validators =
+                                buildFileValidators(host.serverData, origType, sourcePath, false, origSize);
+                            if (httpRequest != nullptr && matchesNotModified(*httpRequest, validators)) {
+                                co_await sendNotModifiedAsync(validators, host);
+                                co_return;
+                            }
 
-                            if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
-                                host.sendToLoggerError("Failed to send fallback image header: " + sourcePath);
+                            if (!co_await sendBinaryFileHeaderAsync("200 OK", origType, validators, origSize, host)) {
                                 co_return;
                             }
                             char fallbackBuf[HttpFraming::kBufferSize];
@@ -412,13 +500,15 @@ boost::asio::awaitable<void> ResponseWriter::sendFileAsync(const std::string& co
         size_t fileSize = static_cast<size_t>(file.tellg());
         file.seekg(0, std::ios::beg);
 
-        HTTPResponse htmlResponse("200 OK");
-        htmlResponse.setHeader("Content-Type", contentType);
-        htmlResponse.setHeader("Content-Length", std::to_string(fileSize));
-        htmlResponse.serializeTo(responseScratch_);
+        const StaticCacheHeaders validators =
+            buildFileValidators(host.serverData, contentType, contentPath, false, fileSize);
+        if (httpRequest != nullptr && matchesNotModified(*httpRequest, validators)) {
+            co_await sendNotModifiedAsync(validators, host);
+            file.close();
+            co_return;
+        }
 
-        if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
-            host.sendToLoggerError("Failed to send binary file header: " + contentPath);
+        if (!co_await sendBinaryFileHeaderAsync("200 OK", contentType, validators, fileSize, host)) {
             file.close();
             co_return;
         }

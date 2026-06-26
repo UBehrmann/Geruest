@@ -10,6 +10,7 @@
 
 #include "HTMLBuilder.hpp"
 #include "AssetMerger.hpp"
+#include "CacheBustQuery.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -175,6 +176,13 @@ void HtmlBuilder::buildHtml() {
             processWebPConversion();
         }
 
+        if (!_serverData.isDevMode()) {
+            const std::string& token = _serverData.getCacheBustToken();
+            if (!token.empty()) {
+                appendCacheBustToHtml(builtFile, token);
+            }
+        }
+
         // Change references to the correct path
         replaceReferences(language);
 
@@ -185,6 +193,11 @@ void HtmlBuilder::buildHtml() {
             // Note: If save fails, content is still in builtFile for serving
         }
         // If in dev mode, content stays in builtFile for serving without disk writes
+    } else if (!_serverData.isDevMode()) {
+        const std::string& token = _serverData.getCacheBustToken();
+        if (!token.empty()) {
+            appendCacheBustToHtml(builtFile, token);
+        }
     }
 }
 

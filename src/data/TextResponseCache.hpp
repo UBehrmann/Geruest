@@ -14,6 +14,15 @@
 
 namespace geruest {
 
+class HTTPRequest;
+
+struct TextCacheLookup {
+    bool notModified = false;
+    std::shared_ptr<const std::string> payload;
+    std::string etag;
+    std::string lastModified;
+};
+
 class TextResponseCache {
    public:
     TextResponseCache() = default;
@@ -22,11 +31,12 @@ class TextResponseCache {
 
     static std::string makeKey(const std::string& contentType, const std::string& contentPath);
 
-    std::shared_ptr<const std::string> lookup(const std::string& key, const std::string& contentPath, bool devMode,
-                                              size_t maxEntryBytes, size_t maxTotalBytes) const;
+    TextCacheLookup lookup(const std::string& key, const std::string& contentPath, const HTTPRequest* request,
+                           bool devMode, size_t maxEntryBytes, size_t maxTotalBytes) const;
 
-    void store(const std::string& key, const std::string& contentPath, const std::string& payload, bool devMode,
-               size_t maxEntryBytes, size_t maxTotalBytes) const;
+    void store(const std::string& key, const std::string& contentPath, const std::string& payload,
+               const std::string& etag, const std::string& lastModified, bool devMode, size_t maxEntryBytes,
+               size_t maxTotalBytes) const;
 
    private:
     struct Entry {
@@ -34,6 +44,8 @@ class TextResponseCache {
         std::filesystem::file_time_type mtime{};
         bool hasMtime = false;
         size_t sizeBytes = 0;
+        std::string etag;
+        std::string lastModified;
     };
 
     mutable std::mutex _mutex;

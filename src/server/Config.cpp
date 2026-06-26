@@ -146,6 +146,32 @@ void Geruest::loadConfig(const std::string& envFilePath) {
             sendToLogger("TEXT_RESPONSE_CACHE_MAX_TOTAL_BYTES loaded from config: " + std::to_string(configValue));
         }
     }
+
+    if (!_configFlags.staticCacheMaxAgeSet) {
+        const int currentValue = serverData.getStaticCacheMaxAge();
+        const int configValue = ConfigLoader::getInt("STATIC_CACHE_MAX_AGE", currentValue);
+        if (configValue != currentValue) {
+            serverData.setStaticCacheMaxAge(configValue);
+            sendToLogger("STATIC_CACHE_MAX_AGE loaded from config: " + std::to_string(configValue));
+        }
+    }
+
+    if (!_configFlags.staticHtmlCacheMaxAgeSet) {
+        const int currentValue = serverData.getStaticHtmlCacheMaxAge();
+        const int configValue = ConfigLoader::getInt("STATIC_HTML_CACHE_MAX_AGE", currentValue);
+        if (configValue != currentValue) {
+            serverData.setStaticHtmlCacheMaxAge(configValue);
+            sendToLogger("STATIC_HTML_CACHE_MAX_AGE loaded from config: " + std::to_string(configValue));
+        }
+    }
+
+    if (!_configFlags.cacheBustTokenSet) {
+        const std::string configToken = ConfigLoader::get("CACHE_BUST_TOKEN", "");
+        if (!configToken.empty()) {
+            serverData.setCacheBustToken(configToken);
+            sendToLogger("CACHE_BUST_TOKEN loaded from config");
+        }
+    }
     
     // LOG_LEVEL
     if (!_configFlags.logLevelSet) {

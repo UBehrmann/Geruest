@@ -15,6 +15,8 @@
 
 namespace geruest {
 
+struct StaticCacheHeaders;
+
 class Handler;
 
 class ResponseWriter {
@@ -34,6 +36,12 @@ class ResponseWriter {
 
     boost::asio::awaitable<void> sendFileAsync(const std::string& contentType, const std::string& contentPath,
                                                HTTPRequest* httpRequest, Handler& host);
+
+    boost::asio::awaitable<void> sendNotModifiedAsync(const StaticCacheHeaders& headers, Handler& host);
+
+    boost::asio::awaitable<bool> sendBinaryFileHeaderAsync(const std::string& status, const std::string& contentType,
+                                                           const StaticCacheHeaders& headers, size_t fileSize,
+                                                           Handler& host);
 
     std::string& scratch() { return responseScratch_; }
     const std::string& scratch() const { return responseScratch_; }
