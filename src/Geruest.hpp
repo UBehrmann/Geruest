@@ -118,6 +118,9 @@ class Geruest {
     void configureSqlite(const db::SqliteConfig& config);
 #endif
 
+    /** Shared database pool (null if backend unset or misconfigured). Valid after loadConfig(). */
+    std::shared_ptr<db::DatabaseClient> database() const { return serverData.getDatabaseClient(); }
+
     /**
      * @brief Add a redirect from one route to another route or URL.
      * @param from Source route pattern (supports '*' wildcard)

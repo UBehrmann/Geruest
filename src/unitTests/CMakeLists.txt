@@ -47,10 +47,7 @@ else()
     add_compile_definitions(GERUEST_HAS_CURL=0)
 endif()
 
-if(POLICY CMP0167)
-    cmake_policy(SET CMP0167 NEW)
-endif()
-find_package(Boost 1.75 REQUIRED COMPONENTS system)
+include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/GeruestBoost.cmake")
 
 option(GERUEST_ENABLE_POSTGRESQL "Enable PostgreSQL backend support in tests" OFF)
 option(GERUEST_ENABLE_SQLITE "Enable SQLite backend support in tests" OFF)

@@ -22,10 +22,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 find_package(Threads REQUIRED)
 
-if(POLICY CMP0167)
-    cmake_policy(SET CMP0167 NEW)
-endif()
-find_package(Boost 1.75 REQUIRED COMPONENTS system)
+include("${GERUEST_ROOT}/cmake/GeruestBoost.cmake")
 
 option(GERUEST_ENABLE_POSTGRESQL "Enable PostgreSQL backend support" OFF)
 option(GERUEST_ENABLE_SQLITE "Enable SQLite backend support" OFF)
