@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Auto-bump the patch version in CMakeLists.txt on push, unless the version
+# already differs from the remote branch (i.e. it was changed by hand).
+# Enable once per clone: git config core.hooksPath .githooks
+set -euo pipefail
+
+remote="$1"
+file=CMakeLists.txt
+zero=0000000000000000000000000000000000000000
+head=$(git rev-parse HEAD)
+branch=$(git symbolic-ref -q --short HEAD) || exit 0
+
+version_at() { git show "$1:$file" 2>/dev/null | sed -nE 's/^project\(GeruestLibrary VERSION ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p'; }
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+    # ponytail: only handles pushing the checked-out branch to an existing remote branch
+    [[ "$local_ref" == "refs/heads/$branch" && "$local_sha" == "$head" && "$remote_sha" != "$zero" ]] || continue
+    git cat-file -e "$remote_sha" 2>/dev/null || { echo "pre-push: remote commit unknown, run git fetch first" >&2; exit 1; }
+
+    old=$(version_at "$remote_sha")
+    cur=$(version_at "$head")
+    [[ -n "$cur" && "$old" == "$cur" ]] || continue
+
+    if ! git diff --quiet HEAD -- "$file"; then
+        echo "pre-push: $file has uncommitted changes, commit or stash them first" >&2
+        exit 1
+    fi
+
+    IFS=. read -r major minor patch <<< "$cur"
+    new="$major.$minor.$((patch + 1))"
+    sed -i -E "s/^(project\(GeruestLibrary VERSION )$cur/\1$new/" "$file"
+    git commit -q --only "$file" -m "Bump version to $new"
+    echo "pre-push: bumped version $cur -> $new, pushing..." >&2
+    git push --no-verify "$remote" "HEAD:$remote_ref"
+    echo "pre-push: pushed with version bump; the 'failed to push' message below is expected." >&2
+    exit 1
+done
+exit 0
