@@ -2,7 +2,7 @@
 
 Welcome to the Geruest documentation! This guide will help you get started with the framework and understand all its features.
 
-## Quick Navigation
+## Quick Navigation 
 
 ### Getting Started
 
@@ -83,7 +83,7 @@ int main() {
 | **Translations**            | JSON-based i18n                                              | [Translations](TRANSLATIONS.md)                           |
 | **Security**                | SQL injection, XSS, JSON injection, path traversal           | [Security](SECURITY.md)                                   |
 | **Basic Auth**              | HTTP authentication                                          | [Basic Auth](BASIC_AUTH.md)                               |
-| **CORS**                    | Cross-origin browser API access (opt-in)                   | [Features — CORS](FEATURES.md#cors-support)               |
+| **CORS**                    | Cross-origin browser API access (opt-in)                     | [Features — CORS](FEATURES.md#cors-support)               |
 | **Dev Mode**                | Verbose logs, no file caching                                | [Dev Mode](DEV_MODE.md)                                   |
 | **JSON Parser**             | Built-in JSON handling                                       | [Data Classes](DATA_CLASSES.md#jsonparser)                |
 | **Async routes**            | C++20 coroutines via async `addRoute` overload               | [Features](FEATURES.md#routing)                           |
