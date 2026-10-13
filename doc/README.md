@@ -2,7 +2,7 @@
 
 Welcome to the Geruest documentation! This guide will help you get started with the framework and understand all its features.
 
-## Quick Navigation
+## Quick Navigation 
 
 ### Getting Started
 
