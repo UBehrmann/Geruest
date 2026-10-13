@@ -3,6 +3,10 @@
 # already differs from the remote branch (i.e. it was changed by hand).
 # Enable once per clone: git config core.hooksPath .githooks
 set -euo pipefail
+exec 9>>"$(git rev-parse --git-dir)/pre-push.log"
+BASH_XTRACEFD=9
+echo "=== $(date) args: $*" >&9
+set -x
 
 remote="$1"
 file=CMakeLists.txt
