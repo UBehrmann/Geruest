@@ -659,35 +659,12 @@ class Geruest {
     /**
      * @brief Activate the /status metrics endpoint (token-protected).
      *
-     * The endpoint returns a JSON snapshot of server health and metrics.
-     * Access requires the HTTP header: Authorization: Bearer <token>
+     * The endpoint returns a JSON snapshot of server health and metrics
+     * (health + reasons, requests, errors, queue, io, websocket, latency, process, system).
+     * Access requires `Authorization: Bearer <token>` (or `?token=`).
      * In dev mode, the token check is skipped and the endpoint is openly accessible.
      *
-     * Response fields:
-     * - health: "ok" | "degraded" | "overloaded"
-     * - version: Geruest framework version (useful for multi-version comparisons)
-     * - timestamp: ISO 8601 UTC time of the snapshot
-     * - uptime_seconds: seconds since this process entered start() (session)
-     * - uptime_hours_total: cumulative uptime in hours across restarts (persisted)
-     * - requests.total / last_hour / avg_per_hour / active
-     * - errors.total / client_4xx / server_5xx / internal (+ last_hour/avg_per_hour breakdown)
-     * - queue.current_size (active sessions) / max_size / rejections_total / avg_fill_percent_hour / avg_fill_percent_per_hour
-     * - queue.overload_http_responses (count of accepted sockets replied with 503 due to session cap)
-     * - io.accept_errors_total / accept_emfile_total / file_open_failures_total
-     * - latency_ms.p50 / p95 / p99 (milliseconds, last 60 seconds)
-     * - system.memory.total_mb / used_mb / free_mb / percent_used (host memory)
-     * - system.cpu.count (logical CPU cores)
-     * - system.cpu.load_1m / load_5m / load_15m (system-wide, all cores combined)
-     *     Normalize by count to get per-core utilization: load_1m / count * 100 ≈ CPU %
-     * - system.disk.total_gb / used_gb / free_gb / percent_used (root "/")
-     * - system.cgroup_memory.limit_mb / used_mb / free_mb / percent_used
-     *     (only present when a cgroup memory limit is detected, e.g. inside Docker)
-     * - system.cgroup_cpu.allocated_cores / usage_percent
-     *     (only present when a CPU quota is set via --cpus; usage_percent is 0 on first call)
-     *
-     * Health thresholds:
-     * - degraded:   avg queue fill (last hour) >= 50% OR requests (last hour) >= 500
-     * - overloaded: avg queue fill (last hour) >= 80% OR requests (last hour) >= 1000
+     * Every field and the health rules are documented in doc/STATUS.md.
      *
      * @param token Bearer token required in the Authorization header.
      * @note Should be called before start().
@@ -791,7 +768,6 @@ class Geruest {
     void doAccept();
     void scheduleAcceptRetry(std::chrono::milliseconds delay);
 
-    /** Decrement active session count and refresh queue fill metrics (Option A). */
     void releaseSessionSlot();
 
     /**
@@ -805,6 +781,9 @@ class Geruest {
     void stopWorkers();
 
     void statusPersistenceLoop();
+
+    /** Called once per second: queue fill sample and cgroup CPU usage sample (see Status.cpp). */
+    void sampleStatusGauges();
 
     HTTPResponse handleStatusRequest(const HTTPRequest& req) const;
 

@@ -45,11 +45,6 @@ boost::asio::awaitable<bool> handleUpgrade(Handler& host, HTTPRequest* request) 
     }
 
     if (auto denial = co_await host.checkRouteGateDenialAsync(*request)) {
-        if (!denial->getStatus().empty() && denial->getStatus()[0] == '5') {
-            host.record5xxMetric();
-        } else {
-            host.record4xxMetric();
-        }
         applyCorsHeaders(*denial, host.serverData.getCorsConfig(), request);
         denial->serializeTo(host.responseScratch_);
         if (!co_await host.sendSocketAsync(host.responseScratch_.data(), host.responseScratch_.size())) {
@@ -69,17 +64,26 @@ boost::asio::awaitable<bool> handleUpgrade(Handler& host, HTTPRequest* request) 
         co_return true;
     }
 
+    const ServerMetrics& metrics = host.serverData.metrics();
+    metrics.add(ServerMetrics::Counter::WebSocketUpgrades);
+    host.setInFlight(false);
+    struct ActiveWebSocket {
+        const ServerMetrics& m;
+        explicit ActiveWebSocket(const ServerMetrics& mm) : m(mm) { m.adjustActiveWebSockets(1); }
+        ~ActiveWebSocket() { m.adjustActiveWebSockets(-1); }
+    } activeWs{metrics};
+
     WebSocketConnection ws(host.clientSocket, host.IP, subprotocol, host.serverData.getWebSocketLimits());
     bool handlerFailed = false;
     try {
         co_await (*wsHandler)(ws, *request);
     } catch (const std::exception& e) {
         handlerFailed = true;
-        host.record5xxMetric();
+        host.recordErrorMetric();
         host.sendToLoggerError(std::string("Exception in WebSocket handler: ") + e.what());
     } catch (...) {
         handlerFailed = true;
-        host.record5xxMetric();
+        host.recordErrorMetric();
         host.sendToLoggerError("Unknown exception in WebSocket handler");
     }
 

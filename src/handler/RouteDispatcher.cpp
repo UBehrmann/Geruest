@@ -10,12 +10,20 @@
 #include "data/CorsConfig.hpp"
 #include "data/MethodNotAllowed.hpp"
 
+#include <exception>
+#include <optional>
+
 namespace geruest {
 
 namespace {
 
 boost::asio::awaitable<HTTPResponse> awaitReadyResponse(HTTPResponse response) {
     co_return std::move(response);
+}
+
+boost::asio::awaitable<HTTPResponse> rethrowAsResponse(std::exception_ptr error) {
+    std::rethrow_exception(error);
+    co_return HTTPResponse("500 Internal Server Error");
 }
 
 }  // namespace
@@ -33,15 +41,6 @@ boost::asio::awaitable<void> RouteDispatcher::dispatchRouteAndSendAsync(HTTPRequ
     try {
         HTTPResponse response = co_await std::move(produced);
 
-        const std::string& status = response.getStatus();
-        if (!status.empty()) {
-            if (status[0] == '4') {
-                host.record4xxMetric();
-            } else if (status[0] == '5') {
-                host.record5xxMetric();
-            }
-        }
-
         applyCorsHeaders(response, serverData_.getCorsConfig(), request);
         applyResponseCompression(response, request);
         response.serializeTo(host.responseScratch_);
@@ -51,7 +50,6 @@ boost::asio::awaitable<void> RouteDispatcher::dispatchRouteAndSendAsync(HTTPRequ
         }
     } catch (const method_not_allowed& e) {
         HTTPResponse response = responseMethodNotAllowed(request, e.allowMethods());
-        host.record4xxMetric();
         applyCorsHeaders(response, serverData_.getCorsConfig(), request);
         applyResponseCompression(response, request);
         response.serializeTo(host.responseScratch_);
@@ -59,7 +57,6 @@ boost::asio::awaitable<void> RouteDispatcher::dispatchRouteAndSendAsync(HTTPRequ
     } catch (const std::exception& e) {
         host.sendToLoggerError("Exception in " + handlerKind + " handler: " + e.what());
         HTTPResponse response = responseInternalServerError(request);
-        host.record5xxMetric();
         applyCorsHeaders(response, serverData_.getCorsConfig(), request);
         applyResponseCompression(response, request);
         response.serializeTo(host.responseScratch_);
@@ -67,7 +64,6 @@ boost::asio::awaitable<void> RouteDispatcher::dispatchRouteAndSendAsync(HTTPRequ
     } catch (...) {
         host.sendToLoggerError("Unknown exception in " + handlerKind + " handler");
         HTTPResponse response = responseInternalServerError(request);
-        host.record5xxMetric();
         applyCorsHeaders(response, serverData_.getCorsConfig(), request);
         applyResponseCompression(response, request);
         response.serializeTo(host.responseScratch_);
@@ -80,25 +76,19 @@ boost::asio::awaitable<void> RouteDispatcher::dispatchRouteAndSendAsync(HTTPRequ
     co_return;
 }
 
-boost::asio::awaitable<void> RouteDispatcher::tryDispatchRoute(HTTPRequest* request, const std::string& path,
-                                                               boost::asio::awaitable<HTTPResponse> produced,
-                                                               std::string_view handlerLabel, Handler& host) {
-    if (auto denial = co_await host.checkRouteGateDenialAsync(*request)) {
-        if (!denial->getStatus().empty() && denial->getStatus()[0] == '5') {
-            host.record5xxMetric();
-        } else {
-            host.record4xxMetric();
-        }
-        applyCorsHeaders(*denial, serverData_.getCorsConfig(), request);
-        applyResponseCompression(*denial, request);
-        denial->serializeTo(host.responseScratch_);
-        if (!co_await host.sendSocketAsync(host.responseScratch_.data(), host.responseScratch_.size())) {
-            host.sendToLoggerError("Failed to send route gate denial for: " + path);
-        }
-        co_return;
+boost::asio::awaitable<bool> RouteDispatcher::sendRouteGateDenialAsync(HTTPRequest* request, const std::string& path,
+                                                                       Handler& host) {
+    auto denial = co_await host.checkRouteGateDenialAsync(*request);
+    if (!denial) {
+        co_return false;
     }
-
-    co_await dispatchRouteAndSendAsync(request, path, std::move(produced), handlerLabel, host);
+    applyCorsHeaders(*denial, serverData_.getCorsConfig(), request);
+    applyResponseCompression(*denial, request);
+    denial->serializeTo(host.responseScratch_);
+    if (!co_await host.sendSocketAsync(host.responseScratch_.data(), host.responseScratch_.size())) {
+        host.sendToLoggerError("Failed to send route gate denial for: " + path);
+    }
+    co_return true;
 }
 
 boost::asio::awaitable<void> RouteDispatcher::dispatchAsync(HTTPRequest* request, Handler& host) {
@@ -124,7 +114,10 @@ boost::asio::awaitable<void> RouteDispatcher::dispatchAsync(HTTPRequest* request
 
     // Async wins when sync and async handlers share the same path pattern.
     if (auto asyncRouteHandler = serverData_.findMatchingAsyncRoute(path)) {
-        co_await tryDispatchRoute(
+        if (co_await sendRouteGateDenialAsync(request, path, host)) {
+            co_return;
+        }
+        co_await dispatchRouteAndSendAsync(
             request, path,
             [asyncRouteHandler, request]() -> boost::asio::awaitable<HTTPResponse> {
                 co_return co_await (*asyncRouteHandler)(*request);
@@ -134,12 +127,24 @@ boost::asio::awaitable<void> RouteDispatcher::dispatchAsync(HTTPRequest* request
     }
 
     if (auto routeHandler = serverData_.findMatchingRoute(path)) {
+        if (co_await sendRouteGateDenialAsync(request, path, host)) {
+            co_return;
+        }
         // ponytail: run sync handlers on the dispatcher coroutine stack (not inside a nested
         // coroutine frame). /status builds a large JSON tree; nesting caused stack overflow → 139.
-        co_await tryDispatchRoute(
-            request, path,
-            awaitReadyResponse((*routeHandler)(*request)),
-            "route", host);
+        std::optional<HTTPResponse> syncResponse;
+        std::exception_ptr syncError;
+        try {
+            syncResponse.emplace((*routeHandler)(*request));
+        } catch (...) {
+            syncError = std::current_exception();
+        }
+        if (syncError) {
+            co_await dispatchRouteAndSendAsync(request, path, rethrowAsResponse(syncError), "route", host);
+        } else {
+            co_await dispatchRouteAndSendAsync(request, path, awaitReadyResponse(std::move(*syncResponse)), "route",
+                                               host);
+        }
         co_return;
     }
 

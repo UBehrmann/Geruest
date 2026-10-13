@@ -127,6 +127,10 @@ size_t EmailSender::getEmailsRejected() const {
     return _emailsRejected.load();
 }
 
+size_t EmailSender::getEmailsFailed() const {
+    return _emailsFailed.load();
+}
+
 void EmailSender::clearIPTracking() {
     std::lock_guard<std::mutex> lock(_ipTrackingMutex);
     _ipTracking.clear();
@@ -174,6 +178,7 @@ void EmailSender::worker() {
                     emailQueue.push(retry);
                     condVar.notify_one();
                 } else {
+                    _emailsFailed++;
                     sendToLoggerError("EmailSender: Failed to send email to " + email.to + 
                                     " after 3 retries");
                 }

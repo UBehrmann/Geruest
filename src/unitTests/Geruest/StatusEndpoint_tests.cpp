@@ -16,8 +16,10 @@
 #include <atomic>
 #include <chrono>
 #include <cerrno>
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -345,6 +347,84 @@ TEST(StatusEndpoint, EnableStatusRequiresToken) {
     ASSERT_FALSE(response.empty());
     EXPECT_NE(response.find("401 Unauthorized"), std::string::npos);
     ASSERT_TRUE(bg.running());
+}
+
+TEST(StatusEndpoint, ReportsStatusClassesAndAuthFailures) {
+    Geruest server;
+    server.enableStatus(kStatusToken);
+    server.addRoute("/ok", [](const HTTPRequest&) {
+        HTTPResponse r("200 OK");
+        r.setBody("ok");
+        return r;
+    });
+    server.addRoute("/boom", [](const HTTPRequest&) -> HTTPResponse { throw std::runtime_error("boom"); });
+
+    ScopedBackgroundServer bg;
+    bg.launch(server);
+    const int port = bg.listenPort();
+
+    // Connection: close + reading to EOF guarantees the server recorded the response first.
+    const auto fetch = [port](std::string_view path, std::string_view headers = {}) {
+        const int fd = connectTo(port);
+        std::string response;
+        if (fd < 0) {
+            return response;
+        }
+        std::string req = "GET " + std::string(path) + " HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n";
+        req.append(headers);
+        req.append("\r\n");
+        if (sendAll(fd, req.data(), req.size())) {
+            recvSome(fd, response, SIZE_MAX);
+        }
+        close(fd);
+        return response;
+    };
+
+    EXPECT_NE(fetch("/ok").find("200 OK"), std::string::npos);
+    EXPECT_NE(fetch("/ok").find("200 OK"), std::string::npos);
+    EXPECT_NE(fetch("/does-not-exist").find("404"), std::string::npos);
+    EXPECT_NE(fetch("/boom").find("500"), std::string::npos);
+    EXPECT_NE(fetch("/status").find("401"), std::string::npos);
+
+    const std::string response =
+        fetch("/status", std::string("Authorization: Bearer ") + kStatusToken + "\r\n");
+    const size_t bodyStart = response.find("\r\n\r\n");
+    ASSERT_NE(bodyStart, std::string::npos);
+    JSONParser root(response.substr(bodyStart + 4));
+
+    JSONParser requests = root.getObject("requests");
+    EXPECT_EQ(requests.getLongLong("total"), 4);
+    EXPECT_EQ(requests.getLongLong("status_2xx"), 2);
+    EXPECT_EQ(requests.getLongLong("last_5m"), 4);
+
+    JSONParser errors = root.getObject("errors");
+    EXPECT_EQ(errors.getLongLong("client_4xx"), 1);
+    EXPECT_EQ(errors.getLongLong("server_5xx"), 1);
+    EXPECT_EQ(errors.getLongLong("status_auth_failures"), 1);
+
+    EXPECT_GE(root.getObject("io").getLongLong("connections_total"), 6);
+    EXPECT_GT(root.getObject("process").getLongLong("open_fds"), 0);
+    EXPECT_GT(root.getObject("latency_ms").getDouble("p99"), 0.0);
+    EXPECT_TRUE(root.hasKey("health_reasons"));
+    EXPECT_TRUE(root.hasKey("websocket"));
+}
+
+TEST(StatusEndpoint, DeniedSyncRouteGateNeverRunsHandler) {
+    Geruest server;
+    std::atomic<int> handlerRuns{0};
+    server.addRoute(
+        "/gated",
+        [&handlerRuns](const HTTPRequest&) {
+            handlerRuns.fetch_add(1);
+            return HTTPResponse("200 OK");
+        },
+        RouteGateHandler([](const HTTPRequest&) { return false; }));
+
+    ScopedBackgroundServer bg;
+    bg.launch(server);
+
+    EXPECT_NE(httpGet(bg.listenPort(), "/gated").find("403"), std::string::npos);
+    EXPECT_EQ(handlerRuns.load(), 0);
 }
 
 TEST(StatusEndpoint, ConcurrentStatusPolls) {

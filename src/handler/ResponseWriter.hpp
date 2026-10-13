@@ -10,6 +10,7 @@
 #include <boost/asio/ip/tcp.hpp>
 
 #include <string>
+#include <utility>
 
 #include "data/HTTPRequest.hpp"
 
@@ -46,9 +47,17 @@ class ResponseWriter {
     std::string& scratch() { return responseScratch_; }
     const std::string& scratch() const { return responseScratch_; }
 
+    /** What was written since the last take: first final status code (0 = none) and socket write failures. */
+    struct Outcome {
+        int  status      = 0;
+        bool writeFailed = false;
+    };
+    Outcome takeOutcome() { return std::exchange(outcome_, Outcome{}); }
+
    private:
     boost::asio::ip::tcp::socket& socket_;
     std::string                   responseScratch_;
+    Outcome                       outcome_;
 };
 
 }  // namespace geruest

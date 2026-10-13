@@ -43,10 +43,10 @@ boost::asio::awaitable<void> HttpSession::runCoro() {
         Handler handler(socket_, clientIp_, server_.serverData);
         co_await handler.runAsync();
     } catch (const std::exception& e) {
-        server_.serverData.recordError();
+        server_.serverData.metrics().add(ServerMetrics::Counter::InternalErrors);
         server_.sendToLoggerError(std::string("Handler error: ") + e.what());
     } catch (...) {
-        server_.serverData.recordError();
+        server_.serverData.metrics().add(ServerMetrics::Counter::InternalErrors);
         server_.sendToLoggerError("Handler encountered an unknown error");
     }
     co_return;

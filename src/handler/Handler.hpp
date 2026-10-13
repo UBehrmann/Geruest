@@ -59,6 +59,9 @@ class Handler {
     /** False for /status and other monitoring paths excluded from metrics. */
     bool _countRequestInMetrics = true;
 
+    /** True while a request counts toward requests.active (cleared on WebSocket upgrade). */
+    bool _inFlight = false;
+
     ResponseWriter writer_;
     /** Alias for RouteDispatcher; owned by writer_. */
     std::string& responseScratch_;
@@ -68,9 +71,8 @@ class Handler {
     StaticFileResolver fileResolver_;
     RouteDispatcher    routeDispatcher_;
 
-    void record4xxMetric() const;
-    void record5xxMetric() const;
     void recordErrorMetric() const;
+    void setInFlight(bool inFlight);
 
     boost::asio::awaitable<bool> enforcePageAccessAsync(const HTTPRequest& request, const std::string& pagePath,
                                                         PageAccessDenyStyle denyStyle,

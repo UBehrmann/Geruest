@@ -32,29 +32,22 @@ Handler::Handler(boost::asio::ip::tcp::socket& socket, std::string clientIP, con
                [this](const std::string& msg) { sendToLoggerError(msg); },
                [this](const std::string& msg) { sendToLogger(msg, LogLevel::Warning); }),
       fileResolver_(serverDataRef, [this](const std::string& msg) { sendToLoggerError(msg); }),
-      routeDispatcher_(serverDataRef, fileResolver_) {
-    serverData.incrementActiveHandlers();
-}
+      routeDispatcher_(serverDataRef, fileResolver_) {}
 
 Handler::~Handler() {
-    serverData.decrementActiveHandlers();
-}
-
-void Handler::record4xxMetric() const {
-    if (_countRequestInMetrics) {
-        serverData.record4xx();
-    }
-}
-
-void Handler::record5xxMetric() const {
-    if (_countRequestInMetrics) {
-        serverData.record5xx();
-    }
+    setInFlight(false);
 }
 
 void Handler::recordErrorMetric() const {
     if (_countRequestInMetrics) {
-        serverData.recordError();
+        serverData.metrics().add(ServerMetrics::Counter::InternalErrors);
+    }
+}
+
+void Handler::setInFlight(bool inFlight) {
+    if (_inFlight != inFlight) {
+        _inFlight = inFlight;
+        serverData.metrics().adjustActiveRequests(inFlight ? 1 : -1);
     }
 }
 
@@ -88,7 +81,6 @@ boost::asio::awaitable<bool> Handler::enforcePageAccessAsync(const HTTPRequest& 
         *gate, request, [this](const std::string& msg) { sendToLoggerError(msg); }, "page");
     if (!allowed.has_value()) {
         HTTPResponse err = responseInternalServerError(&request);
-        record5xxMetric();
         err.serializeTo(responseScratch_);
         if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
             sendToLoggerError("Failed to send page gate error for: " + pagePath);
@@ -158,6 +150,10 @@ boost::asio::awaitable<void> Handler::runAsync() {
     const size_t maxRequestsPerConnection = serverData.getMaxRequestsPerConnection();
     while (maxRequestsPerConnection == 0 || framing_.messageCount() < maxRequestsPerConnection) {
         const FramedRequest framed = co_await framing_.readNextRequestAsync(writer_, maxRequestsPerConnection);
+        static_cast<void>(writer_.takeOutcome());
+        if (framed.rejected) {
+            serverData.metrics().add(ServerMetrics::Counter::FramingRejects);
+        }
         if (framed.outcome == FramingOutcome::Abort) {
             co_return;
         }
@@ -169,23 +165,34 @@ boost::asio::awaitable<void> Handler::runAsync() {
                                 serverData.getDatabaseClient());
         requestStream = std::istringstream();
 
-        _countRequestInMetrics = !ServerData::isMetricsExcludedPath(hTTPRequest.getPathString());
+        const ServerMetrics& metrics = serverData.metrics();
+        _countRequestInMetrics = !ServerMetrics::isMetricsExcludedPath(hTTPRequest.getPathString());
         if (_countRequestInMetrics) {
-            serverData.recordRequest();
+            metrics.add(ServerMetrics::Counter::Requests);
         }
         {
-            const auto _reqStart = std::chrono::steady_clock::now();
+            const auto reqStart = std::chrono::steady_clock::now();
+            setInFlight(true);
             co_await handleRequestAsync(&hTTPRequest);
+            setInFlight(false);
+
+            const ResponseWriter::Outcome outcome = writer_.takeOutcome();
+            if (outcome.writeFailed) {
+                metrics.add(ServerMetrics::Counter::WriteFailures);
+            }
+            if (_countRequestInMetrics) {
+                metrics.recordStatus(outcome.status);
+            }
             if (_upgraded) {
                 co_return;
             }
             if (_countRequestInMetrics) {
-                const auto _elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
-                                                std::chrono::steady_clock::now() - _reqStart)
-                                            .count();
-                serverData.recordLatency(_elapsedUs <= 0 ? 0u
-                                         : _elapsedUs > 0xFFFFFFFFLL ? 0xFFFFFFFFu
-                                                                     : static_cast<uint32_t>(_elapsedUs));
+                const auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                                           std::chrono::steady_clock::now() - reqStart)
+                                           .count();
+                metrics.recordLatency(elapsedUs <= 0 ? 0u
+                                      : elapsedUs > 0xFFFFFFFFLL ? 0xFFFFFFFFu
+                                                                 : static_cast<uint32_t>(elapsedUs));
             }
         }
 
@@ -226,7 +233,6 @@ boost::asio::awaitable<void> Handler::handleRequestAsync(HTTPRequest* request) {
         } else {
             HTTPResponse forbidden = responseForbidden(request);
             forbidden.serializeTo(responseScratch_);
-            record4xxMetric();
             if (!co_await sendSocketAsync(responseScratch_.data(), responseScratch_.size())) {
                 sendToLoggerError("Failed to send CORS preflight denial for: " + request->getPathString());
             }

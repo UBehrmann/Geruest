@@ -18,6 +18,7 @@ Welcome to the Geruest documentation! This guide will help you get started with 
 - [**Data Classes**](DATA_CLASSES.md) - HTTPRequest, HTTPResponse, JSONParser API reference
 - [**Database Usage**](DATABASE.md) - Async DB setup and route usage (PostgreSQL/SQLite)
 - [**WebSockets**](WEBSOCKETS.md) - `addRouteWebSocket` coroutine and callback APIs, optional access gates
+- [**Status Endpoint**](STATUS.md) - `/status` health and metrics JSON: every field, health rules, persistence
 
 ### Template System
 
@@ -88,6 +89,7 @@ int main() {
 | **Async routes**            | C++20 coroutines via async `addRoute` overload               | [Features](FEATURES.md#routing)                           |
 | **Database**                | Optional PostgreSQL/SQLite async backends                    | [Database](DATABASE.md)                                   |
 | **WebSockets**              | RFC 6455 persistent connections, optional access gates       | [WebSockets](WEBSOCKETS.md)                               |
+| **Status / Monitoring**     | Token-protected `/status` health and metrics JSON            | [Status Endpoint](STATUS.md)                              |
 
 ## Requirements
 

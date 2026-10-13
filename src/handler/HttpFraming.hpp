@@ -25,6 +25,8 @@ enum class FramingOutcome { Request, Stop, Abort };
 struct FramedRequest {
     FramingOutcome outcome = FramingOutcome::Stop;
     std::shared_ptr<const std::string> messageBacking;
+    /** Request refused as malformed or oversized (as opposed to the client going away). */
+    bool rejected = false;
 };
 
 /** Socket reads + header/body assembly for one HTTP request per call. */

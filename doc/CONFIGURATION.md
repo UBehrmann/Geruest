@@ -148,7 +148,7 @@ If the selected backend is not compiled in (`GERUEST_HAS_LIBPQ=0` or `GERUEST_HA
 
 ### Server Configuration
 
-**`HOSTNAME`** is the public hostname for URLs and logging (not used for binding). **`BIND_ADDRESS`** is the listen address passed to `init()` (`0.0.0.0` = all IPv4 interfaces, `127.0.0.1` = loopback only). **`WORKER_THREADS`** controls how many threads (in addition to the thread that called `start()`) run **`boost::asio::io_context::run()`** for async I/O. **`MAX_QUEUE_SIZE`** is the **maximum number of concurrent client TCP sessions** the process will serve; extra connections are closed and appear in `/status` as `queue.rejections_total`. The JSON field `queue.current_size` is the current active session count. **`MAX_REQUESTS_PER_CONNECTION`** controls how many HTTP requests one keep-alive connection can serve before it is closed (`0` means unlimited, default `1000`).
+**`HOSTNAME`** is the public hostname for URLs and logging (not used for binding). **`BIND_ADDRESS`** is the listen address passed to `init()` (`0.0.0.0` = all IPv4 interfaces, `127.0.0.1` = loopback only). **`WORKER_THREADS`** controls how many threads (in addition to the thread that called `start()`) run **`boost::asio::io_context::run()`** for async I/O. **`MAX_QUEUE_SIZE`** is the **maximum number of concurrent client TCP sessions** the process will serve; extra connections are closed and appear in [`/status`](STATUS.md) as `queue.rejections_total`. The JSON field `queue.current_size` is the current active session count. **`MAX_REQUESTS_PER_CONNECTION`** controls how many HTTP requests one keep-alive connection can serve before it is closed (`0` means unlimited, default `1000`).
 
 ```cpp
 using namespace geruest;

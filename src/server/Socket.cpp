@@ -67,14 +67,13 @@ boost::asio::ip::tcp::endpoint resolveBindEndpoint(boost::asio::io_context& io_c
 }  // namespace
 
 void Geruest::statusPersistenceLoop() {
-    while (running.load(std::memory_order_relaxed)) {
-        for (int i = 0; i < 36000 && running.load(std::memory_order_relaxed); ++i) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // 100 ms ticks: gauges sampled every second, metrics saved every hour.
+    for (uint64_t tick = 1; running.load(std::memory_order_relaxed); ++tick) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        if (tick % 10 == 0) {
+            sampleStatusGauges();
         }
-        if (!running.load(std::memory_order_relaxed)) {
-            break;
-        }
-        if (!serverData.savePersistentMetricsToFile(_statusPersistencePath)) {
+        if (tick % 36000 == 0 && !serverData.metrics().savePersistentMetricsToFile(_statusPersistencePath)) {
             sendToLoggerError("Status metrics persistence: periodic save failed for " + _statusPersistencePath);
         }
     }
@@ -157,13 +156,13 @@ void Geruest::doAccept() {
         }
         if (ec) {
             if (ec != boost::asio::error::operation_aborted) {
-                serverData.recordAcceptError();
+                serverData.metrics().add(ServerMetrics::Counter::AcceptErrors);
                 const bool fdExhausted =
                     (ec == boost::asio::error::no_descriptors) ||
                     (ec == boost::system::errc::too_many_files_open) ||
                     (ec == boost::system::errc::too_many_files_open_in_system);
                 if (fdExhausted) {
-                    serverData.recordAcceptEmfile();
+                    serverData.metrics().add(ServerMetrics::Counter::AcceptEmfile);
                 }
                 sendToLoggerError("Accept failed: " + ec.message());
                 scheduleAcceptRetry(fdExhausted ? std::chrono::milliseconds(50)
@@ -177,13 +176,12 @@ void Geruest::doAccept() {
             ip = socket.remote_endpoint().address().to_string();
         } catch (...) {}
 
+        serverData.metrics().add(ServerMetrics::Counter::Connections);
         const size_t cap  = _maxQueueSize;
         const size_t prev = _activeSessions.fetch_add(1U, std::memory_order_acq_rel);
         if (prev >= cap) {
             _activeSessions.fetch_sub(1U, std::memory_order_acq_rel);
-            serverData.recordQueueRejection();
-            serverData.recordQueueFill(100.0f);
-            serverData.recordOverloadHttpResponse();
+            serverData.metrics().add(ServerMetrics::Counter::QueueRejections);
             boost::system::error_code write_ec;
             boost::asio::write(socket, boost::asio::buffer(kOverloadedResponse, std::strlen(kOverloadedResponse)), write_ec);
             boost::system::error_code close_ec;
@@ -192,12 +190,6 @@ void Geruest::doAccept() {
                 doAccept();
             }
             return;
-        }
-
-        if (_maxQueueSize > 0) {
-            const float fill =
-                100.0f * static_cast<float>(prev + 1U) / static_cast<float>(_maxQueueSize);
-            serverData.recordQueueFill(fill > 100.0f ? 100.0f : (fill < 0.0f ? 0.0f : fill));
         }
 
         std::make_shared<HttpSession>(*this, std::move(socket), std::move(ip))->start();
@@ -228,16 +220,11 @@ void Geruest::scheduleAcceptRetry(std::chrono::milliseconds delay) {
 }
 
 void Geruest::releaseSessionSlot() {
-    const size_t prev = _activeSessions.fetch_sub(1U, std::memory_order_acq_rel);
-    const size_t now  = prev > 0U ? prev - 1U : 0U;
-    if (_maxQueueSize > 0) {
-        const float fill = 100.0f * static_cast<float>(now) / static_cast<float>(_maxQueueSize);
-        serverData.recordQueueFill(fill > 100.0f ? 100.0f : (fill < 0.0f ? 0.0f : fill));
-    }
+    _activeSessions.fetch_sub(1U, std::memory_order_acq_rel);
 }
 
 void Geruest::start() {
-    if (!serverData.loadPersistentMetricsFromFile(_statusPersistencePath)) {
+    if (!serverData.metrics().loadPersistentMetricsFromFile(_statusPersistencePath)) {
         sendToLoggerError("Status metrics persistence: invalid or unsupported file " + _statusPersistencePath);
     }
 
@@ -261,7 +248,7 @@ void Geruest::start() {
     if (_statusPersistenceThread.joinable()) {
         _statusPersistenceThread.join();
     }
-    if (!serverData.savePersistentMetricsToFile(_statusPersistencePath)) {
+    if (!serverData.metrics().savePersistentMetricsToFile(_statusPersistencePath)) {
         sendToLoggerError("Status metrics persistence: shutdown save failed for " + _statusPersistencePath);
     }
     sendToLogger("Server stopped.");

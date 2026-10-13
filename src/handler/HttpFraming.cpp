@@ -142,6 +142,7 @@ boost::asio::awaitable<FramedRequest> HttpFraming::readNextRequestAsync(Response
         if (raw.size() >= kMaxHttpHeaderBytes) {
             logError_("HTTP headers exceed maximum size.");
             result.outcome = FramingOutcome::Abort;
+            result.rejected = true;
             co_return result;
         }
         if (!co_await readSocketAsync("reading_headers")) {
@@ -178,6 +179,7 @@ boost::asio::awaitable<FramedRequest> HttpFraming::readNextRequestAsync(Response
             br.serializeTo(writer.scratch());
             co_await writer.sendSocketAsync(writer.scratch().data(), writer.scratch().size());
             result.outcome = FramingOutcome::Abort;
+            result.rejected = true;
             co_return result;
         }
         hasCL = true;
@@ -194,6 +196,7 @@ boost::asio::awaitable<FramedRequest> HttpFraming::readNextRequestAsync(Response
         const size_t remain = bodyExpected > already ? bodyExpected - already : 0;
         static_cast<void>(co_await discardFromSocketAsync(remain));
         result.outcome = FramingOutcome::Abort;
+        result.rejected = true;
         co_return result;
     }
 
@@ -220,6 +223,7 @@ boost::asio::awaitable<FramedRequest> HttpFraming::readNextRequestAsync(Response
                 br.serializeTo(writer.scratch());
                 co_await writer.sendSocketAsync(writer.scratch().data(), writer.scratch().size());
                 result.outcome = FramingOutcome::Abort;
+                result.rejected = true;
                 co_return result;
             }
         }

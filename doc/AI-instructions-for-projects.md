@@ -132,38 +132,13 @@ Registers `GET /status`. In production (dev mode off), requires:
 
 Response: `200 OK`, `Content-Type: application/json`, `Cache-Control: no-store`.
 
-```json
-{
-  "health": "ok",
-  "version": "0.12.7",
-  "timestamp": "2025-07-03T12:00:00Z",
-  "uptime_seconds": 3600,
-  "requests":   { "total": 0, "active": 0, "last_hour": 0, "avg_per_hour": 0 },
-  "errors":     { "total": 0, "client_4xx": 0, "server_5xx": 0, "internal": 0,
-                  "last_hour_4xx": 0, "last_hour_5xx": 0, "last_hour_int": 0,
-                  "avg_per_hour_4xx": 0, "avg_per_hour_5xx": 0, "avg_per_hour_int": 0 },
-  "queue":      { "current_size": 0, "max_size": 500, "rejections_total": 0,
-                  "avg_fill_percent_hour": 0.0, "avg_fill_percent_per_hour": 0.0 },
-  "latency_ms": { "p50": 0.0, "p95": 0.0, "p99": 0.0 },
-  "system": {
-    "memory": { "total_mb": 0, "used_mb": 0, "free_mb": 0, "percent_used": 0.0 },
-    "cpu":    { "count": 0, "load_1m": 0.0, "load_5m": 0.0, "load_15m": 0.0 },
-    "disk":   { "total_gb": 0, "used_gb": 0, "free_gb": 0, "percent_used": 0.0 },
-    "cgroup_memory": { "limit_mb": 0, "used_mb": 0, "free_mb": 0, "percent_used": 0.0 },
-    "cgroup_cpu":    { "allocated_cores": 0.0, "usage_percent": 0.0 }
-  }
-}
-```
+Top-level keys: `health` (`ok` | `degraded` | `overloaded`), `health_reasons` (array of strings), `version`, `timestamp`, `uptime_seconds`, `uptime_hours_total`, plus the objects `requests`, `errors`, `queue`, `io`, `websocket`, `latency_ms` (5 min), `latency_ms_hour`, `process`, `email` (only with `initEmail()`), and `system`.
 
-`queue.current_size` / `queue.max_size` are **active client sessions** vs **`setMaxQueueSize` / `MAX_QUEUE_SIZE`** (not a kernel listen backlog). `avg_fill_percent_*` is average **session utilization** (0–100%) sampled over time. Rejections occur when a new connection arrives at the session cap.
+- `_5m` / `_hour` fields are rolling windows; `*_total` and plain totals are lifetime counters persisted across restarts.
+- `queue.current_size` / `max_size` are **open client sessions** vs `setMaxQueueSize` / `MAX_QUEUE_SIZE` (not a kernel backlog).
+- `/status` calls themselves are excluded from all request/error/latency metrics.
 
-`cgroup_memory` and `cgroup_cpu` are only present when cgroup limits are detected (Linux containers).
-
-| `health` | Condition |
-|---|---|
-| `"ok"` | session utilization below 50% (rolling) and requests below 500/hour |
-| `"degraded"` | session utilization ≥ 50% **or** requests ≥ 500/hour |
-| `"overloaded"` | session utilization ≥ 80% **or** requests ≥ 1000/hour |
+Every field, the health rules, and persistence are documented in [STATUS.md](STATUS.md).
 
 ---
 

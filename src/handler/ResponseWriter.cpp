@@ -9,11 +9,13 @@
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/asio/write.hpp>
+#include <algorithm>
 #include <atomic>
 #include <cerrno>
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <string_view>
 #include <vector>
 #ifdef __linux__
 #include <fcntl.h>
@@ -74,6 +76,16 @@ StaticCacheHeaders buildFileValidators(const ServerData& serverData, const std::
 ResponseWriter::ResponseWriter(boost::asio::ip::tcp::socket& socket) : socket_(socket) {}
 
 boost::asio::awaitable<bool> ResponseWriter::sendSocketAsync(const char* bufferToSend, size_t size) {
+    // Every response starts with "HTTP/1.x NNN"; 1xx (100 Continue, 101 Switching) is not a final status.
+    if (outcome_.status == 0 && size >= 12 && std::string_view(bufferToSend, 7) == "HTTP/1." &&
+        bufferToSend[8] == ' ') {
+        const std::string_view digits(bufferToSend + 9, 3);
+        if (std::all_of(digits.begin(), digits.end(), [](char c) { return c >= '0' && c <= '9'; }) &&
+            digits[0] >= '2') {
+            outcome_.status = (digits[0] - '0') * 100 + (digits[1] - '0') * 10 + (digits[2] - '0');
+        }
+    }
+
     size_t startPos = 0;
     while (startPos < size) {
         const size_t chunkSize = std::min(HttpFraming::kBufferSize, size - startPos);
@@ -81,6 +93,7 @@ boost::asio::awaitable<bool> ResponseWriter::sendSocketAsync(const char* bufferT
             co_await boost::asio::async_write(socket_, boost::asio::buffer(bufferToSend + startPos, chunkSize),
                                               boost::asio::use_awaitable);
         } catch (const boost::system::system_error&) {
+            outcome_.writeFailed = true;
             co_return false;
         }
         startPos += chunkSize;
@@ -133,11 +146,13 @@ boost::asio::awaitable<bool> ResponseWriter::sendFileBodyZeroCopyAsync(const std
                 continue;
             } catch (const boost::system::system_error&) {
                 ::close(fileFd);
+                outcome_.writeFailed = true;
                 co_return false;
             }
         }
 
         ::close(fileFd);
+        outcome_.writeFailed = true;
         co_return false;
     }
 
@@ -163,7 +178,6 @@ boost::asio::awaitable<void> ResponseWriter::sendResponseAsync(const std::string
 }
 
 boost::asio::awaitable<void> ResponseWriter::sendNotFoundResponseAsync(HTTPRequest* httpRequest, Handler& host) {
-    host.record4xxMetric();
     if (httpRequest != nullptr) {
         host.sendToLoggerError("404 route miss. path=" + httpRequest->getPathString() +
                                " request_line=" + httpRequest->getRawRequestLine());
@@ -220,8 +234,7 @@ boost::asio::awaitable<void> ResponseWriter::sendNotFoundResponseAsync(HTTPReque
 
 boost::asio::awaitable<void> ResponseWriter::sendServiceUnavailableResponseAsync(const std::string& why,
                                                                                  Handler& host) {
-    host.record5xxMetric();
-    host.serverData.recordFileOpenFailure();
+    host.serverData.metrics().add(ServerMetrics::Counter::FileOpenFailures);
     host.sendToLoggerError("Service unavailable while serving file: " + why);
     co_await sendResponseAsync("503 Service Unavailable", "text/plain",
                                "Service temporarily unavailable. Please retry.\n",

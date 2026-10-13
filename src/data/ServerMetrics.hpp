@@ -1,6 +1,6 @@
 /**
  * @file ServerMetrics.hpp
- * @brief Request counters, rolling windows, and latency tracking.
+ * @brief Request counters, per-minute rolling windows, and latency histograms for /status.
  */
 
 #ifndef GERUEST_SERVERMETRICS_HPP
@@ -9,10 +9,10 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <mutex>
 #include <string>
-#include <vector>
 
 namespace geruest {
 
@@ -20,56 +20,65 @@ class JSONParser;
 
 class ServerMetrics {
    public:
+    /** Lifetime counters (persisted across restarts). */
+    enum class Counter : std::size_t {
+        Requests,
+        Status2xx,
+        Status3xx,
+        Status4xx,
+        Status5xx,
+        InternalErrors,
+        Connections,
+        QueueRejections,
+        AcceptErrors,
+        AcceptEmfile,
+        FramingRejects,
+        WriteFailures,
+        FileOpenFailures,
+        StatusAuthFailures,
+        WebSocketUpgrades,
+        Count_
+    };
+    static constexpr std::size_t kCounterCount = static_cast<std::size_t>(Counter::Count_);
+
+    /** Latency histogram bins: upper bounds grow by sqrt(2) from 50 µs; the last bin is open-ended. */
+    static constexpr std::size_t kLatBins = 44;
+
     ServerMetrics() = default;
     ServerMetrics(const ServerMetrics&) = delete;
     ServerMetrics& operator=(const ServerMetrics&) = delete;
 
     static bool isMetricsExcludedPath(const std::string& path);
 
-    void recordRequest() const;
-    void recordError() const;
-    void record4xx() const;
-    void record5xx() const;
-    void recordQueueRejection() const;
-    void recordAcceptError() const;
-    void recordAcceptEmfile() const;
-    void recordFileOpenFailure() const;
-    void recordOverloadHttpResponse() const;
-    void recordQueueFill(float fillPct) const;
-    void incrementActiveHandlers() const;
-    void decrementActiveHandlers() const;
+    void add(Counter c) const;
+    uint64_t get(Counter c) const;
+
+    /** Counts a response by status class (2xx–5xx); other codes (0 = nothing sent, 1xx) are ignored. */
+    void recordStatus(int code) const;
     void recordLatency(uint32_t us) const;
+    /** Sampled once per second by the server; feeds the time-weighted average queue fill. */
+    void recordQueueFill(float fillPct) const;
 
-    uint64_t getTotalRequests() const;
-    uint64_t getTotalErrors() const;
-    uint64_t getTotal4xx() const;
-    uint64_t getTotal5xx() const;
-    uint64_t getTotalInternalErrors() const;
-    uint64_t getQueueRejections() const;
-    uint64_t getAcceptErrorsTotal() const;
-    uint64_t getAcceptEmfileTotal() const;
-    uint64_t getFileOpenFailures() const;
-    uint64_t getOverloadHttpResponses() const;
-    int64_t getActiveHandlers() const;
+    void adjustActiveRequests(int delta) const;
+    void adjustActiveWebSockets(int delta) const;
+    int64_t getActiveRequests() const;
+    int64_t getActiveWebSockets() const;
 
-    struct WindowMetrics {
+    struct Window {
         uint64_t requests = 0;
         uint64_t errors_4xx = 0;
         uint64_t errors_5xx = 0;
         uint64_t errors_int = 0;
+        uint64_t rejections = 0;
         double avg_queue_fill = 0.0;
-    };
-
-    WindowMetrics getWindowMetricsHour() const;
-    WindowMetrics getRollingAveragePerHour() const;
-
-    struct LatencyStats {
+        /** Approximate percentiles in milliseconds (histogram interpolation); 0 when no samples. */
         double p50 = 0.0;
         double p95 = 0.0;
         double p99 = 0.0;
     };
 
-    LatencyStats getLatencyStats(uint32_t windowSeconds) const;
+    /** Aggregate over the last @p minutes minute buckets, including the current (partial) minute. */
+    Window getWindow(uint32_t minutes) const;
 
     uint64_t getUptimeSeconds() const;
     double getUptimeHoursTotal() const;
@@ -78,49 +87,31 @@ class ServerMetrics {
     bool savePersistentMetricsToFile(const std::string& path) const;
 
    private:
-    struct RollingBucket {
+    struct MinuteBucket {
         uint32_t epoch = 0;
         uint32_t requests = 0;
         uint32_t errors_4xx = 0;
         uint32_t errors_5xx = 0;
         uint32_t errors_int = 0;
+        uint32_t rejections = 0;
         float fill_sum = 0.f;
         uint32_t fill_count = 0;
+        std::array<uint32_t, kLatBins> lat{};
     };
 
-    struct LatencySample {
-        uint32_t epoch_s = 0;
-        uint32_t us = 0;
-    };
-
-    static constexpr size_t kLatCap = 10000;
-
+    static uint32_t nowMinute_();
+    MinuteBucket& currentBucket_() const;
     void clearAllMetrics_();
     bool importPersistentMetricsJson_(JSONParser root);
 
-    void writeBuckets_(uint32_t epochS, uint32_t epochM, uint32_t req, uint32_t e4, uint32_t e5, uint32_t ei,
-                       float qFill, uint32_t qCnt) const;
-
-    static std::pair<uint32_t, uint32_t> nowEpochs_();
-
-    mutable std::atomic<uint64_t> _totalRequests{0};
-    mutable std::atomic<uint64_t> _total4xx{0};
-    mutable std::atomic<uint64_t> _total5xx{0};
-    mutable std::atomic<uint64_t> _totalInternalErrors{0};
-    mutable std::atomic<uint64_t> _queueRejections{0};
-    mutable std::atomic<uint64_t> _acceptErrorsTotal{0};
-    mutable std::atomic<uint64_t> _acceptEmfileTotal{0};
-    mutable std::atomic<uint64_t> _fileOpenFailures{0};
-    mutable std::atomic<uint64_t> _overloadHttpResponses{0};
-    mutable std::atomic<int64_t> _activeHandlers{0};
+    mutable std::array<std::atomic<uint64_t>, kCounterCount> _counters{};
+    mutable std::atomic<int64_t> _activeRequests{0};
+    mutable std::atomic<int64_t> _activeWebSockets{0};
     std::chrono::steady_clock::time_point _startTime{std::chrono::steady_clock::now()};
     uint64_t _lifetimeUptimeBaselineSeconds{0};
 
     mutable std::mutex _metricsMutex;
-    mutable std::array<RollingBucket, 60> _minBuckets{};
-    mutable std::array<LatencySample, kLatCap> _latSamples{};
-    mutable size_t _latHead{0};
-    mutable size_t _latCount{0};
+    mutable std::array<MinuteBucket, 60> _minBuckets{};
 };
 
 }  // namespace geruest

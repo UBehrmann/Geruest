@@ -98,6 +98,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Release -DGERUEST_ENABLE_POSTGRESQL=ON -DGERUEST_ENA
 - **[Data Classes Reference](doc/DATA_CLASSES.md)** - HTTPRequest, HTTPResponse, JSONParser API
 - **[Database Usage](doc/DATABASE.md)** - Async PostgreSQL/SQLite, pooling, async `addRoute`
 - **[WebSockets](doc/WEBSOCKETS.md)** - `addRouteWebSocket` coroutine and callback APIs
+- **[Status Endpoint](doc/STATUS.md)** - `/status` health and metrics JSON reference
 
 ### Template System
 

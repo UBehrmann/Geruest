@@ -173,6 +173,11 @@ class EmailSender {
     size_t getEmailsRejected() const;
 
     /**
+     * @brief Get the number of emails dropped after exhausting SMTP retries
+     */
+    size_t getEmailsFailed() const;
+
+    /**
      * @brief Clear all IP tracking data
      */
     void clearIPTracking();
@@ -204,6 +209,7 @@ class EmailSender {
     // Statistics
     std::atomic<size_t> _emailsSent{0};
     std::atomic<size_t> _emailsRejected{0};
+    std::atomic<size_t> _emailsFailed{0};
 
     LogFn _logInfo;
     LogFn _logError;

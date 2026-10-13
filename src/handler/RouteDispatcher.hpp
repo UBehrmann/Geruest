@@ -30,9 +30,9 @@ class RouteDispatcher {
                                                            boost::asio::awaitable<HTTPResponse> produced,
                                                            std::string_view handlerLabel, Handler& host);
 
-    boost::asio::awaitable<void> tryDispatchRoute(HTTPRequest* request, const std::string& path,
-                                                  boost::asio::awaitable<HTTPResponse> produced,
-                                                  std::string_view handlerLabel, Handler& host);
+    /** Sends the route gate's denial if it refuses the request; true when the request was answered. */
+    boost::asio::awaitable<bool> sendRouteGateDenialAsync(HTTPRequest* request, const std::string& path,
+                                                          Handler& host);
 
     const ServerData& serverData_;
     StaticFileResolver& fileResolver_;

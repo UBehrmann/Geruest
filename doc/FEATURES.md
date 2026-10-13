@@ -26,7 +26,7 @@ The HTTP server is built on **Boost.Asio**:
 - A shared **`boost::asio::io_context`** drives the event loop.
 - **`WORKER_THREADS`** (or `setWorkerThreadCount`) is the number of threads calling `io_context::run()` (default: hardware concurrency × 2). The thread that calls `start()` also runs the `io_context` until `stop()`.
 - New connections are accepted with **`async_accept`**. Each client gets an **`HttpSession`** (`shared_ptr`, `co_spawn` on a **per-connection strand**) that runs **`Handler::runAsync()`** — non-blocking reads/writes with **`co_await`** on the TCP socket.
-- **`MAX_QUEUE_SIZE`** / `setMaxQueueSize` sets the **maximum number of concurrent client sessions** (in-flight HTTP connections), not a backlog queue of pending file descriptors. When the limit is reached, new TCP accepts are **closed immediately** and counted as **queue rejections** in `/status`.
+- **`MAX_QUEUE_SIZE`** / `setMaxQueueSize` sets the **maximum number of concurrent client sessions** (in-flight HTTP connections), not a backlog queue of pending file descriptors. When the limit is reached, new TCP accepts are **closed immediately** and counted as **queue rejections** in `/status` (see [STATUS.md](STATUS.md)).
 
 ## Routing
 

@@ -63,9 +63,6 @@ using LogSink = std::function<void(LogLevel level, std::string_view message, std
 
 class ServerData {
    public:
-    using WindowMetrics = ServerMetrics::WindowMetrics;
-    using LatencyStats = ServerMetrics::LatencyStats;
-
     ServerData();
     ServerData(const ServerData& other);
     ServerData& operator=(const ServerData& other);
@@ -208,40 +205,9 @@ class ServerData {
     bool getObfuscationAutoBracketKeys() const;
     bool shouldObfuscate() const;
 
-    static bool isMetricsExcludedPath(const std::string& path);
-
-    void recordRequest() const;
-    void recordError() const;
-    void record4xx() const;
-    void record5xx() const;
-    void recordQueueRejection() const;
-    void recordAcceptError() const;
-    void recordAcceptEmfile() const;
-    void recordFileOpenFailure() const;
-    void recordOverloadHttpResponse() const;
-    void recordQueueFill(float fillPct) const;
-    void incrementActiveHandlers() const;
-    void decrementActiveHandlers() const;
-    void recordLatency(uint32_t us) const;
-
-    uint64_t getTotalRequests() const;
-    uint64_t getTotalErrors() const;
-    uint64_t getTotal4xx() const;
-    uint64_t getTotal5xx() const;
-    uint64_t getTotalInternalErrors() const;
-    uint64_t getQueueRejections() const;
-    uint64_t getAcceptErrorsTotal() const;
-    uint64_t getAcceptEmfileTotal() const;
-    uint64_t getFileOpenFailures() const;
-    uint64_t getOverloadHttpResponses() const;
-    int64_t getActiveHandlers() const;
-    WindowMetrics getWindowMetricsHour() const;
-    WindowMetrics getRollingAveragePerHour() const;
-    LatencyStats getLatencyStats(uint32_t windowSeconds) const;
-    uint64_t getUptimeSeconds() const;
-    bool loadPersistentMetricsFromFile(const std::string& path);
-    bool savePersistentMetricsToFile(const std::string& path) const;
-    double getUptimeHoursTotal() const;
+    /** Recording methods are const (internally synchronized) so handlers can use a const ServerData. */
+    const ServerMetrics& metrics() const { return _metrics; }
+    ServerMetrics& metrics() { return _metrics; }
 
    private:
     void wireLanguagePointers_();
