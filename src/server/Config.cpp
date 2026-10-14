@@ -127,6 +127,17 @@ void Geruest::loadConfig(const std::string& envFilePath) {
         }
     }
 
+    // ERROR_LOG_CAPACITY (0 = disabled)
+    if (!_configFlags.errorLogCapacitySet) {
+        const size_t currentValue = serverData.metrics().getErrorLogCapacity();
+        const size_t configValue = ConfigLoader::getSizeT("ERROR_LOG_CAPACITY", currentValue);
+        if (configValue != currentValue) {
+            serverData.metrics().setErrorLogCapacity(configValue);
+            sendToLogger("ERROR_LOG_CAPACITY loaded from config: " +
+                         std::to_string(serverData.metrics().getErrorLogCapacity()));
+        }
+    }
+
     // TEXT_RESPONSE_CACHE_MAX_ENTRY_BYTES (0 = do not cache new entries; ignored in dev mode)
     if (!_configFlags.textResponseCacheMaxEntryBytesSet && !serverData.isDevMode()) {
         const size_t currentValue = serverData.getTextResponseCacheMaxEntryBytes();

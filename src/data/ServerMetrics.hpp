@@ -11,8 +11,10 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <mutex>
 #include <string>
+#include <vector>
 
 namespace geruest {
 
@@ -80,6 +82,35 @@ class ServerMetrics {
     /** Aggregate over the last @p minutes minute buckets, including the current (partial) minute. */
     Window getWindow(uint32_t minutes) const;
 
+    /** One failed request or handler error, stored as received. Strings are capped at kErrorFieldMaxBytes. */
+    struct ErrorEntry {
+        uint64_t seq = 0;
+        int64_t ts = 0;  // Unix seconds (UTC)
+        int status = 0;  // Status written to the socket; 0 = no response sent
+        std::string ip;
+        std::string forwardedFor;
+        std::string request;  // Raw request line, e.g. "GET /x?y=1 HTTP/1.1"
+        std::string host;
+        std::string referer;
+        std::string userAgent;
+        std::string message;  // Error log lines emitted while handling the request
+    };
+    static constexpr std::size_t kErrorLogDefaultCapacity = 1000;
+    static constexpr std::size_t kErrorLogMaxCapacity = 1'000'000;
+    static constexpr std::size_t kErrorFieldMaxBytes = 2048;
+
+    /** Clamped to kErrorLogMaxCapacity; 0 disables the error log. Shrinking drops the oldest entries. */
+    void setErrorLogCapacity(std::size_t capacity);
+    std::size_t getErrorLogCapacity() const;
+    /** Appends @p e (seq and ts are assigned here); the oldest entry is dropped once the log is full. */
+    void recordError(ErrorEntry e) const;
+    /** The newest @p count entries, oldest first. */
+    std::vector<ErrorEntry> getLastErrors(std::size_t count) const;
+    /** Sequence number of the newest entry (0 = none yet). Persisted, so it keeps growing across restarts. */
+    uint64_t lastErrorSeq() const;
+    /** JSON shape shared by the persistence file and GET /status/errors. */
+    static JSONParser errorEntryJson(const ErrorEntry& e);
+
     uint64_t getUptimeSeconds() const;
     double getUptimeHoursTotal() const;
 
@@ -112,6 +143,11 @@ class ServerMetrics {
 
     mutable std::mutex _metricsMutex;
     mutable std::array<MinuteBucket, 60> _minBuckets{};
+
+    mutable std::mutex _errorMutex;
+    mutable std::deque<ErrorEntry> _errors;
+    mutable uint64_t _errorSeq = 0;
+    std::size_t _errorCapacity = kErrorLogDefaultCapacity;
 };
 
 }  // namespace geruest

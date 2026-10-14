@@ -411,6 +411,57 @@ TEST(StatusEndpoint, ReportsStatusClassesAndAuthFailures) {
     EXPECT_TRUE(root.hasKey("websocket"));
 }
 
+TEST(StatusEndpoint, ErrorLogListsFailedRequests) {
+    Geruest server;
+    server.enableStatus(kStatusToken);
+    server.addRoute("/ok", [](const HTTPRequest&) { return HTTPResponse("200 OK"); });
+    server.addRoute("/boom", [](const HTTPRequest&) -> HTTPResponse { throw std::runtime_error("kaboom"); });
+
+    ScopedBackgroundServer bg;
+    bg.launch(server);
+    const std::string auth = std::string("Authorization: Bearer ") + kStatusToken + "\r\n";
+    const auto body = [&](std::string_view path, std::string_view headers) {
+        const std::string r = httpGet(bg.listenPort(), path, headers);
+        const size_t start = r.find("\r\n\r\n");
+        return start == std::string::npos ? std::string() : r.substr(start + 4);
+    };
+
+    httpGet(bg.listenPort(), "/ok");
+    httpGet(bg.listenPort(), "/favicon.ico", "Referer: http://localhost/\r\nUser-Agent: test-agent\r\n");
+    httpGet(bg.listenPort(), "/boom");
+    httpGet(bg.listenPort(), "/status/errors");  // 401 is logged too
+
+    // httpGet returns once the response starts arriving, before the server records the outcome.
+    JSONParser root(body("/status/errors", auth));
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while (root.getLongLong("last_seq") < 3 && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        root = JSONParser(body("/status/errors", auth));
+    }
+    ASSERT_EQ(root.getLongLong("last_seq"), 3);
+    EXPECT_EQ(root.getLongLong("capacity"), 1000);
+    std::vector<JSONParser> entries = root.getArrayOfJSON("entries");
+    ASSERT_EQ(entries.size(), 3u);
+    EXPECT_EQ(entries[0].getInt("status"), 404);
+    EXPECT_EQ(entries[0].getString("request"), "GET /favicon.ico HTTP/1.1");
+    EXPECT_EQ(entries[0].getString("referer"), "http://localhost/");
+    EXPECT_EQ(entries[0].getString("user_agent"), "test-agent");
+    EXPECT_EQ(entries[0].getString("ip"), "127.0.0.1");
+    EXPECT_EQ(entries[1].getInt("status"), 500);
+    EXPECT_NE(entries[1].getString("message").find("kaboom"), std::string::npos);
+    EXPECT_EQ(entries[2].getInt("status"), 401);
+
+    JSONParser lastTwo(body("/status/errors?last=2", auth));
+    std::vector<JSONParser> two = lastTwo.getArrayOfJSON("entries");
+    ASSERT_EQ(two.size(), 2u);
+    EXPECT_EQ(two[0].getInt("status"), 500);
+    EXPECT_EQ(two[1].getInt("status"), 401);
+
+    EXPECT_EQ(JSONParser(body("/status/errors?last=999", auth)).getArrayOfJSON("entries").size(), 3u);
+
+    EXPECT_NE(httpGet(bg.listenPort(), "/status/errors?last=abc", auth).find("400"), std::string::npos);
+}
+
 TEST(StatusEndpoint, DeniedSyncRouteGateNeverRunsHandler) {
     Geruest server;
     std::atomic<int> handlerRuns{0};

@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <fstream>
 #include <mutex>
+#include <optional>
 #include <sstream>
 #include <string_view>
 #include <sys/resource.h>
@@ -31,6 +32,9 @@ using Counter = ServerMetrics::Counter;
 
 /** Bump on breaking changes to the /status JSON shape (removed/renamed fields, changed semantics). */
 constexpr int kStatusVersion = 2;
+
+/** Entries returned by /status/errors when `last` is omitted. */
+constexpr size_t kStatusErrorsDefaultLast = 100;
 
 struct SysMemInfo {
     uint64_t total_mb     = 0;
@@ -458,30 +462,77 @@ void Geruest::sampleStatusGauges() {
     }
 }
 
-HTTPResponse Geruest::handleStatusRequest(const HTTPRequest& req) const {
+std::optional<HTTPResponse> Geruest::checkStatusAccess(const HTTPRequest& req) const {
     if (!_statusActive) {
         HTTPResponse resp("503 Service Unavailable");
         resp.setHeader("Content-Type", "application/json");
         resp.setBody(R"({"error":"Status endpoint not active"})");
         return resp;
     }
+    if (serverData.isDevMode()) {
+        return std::nullopt;
+    }
+    const std::string expected   = "Bearer " + _statusToken;
+    const std::string queryToken = req.getParam("token");
+    const bool validHeader = constantTimeEquals(req.getHeader("authorization"), expected);
+    const bool validQuery  = !queryToken.empty() && constantTimeEquals(queryToken, _statusToken);
+    if (validHeader || validQuery) {
+        return std::nullopt;
+    }
+    serverData.metrics().add(Counter::StatusAuthFailures);
+    HTTPResponse resp("401 Unauthorized");
+    resp.setHeader("WWW-Authenticate", "Bearer realm=\"status\"");
+    resp.setHeader("Content-Type", "application/json");
+    resp.setBody(R"({"error":"Unauthorized"})");
+    return resp;
+}
 
+HTTPResponse Geruest::handleStatusErrorsRequest(const HTTPRequest& req) const {
+    if (auto denied = checkStatusAccess(req)) {
+        return std::move(*denied);
+    }
     const ServerMetrics& m = serverData.metrics();
 
-    if (!serverData.isDevMode()) {
-        const std::string expected   = "Bearer " + _statusToken;
-        const std::string queryToken = req.getParam("token");
-        const bool validHeader = constantTimeEquals(req.getHeader("authorization"), expected);
-        const bool validQuery  = !queryToken.empty() && constantTimeEquals(queryToken, _statusToken);
-        if (!validHeader && !validQuery) {
-            m.add(Counter::StatusAuthFailures);
-            HTTPResponse resp("401 Unauthorized");
-            resp.setHeader("WWW-Authenticate", "Bearer realm=\"status\"");
+    size_t last = kStatusErrorsDefaultLast;
+    const std::string lastParam = req.getParam("last");
+    if (!lastParam.empty()) {
+        if (lastParam.size() > 7 ||
+            !std::all_of(lastParam.begin(), lastParam.end(), [](char c) { return c >= '0' && c <= '9'; })) {
+            HTTPResponse resp("400 Bad Request");
             resp.setHeader("Content-Type", "application/json");
-            resp.setBody(R"({"error":"Unauthorized"})");
+            resp.setBody(R"({"error":"last must be an integer between 0 and 9999999"})");
             return resp;
         }
+        last = std::stoul(lastParam);
     }
+
+    const uint64_t lastSeq = m.lastErrorSeq();
+    const std::vector<ServerMetrics::ErrorEntry> entries = m.getLastErrors(last);
+
+    std::vector<JSONParser> json;
+    json.reserve(entries.size());
+    for (const ServerMetrics::ErrorEntry& e : entries) {
+        json.push_back(ServerMetrics::errorEntryJson(e));
+    }
+
+    JSONParser root;
+    root.setLongLong("last_seq", static_cast<long long>(lastSeq));
+    root.setLongLong("capacity", static_cast<long long>(m.getErrorLogCapacity()));
+    root.setArrayOfJSON("entries", json);
+
+    HTTPResponse resp("200 OK");
+    resp.setHeader("Content-Type",  "application/json");
+    resp.setHeader("Cache-Control", "no-store");
+    resp.setBody(root.toString());
+    return resp;
+}
+
+HTTPResponse Geruest::handleStatusRequest(const HTTPRequest& req) const {
+    if (auto denied = checkStatusAccess(req)) {
+        return std::move(*denied);
+    }
+
+    const ServerMetrics& m = serverData.metrics();
 
     const ServerMetrics::Window w5  = m.getWindow(5);
     const ServerMetrics::Window w60 = m.getWindow(60);
@@ -564,8 +615,11 @@ void Geruest::enableStatus(const std::string& token) {
     serverData.addRoute("/status", [this](const HTTPRequest& req) -> HTTPResponse {
         return handleStatusRequest(req);
     });
+    serverData.addRoute("/status/errors", [this](const HTTPRequest& req) -> HTTPResponse {
+        return handleStatusErrorsRequest(req);
+    });
 
-    sendToLogger("Status endpoint activated at /status (token-protected)");
+    sendToLogger("Status endpoint activated at /status and /status/errors (token-protected)");
 }
 
 }  // namespace geruest

@@ -13,7 +13,7 @@ server.setStatusPersistencePath("/var/lib/myapp/status.json");  // optional
 - Dev mode: no token required.
 - Prefer the header. Query strings end up in proxy and access logs.
 - Responses carry `Cache-Control: no-store`.
-- Requests to `/status` itself are **not** counted in any request, error, or latency metric.
+- Requests to `/status` and `/status/errors` are **not** counted in any request, error, or latency metric. Failed calls to them (e.g. `401`) still appear in the [error log](#error-log-statuserrors).
 
 ## Example response
 
@@ -189,11 +189,82 @@ Rules use the 5-minute window. The worst rule wins, and every rule that fires ad
 
 `overloaded` means the server is at a capacity limit and is refusing or about to refuse work. `degraded` means it is serving, but something needs attention.
 
+## Error log (`/status/errors`)
+
+`enableStatus()` also registers `GET /status/errors`, with the same token rules as `/status`. It returns the most recent errors, stored raw and unfiltered, so you can see what bots are probing and what is actually broken (a missing icon, a failing route).
+
+An entry is recorded for:
+
+- every response with status ≥ 400 (routes, static files, 404 pages, gates, basic auth, CORS, `/status` itself),
+- requests rejected before routing (oversized headers, invalid `Content-Length`, body too large),
+- any request during which an error was logged, even if it ended with a 2xx (e.g. a WebSocket handler exception),
+- exceptions that escaped the handler entirely (`status` = `0`, no request data).
+
+The log keeps the newest **1000** entries by default; when full, the oldest is dropped. It is saved with the metrics (see [Persistence](#persistence)), so it survives restarts.
+
+### Capacity
+
+```cpp
+server.setErrorLogCapacity(10000);   // before start(); default 1000
+```
+
+or `ERROR_LOG_CAPACITY=10000` in `.env` (the setter wins). Range `0` to `1000000`; larger values are clamped, `0` disables the log. Lowering the capacity drops the oldest entries, including ones loaded from the state file.
+
+Large capacities cost memory and disk. A typical entry is a few hundred bytes, so 1,000,000 entries is roughly 300 MB in memory and in the state file, which is rewritten every minute while errors arrive.
+
+### Reading
+
+`?last=<n>` returns the newest `n` entries, oldest first. Without `last`, the newest **100** are returned. Asking for more than the log holds returns everything.
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" "https://example.com/status/errors?last=200"
+```
+
+```json
+{
+  "last_seq": 1043,
+  "capacity": 1000,
+  "entries": [
+    { "seq": 1042, "ts": 1792003863, "time": "2026-10-14T18:51:03Z", "status": 404,
+      "ip": "172.18.0.2", "forwarded_for": "203.0.113.7",
+      "request": "GET /assets/images/icon-192.png HTTP/1.1", "host": "example.com",
+      "referer": "https://example.com/", "user_agent": "Mozilla/5.0 ...", "message": "" },
+    { "seq": 1043, "ts": 1792003870, "time": "2026-10-14T18:51:10Z", "status": 500,
+      "ip": "172.18.0.2", "forwarded_for": "198.51.100.4",
+      "request": "POST /v1/contact HTTP/1.1", "host": "example.com", "referer": "", "user_agent": "curl/8.5.0",
+      "message": "Exception in sync handler: database is locked" }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `last_seq` | `seq` of the newest entry ever recorded (`0` = none yet). |
+| `capacity` | Maximum number of entries kept. |
+| `entries` | The newest `last` entries, oldest first. |
+
+| Entry field | Meaning |
+|---|---|
+| `seq` | Sequence number. It only ever increases, also across restarts, so a poller can skip entries it already has. |
+| `ts`, `time` | When the entry was recorded (Unix seconds / ISO 8601 UTC). |
+| `status` | Status written to the client; `0` if none was sent. |
+| `ip` | Socket peer address. Behind a reverse proxy (Traefik) this is the proxy. |
+| `forwarded_for` | Raw `X-Forwarded-For` header. Set by your proxy, but a client can prepend its own values, so only the last address added by your proxy is trustworthy. |
+| `request` | Raw request line (method, target with query string, protocol). Empty for rejected or crashed requests. |
+| `host`, `referer`, `user_agent` | Raw request headers. |
+| `message` | Error log lines emitted while handling the request, joined with ` \| `. |
+
+Every string field is cut at 2048 bytes so crafted requests cannot inflate memory or the state file. The worst case is about 14 MB per 1000 entries.
+
+A `404` whose `referer` is one of your own pages usually means a broken link or missing asset. A `404` without a referer for paths like `/.env` or `/wp-login.php` is usually a scanner.
+
+The log holds full IP addresses and user agents, which count as personal data under GDPR / the Swiss FADP. Mention it in your privacy policy and protect the state file.
+
 ## Persistence
 
-Lifetime counters, lifetime uptime, and the 60 minute buckets (including latency histograms) are saved as JSON:
+Lifetime counters, lifetime uptime, the 60 minute buckets (including latency histograms) and the [error log](#error-log-statuserrors) are saved as JSON:
 
-- Saved every hour and on clean shutdown.
+- Saved every hour and on clean shutdown, and also within a minute of new errors being recorded.
 - The file is `geruest-status-state.json` in the working directory by default. Change it with `setStatusPersistencePath()`.
 - Files from older versions (schema 1) still load. Unknown or corrupt files are ignored (counters start at zero) and an error is logged.
 - Point the path at a persistent volume in Docker, otherwise counters reset with every container.

@@ -41,6 +41,8 @@ WORKER_THREADS=16
 MAX_QUEUE_SIZE=500
 # Keep-alive request cap per connection (0 = unlimited)
 MAX_REQUESTS_PER_CONNECTION=1000
+# Entries kept for /status/errors (0 = disabled, max 1000000)
+ERROR_LOG_CAPACITY=1000
 LOG_LEVEL=error
 
 # Database

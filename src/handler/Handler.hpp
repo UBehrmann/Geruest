@@ -62,6 +62,9 @@ class Handler {
     /** True while a request counts toward requests.active (cleared on WebSocket upgrade). */
     bool _inFlight = false;
 
+    /** Error log lines since the last error-log entry; attached to the next one as its message. */
+    mutable std::string _pendingErrors;
+
     ResponseWriter writer_;
     /** Alias for RouteDispatcher; owned by writer_. */
     std::string& responseScratch_;
@@ -72,6 +75,8 @@ class Handler {
     RouteDispatcher    routeDispatcher_;
 
     void recordErrorMetric() const;
+    /** Adds an error-log entry when @p status >= 400 or an error was logged; clears pending errors either way. */
+    void recordErrorLogEntry(int status, const HTTPRequest* request) const;
     void setInFlight(bool inFlight);
 
     boost::asio::awaitable<bool> enforcePageAccessAsync(const HTTPRequest& request, const std::string& pagePath,

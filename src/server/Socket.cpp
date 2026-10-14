@@ -67,14 +67,20 @@ boost::asio::ip::tcp::endpoint resolveBindEndpoint(boost::asio::io_context& io_c
 }  // namespace
 
 void Geruest::statusPersistenceLoop() {
-    // 100 ms ticks: gauges sampled every second, metrics saved every hour.
+    // 100 ms ticks: gauges sampled every second; metrics saved every hour, or every minute while new errors arrive.
+    const ServerMetrics& metrics = serverData.metrics();
+    uint64_t savedErrorSeq = metrics.lastErrorSeq();
     for (uint64_t tick = 1; running.load(std::memory_order_relaxed); ++tick) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         if (tick % 10 == 0) {
             sampleStatusGauges();
         }
-        if (tick % 36000 == 0 && !serverData.metrics().savePersistentMetricsToFile(_statusPersistencePath)) {
-            sendToLoggerError("Status metrics persistence: periodic save failed for " + _statusPersistencePath);
+        const bool newErrors = tick % 600 == 0 && metrics.lastErrorSeq() != savedErrorSeq;
+        if (tick % 36000 == 0 || newErrors) {
+            savedErrorSeq = metrics.lastErrorSeq();
+            if (!metrics.savePersistentMetricsToFile(_statusPersistencePath)) {
+                sendToLoggerError("Status metrics persistence: periodic save failed for " + _statusPersistencePath);
+            }
         }
     }
 }

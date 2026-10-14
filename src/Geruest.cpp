@@ -121,6 +121,16 @@ void Geruest::setBindAddress(const std::string& address) {
 
 void Geruest::setStatusPersistencePath(std::string path) { _statusPersistencePath = std::move(path); }
 
+void Geruest::setErrorLogCapacity(size_t capacity) {
+    if (capacity > ServerMetrics::kErrorLogMaxCapacity) {
+        sendToLoggerError("Error log capacity " + std::to_string(capacity) + " exceeds maximum, using " +
+                          std::to_string(ServerMetrics::kErrorLogMaxCapacity));
+    }
+    serverData.metrics().setErrorLogCapacity(capacity);
+    _configFlags.errorLogCapacitySet = true;
+    sendToLogger("Error log capacity set to: " + std::to_string(serverData.metrics().getErrorLogCapacity()));
+}
+
 void Geruest::addRoute(const std::string& path, RouteHandler routeHandler) {
     serverData.addRoute(path, std::move(routeHandler));
 }

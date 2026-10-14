@@ -44,6 +44,25 @@ void Handler::recordErrorMetric() const {
     }
 }
 
+void Handler::recordErrorLogEntry(int status, const HTTPRequest* request) const {
+    if (status < 400 && _pendingErrors.empty()) {
+        return;
+    }
+    ServerMetrics::ErrorEntry e;
+    e.status = status;
+    e.ip = IP;
+    e.message = std::move(_pendingErrors);
+    _pendingErrors.clear();
+    if (request != nullptr) {
+        e.request = request->getRawRequestLine();
+        e.forwardedFor = request->getHeaderView("x-forwarded-for");
+        e.host = request->getHeaderView("host");
+        e.referer = request->getHeaderView("referer");
+        e.userAgent = request->getHeaderView("user-agent");
+    }
+    serverData.metrics().recordError(std::move(e));
+}
+
 void Handler::setInFlight(bool inFlight) {
     if (_inFlight != inFlight) {
         _inFlight = inFlight;
@@ -144,16 +163,23 @@ void Handler::sendToLoggerUser(const std::string& message) const {
 }
 void Handler::sendToLoggerError(const std::string& message) const {
     serverData.emitLog(LogLevel::Error, message, IP);
+    if (!_pendingErrors.empty()) {
+        _pendingErrors += " | ";
+    }
+    _pendingErrors += message;
 }
 
 boost::asio::awaitable<void> Handler::runAsync() {
     const size_t maxRequestsPerConnection = serverData.getMaxRequestsPerConnection();
+    const ServerMetrics& metrics = serverData.metrics();
     while (maxRequestsPerConnection == 0 || framing_.messageCount() < maxRequestsPerConnection) {
         const FramedRequest framed = co_await framing_.readNextRequestAsync(writer_, maxRequestsPerConnection);
-        static_cast<void>(writer_.takeOutcome());
+        const ResponseWriter::Outcome framingOutcome = writer_.takeOutcome();
         if (framed.rejected) {
-            serverData.metrics().add(ServerMetrics::Counter::FramingRejects);
+            metrics.add(ServerMetrics::Counter::FramingRejects);
+            sendToLoggerError("Request rejected before routing (oversized headers, invalid Content-Length or body too large)");
         }
+        recordErrorLogEntry(framingOutcome.status, nullptr);
         if (framed.outcome == FramingOutcome::Abort) {
             co_return;
         }
@@ -165,7 +191,6 @@ boost::asio::awaitable<void> Handler::runAsync() {
                                 serverData.getDatabaseClient());
         requestStream = std::istringstream();
 
-        const ServerMetrics& metrics = serverData.metrics();
         _countRequestInMetrics = !ServerMetrics::isMetricsExcludedPath(hTTPRequest.getPathString());
         if (_countRequestInMetrics) {
             metrics.add(ServerMetrics::Counter::Requests);
@@ -183,6 +208,7 @@ boost::asio::awaitable<void> Handler::runAsync() {
             if (_countRequestInMetrics) {
                 metrics.recordStatus(outcome.status);
             }
+            recordErrorLogEntry(outcome.status, &hTTPRequest);
             if (_upgraded) {
                 co_return;
             }

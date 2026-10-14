@@ -303,6 +303,7 @@ class Geruest {
      * - WORKER_THREADS (size_t): Number of worker threads (default: CPU cores * 2)
      * - MAX_QUEUE_SIZE (size_t): Maximum concurrent client sessions (default: 500)
      * - MAX_REQUESTS_PER_CONNECTION (size_t): Keep-alive request cap per connection (default: 1000, 0 = unlimited)
+     * - ERROR_LOG_CAPACITY (size_t): Entries kept for /status/errors (default: 1000, max: 1000000, 0 = disabled)
      * - TEXT_RESPONSE_CACHE_MAX_ENTRY_BYTES (size_t): Max serialized size per cached html/js/css response (default: 524288)
      * - TEXT_RESPONSE_CACHE_MAX_TOTAL_BYTES (size_t): Max total bytes across all cached text responses (default: 33554432)
      *   Set either to 0 to disable caching new entries (existing entries may remain until eviction/restart).
@@ -664,6 +665,9 @@ class Geruest {
      * Access requires `Authorization: Bearer <token>` (or `?token=`).
      * In dev mode, the token check is skipped and the endpoint is openly accessible.
      *
+     * Also registers `GET /status/errors?last=<n>`: the newest n (default 100) logged errors (4xx/5xx,
+     * rejected requests, handler exceptions), persisted with the metrics. See setErrorLogCapacity().
+     *
      * Every field and the health rules are documented in doc/STATUS.md.
      *
      * @param token Bearer token required in the Authorization header.
@@ -678,6 +682,13 @@ class Geruest {
     void setStatusPersistencePath(std::string path);
 
     const std::string& getStatusPersistencePath() const { return _statusPersistencePath; }
+
+    /**
+     * @brief Max entries kept in the /status/errors log (default 1000, max 1'000'000, 0 = disabled).
+     * Larger values are clamped. Shrinking drops the oldest entries.
+     * @note Call before start(); can also be set with ERROR_LOG_CAPACITY in .env.
+     */
+    void setErrorLogCapacity(size_t capacity);
 
    private:
     boost::asio::io_context                         io_ctx_;
@@ -731,6 +742,7 @@ class Geruest {
         bool workerThreadsSet = false;
         bool maxQueueSizeSet = false;
         bool maxRequestsPerConnectionSet = false;
+        bool errorLogCapacitySet = false;
         bool textResponseCacheMaxEntryBytesSet = false;
         bool textResponseCacheMaxTotalBytesSet = false;
         bool staticCacheMaxAgeSet = false;
@@ -785,7 +797,10 @@ class Geruest {
     /** Called once per second: queue fill sample and cgroup CPU usage sample (see Status.cpp). */
     void sampleStatusGauges();
 
+    /** 503 when inactive, 401 on a bad token, nullopt when the caller may proceed. */
+    std::optional<HTTPResponse> checkStatusAccess(const HTTPRequest& req) const;
     HTTPResponse handleStatusRequest(const HTTPRequest& req) const;
+    HTTPResponse handleStatusErrorsRequest(const HTTPRequest& req) const;
 
     void workerRunLoop();
     void initializeDatabaseFromConfig();

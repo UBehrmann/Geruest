@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -153,6 +154,65 @@ TEST(ServerMetrics, QueueFillAverage) {
     m.recordQueueFill(50.f);
     m.recordQueueFill(250.f);  // clamped to 100
     EXPECT_NEAR(m.getWindow(5).avg_queue_fill, 50.0, 0.01);
+}
+
+TEST(ServerDataMetricsPersistence, ErrorLogCapsAndRoundTrips) {
+    const fs::path p = uniqueTempJson("errorlog");
+    const size_t extra = 5;
+    {
+        ServerData a;
+        for (size_t i = 0; i < ServerMetrics::kErrorLogDefaultCapacity + extra; ++i) {
+            ServerMetrics::ErrorEntry e;
+            e.status = 404;
+            e.ip = "203.0.113.7";
+            e.request = "GET /missing-" + std::to_string(i) + ".png HTTP/1.1";
+            e.referer = std::string(ServerMetrics::kErrorFieldMaxBytes + 10, 'r');
+            e.userAgent = R"(bot "quoted" \ back)";
+            a.metrics().recordError(e);
+        }
+        const auto all = a.metrics().getLastErrors(SIZE_MAX);
+        ASSERT_EQ(all.size(), ServerMetrics::kErrorLogDefaultCapacity);
+        EXPECT_EQ(all.front().seq, extra + 1);
+        EXPECT_EQ(all.back().referer.size(), ServerMetrics::kErrorFieldMaxBytes);
+        ASSERT_TRUE(a.metrics().savePersistentMetricsToFile(p.string()));
+    }
+
+    ServerData b;
+    ASSERT_TRUE(b.metrics().loadPersistentMetricsFromFile(p.string()));
+    const uint64_t total = ServerMetrics::kErrorLogDefaultCapacity + extra;
+    EXPECT_EQ(b.metrics().lastErrorSeq(), total);
+    const auto tail = b.metrics().getLastErrors(1);
+    ASSERT_EQ(tail.size(), 1u);
+    EXPECT_EQ(tail[0].seq, total);
+    EXPECT_EQ(tail[0].status, 404);
+    EXPECT_EQ(tail[0].ip, "203.0.113.7");
+    EXPECT_EQ(tail[0].request, "GET /missing-" + std::to_string(total - 1) + ".png HTTP/1.1");
+    EXPECT_EQ(tail[0].userAgent, R"(bot "quoted" \ back)");
+    EXPECT_GT(tail[0].ts, 0);
+
+    ServerMetrics::ErrorEntry next;
+    next.status = 500;
+    b.metrics().recordError(next);
+    EXPECT_EQ(b.metrics().lastErrorSeq(), total + 1);
+
+    // Shrinking keeps the newest entries; a smaller capacity also trims on load.
+    b.metrics().setErrorLogCapacity(10);
+    const auto ten = b.metrics().getLastErrors(SIZE_MAX);
+    ASSERT_EQ(ten.size(), 10u);
+    EXPECT_EQ(ten.back().seq, total + 1);
+    ServerData c;
+    c.metrics().setErrorLogCapacity(3);
+    ASSERT_TRUE(c.metrics().loadPersistentMetricsFromFile(p.string()));
+    EXPECT_EQ(c.metrics().getLastErrors(SIZE_MAX).size(), 3u);
+
+    b.metrics().setErrorLogCapacity(0);
+    EXPECT_TRUE(b.metrics().getLastErrors(SIZE_MAX).empty());
+    b.metrics().recordError(next);
+    EXPECT_TRUE(b.metrics().getLastErrors(SIZE_MAX).empty());
+
+    b.metrics().setErrorLogCapacity(5'000'000);
+    EXPECT_EQ(b.metrics().getErrorLogCapacity(), ServerMetrics::kErrorLogMaxCapacity);
+    fs::remove(p);
 }
 
 TEST(ServerDataMetricsPersistence, SaveJSONToFileAtomicLeavesNoTmp) {

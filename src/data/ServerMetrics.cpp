@@ -84,19 +84,94 @@ uint64_t parseJsonU64(JSONParser& j, const std::string& key, uint64_t fallback) 
     return v < 0 ? fallback : static_cast<uint64_t>(v);
 }
 
-void appendIsoUtcNow(JSONParser& root) {
-    std::time_t now_t = std::time(nullptr);
+std::string isoUtc(std::time_t t) {
     char timeBuf[32] = {};
     struct tm utcTm{};
-    gmtime_r(&now_t, &utcTm);
+    gmtime_r(&t, &utcTm);
     std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%dT%H:%M:%SZ", &utcTm);
-    root.setString("saved_at", timeBuf);
+    return timeBuf;
+}
+
+void appendIsoUtcNow(JSONParser& root) {
+    root.setString("saved_at", isoUtc(std::time(nullptr)));
+}
+
+ServerMetrics::ErrorEntry errorEntryFromJson(JSONParser& j) {
+    ServerMetrics::ErrorEntry e;
+    e.seq = parseJsonU64(j, "seq", 0);
+    e.ts = static_cast<int64_t>(parseJsonU64(j, "ts", 0));
+    e.status = j.hasKey("status") ? j.getInt("status") : 0;
+    e.ip = j.getString("ip");
+    e.forwardedFor = j.getString("forwarded_for");
+    e.request = j.getString("request");
+    e.host = j.getString("host");
+    e.referer = j.getString("referer");
+    e.userAgent = j.getString("user_agent");
+    e.message = j.getString("message");
+    return e;
 }
 
 }  // namespace
 
+JSONParser ServerMetrics::errorEntryJson(const ErrorEntry& e) {
+    JSONParser j;
+    j.setLongLong("seq", static_cast<long long>(e.seq));
+    j.setLongLong("ts", e.ts);
+    j.setString("time", isoUtc(static_cast<std::time_t>(e.ts)));
+    j.setInt("status", e.status);
+    j.setString("ip", e.ip);
+    j.setString("forwarded_for", e.forwardedFor);
+    j.setString("request", e.request);
+    j.setString("host", e.host);
+    j.setString("referer", e.referer);
+    j.setString("user_agent", e.userAgent);
+    j.setString("message", e.message);
+    return j;
+}
+
 bool ServerMetrics::isMetricsExcludedPath(const std::string& path) {
-    return path == "/status";
+    return path == "/status" || path == "/status/errors";
+}
+
+void ServerMetrics::setErrorLogCapacity(std::size_t capacity) {
+    std::lock_guard<std::mutex> lock(_errorMutex);
+    _errorCapacity = std::min(capacity, kErrorLogMaxCapacity);
+    while (_errors.size() > _errorCapacity) {
+        _errors.pop_front();
+    }
+}
+
+std::size_t ServerMetrics::getErrorLogCapacity() const {
+    std::lock_guard<std::mutex> lock(_errorMutex);
+    return _errorCapacity;
+}
+
+void ServerMetrics::recordError(ErrorEntry e) const {
+    for (std::string* s : {&e.ip, &e.forwardedFor, &e.request, &e.host, &e.referer, &e.userAgent, &e.message}) {
+        if (s->size() > kErrorFieldMaxBytes) {
+            s->resize(kErrorFieldMaxBytes);
+        }
+    }
+    e.ts = static_cast<int64_t>(std::time(nullptr));
+    std::lock_guard<std::mutex> lock(_errorMutex);
+    if (_errorCapacity == 0) {
+        return;
+    }
+    e.seq = ++_errorSeq;
+    _errors.push_back(std::move(e));
+    while (_errors.size() > _errorCapacity) {
+        _errors.pop_front();
+    }
+}
+
+std::vector<ServerMetrics::ErrorEntry> ServerMetrics::getLastErrors(std::size_t count) const {
+    std::lock_guard<std::mutex> lock(_errorMutex);
+    return {_errors.end() - static_cast<std::ptrdiff_t>(std::min(count, _errors.size())), _errors.end()};
+}
+
+uint64_t ServerMetrics::lastErrorSeq() const {
+    std::lock_guard<std::mutex> lock(_errorMutex);
+    return _errorSeq;
 }
 
 uint32_t ServerMetrics::nowMinute_() {
@@ -217,8 +292,13 @@ void ServerMetrics::clearAllMetrics_() {
     }
     _activeRequests.store(0, std::memory_order_relaxed);
     _activeWebSockets.store(0, std::memory_order_relaxed);
-    std::lock_guard<std::mutex> lock(_metricsMutex);
-    _minBuckets.fill({});
+    {
+        std::lock_guard<std::mutex> lock(_metricsMutex);
+        _minBuckets.fill({});
+    }
+    std::lock_guard<std::mutex> lock(_errorMutex);
+    _errors.clear();
+    _errorSeq = 0;
 }
 
 bool ServerMetrics::importPersistentMetricsJson_(JSONParser root) {
@@ -261,8 +341,25 @@ bool ServerMetrics::importPersistentMetricsJson_(JSONParser root) {
     _activeWebSockets.store(0, std::memory_order_relaxed);
     _lifetimeUptimeBaselineSeconds = parseJsonU64(root, "lifetime_uptime_seconds", 0);
 
-    std::lock_guard<std::mutex> lock(_metricsMutex);
-    _minBuckets = buckets;
+    std::deque<ErrorEntry> errors;
+    if (root.hasKey("error_log")) {
+        for (JSONParser& j : root.getArrayOfJSON("error_log")) {
+            errors.push_back(errorEntryFromJson(j));
+        }
+        const std::size_t capacity = getErrorLogCapacity();
+        while (errors.size() > capacity) {
+            errors.pop_front();
+        }
+    }
+    const uint64_t errorSeq = std::max(parseJsonU64(root, "error_seq", 0), errors.empty() ? 0 : errors.back().seq);
+
+    {
+        std::lock_guard<std::mutex> lock(_metricsMutex);
+        _minBuckets = buckets;
+    }
+    std::lock_guard<std::mutex> lock(_errorMutex);
+    _errors = std::move(errors);
+    _errorSeq = errorSeq;
     return true;
 }
 
@@ -311,6 +408,17 @@ bool ServerMetrics::savePersistentMetricsToFile(const std::string& path) const {
         bucketJson.push_back(std::move(o));
     }
     root.setArrayOfJSON("buckets", bucketJson);
+
+    std::vector<JSONParser> errorJson;
+    {
+        std::lock_guard<std::mutex> lock(_errorMutex);
+        root.setLongLong("error_seq", static_cast<long long>(_errorSeq));
+        errorJson.reserve(_errors.size());
+        for (const ErrorEntry& e : _errors) {
+            errorJson.push_back(errorEntryJson(e));
+        }
+    }
+    root.setArrayOfJSON("error_log", errorJson);
 
     return saveJSONToFileAtomic(root, path);
 }

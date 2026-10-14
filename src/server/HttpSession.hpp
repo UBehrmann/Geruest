@@ -29,6 +29,7 @@ class HttpSession : public std::enable_shared_from_this<HttpSession> {
 
    private:
     boost::asio::awaitable<void> runCoro();
+    void recordInternalError(const std::string& message);
 
     Geruest& server_;
 
