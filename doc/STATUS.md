@@ -19,6 +19,7 @@ server.setStatusPersistencePath("/var/lib/myapp/status.json");  // optional
 
 ```json
 {
+  "status_version": 2,
   "health": "degraded",
   "health_reasons": ["5xx rate 7% (5m)"],
   "version": "0.15.0",
@@ -51,6 +52,15 @@ server.setStatusPersistencePath("/var/lib/myapp/status.json");  // optional
 }
 ```
 
+## Versioning
+
+`status_version` changes only when the response shape breaks: a field is removed or renamed, or its meaning changes. New fields can be added without a bump, so parsers should ignore keys they don't know.
+
+| `status_version` | Changes |
+|---|---|
+| *(absent)* = 1 | Original format. |
+| `2` | Added `status_version`, `health_reasons`, the `_5m` windows, `requests.status_2xx/3xx`, `errors.server_error_rate_5m`, `errors.status_auth_failures`, `io.connections_total/framing_rejects_total/write_failures_total`, and the `websocket`, `latency_ms_hour`, `process`, `email` and `system.disk.path` fields. **Breaking:** `latency_ms` covers 5 minutes (was 60 s); `requests.active` counts in-flight requests only (was open connections, WebSockets included); `avg_per_hour*` is the lifetime total ÷ lifetime hours (was wrong); health rules replaced (see [Health](#health)); `queue.overload_http_responses` removed (same as `rejections_total`); `queue.avg_fill_percent_per_hour` removed. |
+
 ## Time windows
 
 Per-minute buckets cover the last 60 minutes.
@@ -66,6 +76,7 @@ Per-minute buckets cover the last 60 minutes.
 
 | Field | Meaning |
 |---|---|
+| `status_version` | Version of this JSON format (currently `2`). See [Versioning](#versioning). |
 | `health` | `"ok"`, `"degraded"` or `"overloaded"`. See [Health](#health). |
 | `health_reasons` | Human-readable list of every rule that fired; empty when `ok`. |
 | `version` | Geruest framework version. |

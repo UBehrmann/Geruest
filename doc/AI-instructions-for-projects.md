@@ -132,7 +132,7 @@ Registers `GET /status`. In production (dev mode off), requires:
 
 Response: `200 OK`, `Content-Type: application/json`, `Cache-Control: no-store`.
 
-Top-level keys: `health` (`ok` | `degraded` | `overloaded`), `health_reasons` (array of strings), `version`, `timestamp`, `uptime_seconds`, `uptime_hours_total`, plus the objects `requests`, `errors`, `queue`, `io`, `websocket`, `latency_ms` (5 min), `latency_ms_hour`, `process`, `email` (only with `initEmail()`), and `system`.
+Top-level keys: `status_version` (JSON format version, currently `2`; bumped only on breaking changes), `health` (`ok` | `degraded` | `overloaded`), `health_reasons` (array of strings), `version`, `timestamp`, `uptime_seconds`, `uptime_hours_total`, plus the objects `requests`, `errors`, `queue`, `io`, `websocket`, `latency_ms` (5 min), `latency_ms_hour`, `process`, `email` (only with `initEmail()`), and `system`.
 
 - `_5m` / `_hour` fields are rolling windows; `*_total` and plain totals are lifetime counters persisted across restarts.
 - `queue.current_size` / `max_size` are **open client sessions** vs `setMaxQueueSize` / `MAX_QUEUE_SIZE` (not a kernel backlog).

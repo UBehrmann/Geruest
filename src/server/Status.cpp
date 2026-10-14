@@ -29,6 +29,9 @@ namespace {
 
 using Counter = ServerMetrics::Counter;
 
+/** Bump on breaking changes to the /status JSON shape (removed/renamed fields, changed semantics). */
+constexpr int kStatusVersion = 2;
+
 struct SysMemInfo {
     uint64_t total_mb     = 0;
     uint64_t used_mb      = 0;
@@ -497,6 +500,7 @@ HTTPResponse Geruest::handleStatusRequest(const HTTPRequest& req) const {
     std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%dT%H:%M:%SZ", &utcTm);
 
     JSONParser root;
+    root.setInt("status_version",      kStatusVersion);
     root.setString("health",           health.name());
     root.setStringArray("health_reasons", health.reasons);
     root.setString("version",          getVersion());

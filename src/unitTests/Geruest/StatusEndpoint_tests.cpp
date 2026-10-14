@@ -392,6 +392,8 @@ TEST(StatusEndpoint, ReportsStatusClassesAndAuthFailures) {
     ASSERT_NE(bodyStart, std::string::npos);
     JSONParser root(response.substr(bodyStart + 4));
 
+    EXPECT_EQ(root.getInt("status_version"), 2);
+
     JSONParser requests = root.getObject("requests");
     EXPECT_EQ(requests.getLongLong("total"), 4);
     EXPECT_EQ(requests.getLongLong("status_2xx"), 2);
